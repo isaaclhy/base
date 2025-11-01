@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "daisyui";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -115,7 +116,70 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
+    position: relative;
+    /* Grid pattern and gradient overlays */
+    background-image: 
+      /* Grid pattern - subtle light gray */
+      linear-gradient(to right, oklch(0.97 0 0) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(0.97 0 0) 1px, transparent 1px),
+      /* Large purple/violet glow from top-left */
+      radial-gradient(at 0% 0%, oklch(0.85 0.12 280 / 0.15) 0%, transparent 50%),
+      /* Soft yellow glow in top-right */
+      radial-gradient(at 100% 0%, oklch(0.95 0.1 85 / 0.12) 0%, transparent 40%),
+      /* Faint pinkish-purple glow near bottom-right */
+      radial-gradient(at 80% 100%, oklch(0.88 0.08 310 / 0.08) 0%, transparent 50%);
+    background-size: 
+      64px 64px,
+      64px 64px,
+      800px 800px,
+      400px 400px,
+      600px 600px;
+    background-position:
+      0 0,
+      0 0,
+      0% 0%,
+      100% 0%,
+      80% 100%;
+    background-repeat: repeat, repeat, no-repeat, no-repeat, no-repeat;
+    min-height: 100vh;
+  }
+
+  /* Add blur effect using pseudo-element for the gradients */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 0;
+    background: 
+      /* Large purple/violet glow from top-left with blur */
+      radial-gradient(circle at 0% 0%, oklch(0.82 0.15 285 / 0.18) 0%, transparent 50%),
+      /* Soft yellow glow in top-right with blur */
+      radial-gradient(circle at 100% 0%, oklch(0.93 0.12 90 / 0.15) 0%, transparent 35%),
+      /* Faint pinkish-purple glow near bottom-right with blur */
+      radial-gradient(circle at 75% 100%, oklch(0.85 0.1 315 / 0.1) 0%, transparent 45%);
+    background-size: 
+      900px 900px,
+      450px 450px,
+      700px 700px;
+    background-position:
+      0% 0%,
+      100% 0%,
+      75% 100%;
+    background-repeat: no-repeat;
+    filter: blur(80px);
+    opacity: 0.8;
+  }
+
+  /* Ensure content is above the background */
+  body > * {
+    position: relative;
+    z-index: 1;
   }
 }
