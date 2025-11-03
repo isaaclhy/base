@@ -28,15 +28,55 @@ export async function GET(request: NextRequest) {
         const [, subreddit, postId] = urlMatch;
         
         // Call Reddit JSON API
+        // Reddit may block server-side requests from certain IPs (like Vercel)
+        // Try multiple approaches
         const apiUrl = `https://www.reddit.com/r/${subreddit}/comments/${postId}.json`;
-        const response = await fetch(apiUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json',
-                'Accept-Language': 'en-US,en;q=0.9'
+        
+        let response: Response;
+        let lastError: string = '';
+        
+        // Try approach 1: Minimal headers
+        try {
+            response = await fetch(apiUrl, {
+                headers: {
+                    'User-Agent': 'reddit-comment-tool/0.1 by isaaclhy13',
+                    'Accept': '*/*',
+                },
+                cache: 'no-store'
+            });
+            
+            if (response.ok) {
+                // Success, continue below
+            } else {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-        });
+        } catch (error) {
+            lastError = error instanceof Error ? error.message : 'Unknown error';
+            console.error('First attempt failed:', lastError);
+            
+            // Try approach 2: No custom headers at all (let fetch use defaults)
+            try {
+                response = await fetch(apiUrl, { cache: 'no-store' });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+            } catch (error2) {
+                lastError = error2 instanceof Error ? error2.message : 'Unknown error';
+                console.error('Second attempt failed:', lastError);
+                
+                // Return helpful error message
+                return NextResponse.json(
+                    { 
+                        error: `Reddit API blocked the request (403 Forbidden). This may be due to rate limiting or IP blocking. Error: ${lastError}`,
+                        suggestion: 'Reddit may be blocking server-side requests. Consider using Reddit\'s official API with OAuth authentication.'
+                    },
+                    { status: 403 }
+                );
+            }
+        }
 
+        // If we get here, response is ok
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Reddit API error:', response.status, response.statusText, errorText);
