@@ -249,7 +249,7 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
                         placeholder={placeholder}
                         rows={minRows}
                         className={cn(
-                            "flex-1 resize-none border-0 bg-transparent px-2 py-1 text-sm w-full",
+                            "flex-1 resize-none border-0 bg-transparent px-2 py-1 text-base w-full",
                             "placeholder:text-muted-foreground",
                             "focus:outline-none focus:ring-0",
                             "disabled:cursor-not-allowed disabled:opacity-50",
