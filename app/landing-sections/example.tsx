@@ -1,8 +1,8 @@
-import { CheckCircle2, Shield, Users, Zap } from "lucide-react";
+import { MessageSquare, Lightbulb, Rocket } from "lucide-react";
 
 export default function Examples() {
     return (
-        <section className="py-20">
+        <section className="pb-20 pt-8">
             <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
                 <div className="mb-12 text-center">
                     <h2 className="mb-4 text-3xl font-bold sm:text-4xl">See It In Action</h2>
@@ -13,27 +13,42 @@ export default function Examples() {
                 <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                     {[
                         {
-                            title: "Example One",
-                            description: "Streamline your workflow with our powerful automation tools.",
-                            icon: Zap,
+                            title: "Add a post",
+                            description: "Enter a Reddit post link to generate comments for it. We'll handle the rest.",
+                            icon: MessageSquare,
                         },
                         {
-                            title: "Example Two",
-                            description: "Collaborate seamlessly with your team in real-time.",
-                            icon: Users,
+                            title: "Enter your idea",
+                            description: "Provide detailed information about your product or startup for better results.",
+                            icon: Lightbulb,
                         },
                         {
-                            title: "Example Three",
-                            description: "Keep your data secure with enterprise-grade encryption.",
-                            icon: Shield,
+                            title: "Get users now",
+                            description: "Receive natural-sounding comments ready to use immediately. No waiting.",
+                            icon: Rocket,
                         },
                     ].map((example, index) => (
                         <div
                             key={index}
-                            className="group rounded-lg border border-border bg-card p-6 transition-all hover:border-primary hover:shadow-md"
+                            className="group rounded-lg border bg-card p-6 transition-all hover:shadow-md"
+                            style={{
+                                borderColor: 'var(--border)',
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = 'oklch(0.65 0.22 30)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = 'var(--border)';
+                            }}
                         >
-                            <div className="mb-4 inline-flex size-12 items-center justify-center rounded-lg bg-primary/10">
-                                <example.icon className="size-6 text-primary" />
+                            <div 
+                                className="mb-4 inline-flex size-12 items-center justify-center rounded-lg"
+                                style={{ backgroundColor: 'oklch(0.65 0.22 30 / 0.1)' }}
+                            >
+                                <example.icon 
+                                    className="size-6" 
+                                    style={{ color: 'oklch(0.65 0.22 30)' }}
+                                />
                             </div>
                             <h3 className="mb-2 text-xl font-semibold">{example.title}</h3>
                             <p className="text-muted-foreground">{example.description}</p>

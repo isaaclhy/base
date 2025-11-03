@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
 const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_KEY,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export interface GenerateCommentQuery {
@@ -39,6 +39,7 @@ export async function POST(
     let output: string;
 
     try {
+      console.log("API Key: ", process.env.OPENAI_API_KEY);
       // If you have a custom OpenAI client with responses.create, use this:
       // @ts-ignore - Custom API may not be in type definitions
       const response = await client.responses?.create?.({
@@ -60,14 +61,14 @@ export async function POST(
           { status: 500 }
         );
       }
-
+      console.log("Response: ", response);
       output =
-        response.output
+        response?.output
           ?.filter((res: any) => res.type == "message")[0]
           ?.content?.filter((res: any) => res.type == "output_text")[0]?.text;
     } catch (customError) {
       // Fall back to standard OpenAI chat completions
-      console.log("Using standard OpenAI API");
+      console.log("Using standard OpenAI API ", customError);
       
       // Try with JSON mode first (for supported models)
       try {
