@@ -31,13 +31,17 @@ export async function GET(request: NextRequest) {
         const apiUrl = `https://www.reddit.com/r/${subreddit}/comments/${postId}.json`;
         const response = await fetch(apiUrl, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; RedditBot/1.0)'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+                'Accept-Language': 'en-US,en;q=0.9'
             }
         });
 
         if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Reddit API error:', response.status, response.statusText, errorText);
             return NextResponse.json(
-                { error: `Failed to fetch post: ${response.statusText}` },
+                { error: `Failed to fetch post: ${response.statusText || 'Unknown error'}` },
                 { status: response.status }
             );
         }
@@ -56,8 +60,9 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ post: postData });
     } catch (error) {
         console.error("Error fetching Reddit post:", error);
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
         return NextResponse.json(
-            { error: "Failed to fetch Reddit post" },
+            { error: `Failed to fetch Reddit post: ${errorMessage}` },
             { status: 500 }
         );
     }
