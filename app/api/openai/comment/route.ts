@@ -62,10 +62,9 @@ export async function POST(
         );
       }
       console.log("Response: ", response);
-      output =
-        response?.output
-          ?.filter((res: any) => res.type == "message")[0]
-          ?.content?.filter((res: any) => res.type == "output_text")[0]?.text;
+      const messageItem = response?.output?.find((res: any) => res.type === "message") as any;
+      const textItem = messageItem?.content?.find((res: any) => res.type === "output_text") as any;
+      output = textItem?.text;
     } catch (customError) {
       // Fall back to standard OpenAI chat completions
       console.log("Using standard OpenAI API ", customError);
