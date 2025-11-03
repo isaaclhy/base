@@ -91,7 +91,7 @@ export async function POST(
         // Fallback: use model without JSON mode and parse the response
         console.log("JSON mode not supported, using fallback");
         const response = await client.chat.completions.create({
-          model: "gpt-4", // Works without JSON mode
+          model: "gpt-4", // Works without JSON mode ed wd 
           messages: [
             {
               role: "system",
