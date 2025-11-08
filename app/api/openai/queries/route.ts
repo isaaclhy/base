@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { auth } from "@/auth";
+import { canGeneratePosts } from "@/lib/db/usage";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -31,6 +33,15 @@ export async function POST(
   request: NextRequest
 ): Promise<NextResponse<GenerateQueriesResponse>> {
   try {
+    const session = await auth();
+
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
     const body: RequestBody = await request.json();
     const { productIdea, postCount } = body;
 
@@ -44,13 +55,22 @@ export async function POST(
     // Default postCount to 10 if not provided
     const count = postCount || 10;
 
+    // Check if user can generate posts (check usage limit)
+    const canGenerate = await canGeneratePosts(session.user.email, count);
+    if (!canGenerate) {
+      return NextResponse.json(
+        { error: "Weekly limit reached. You have generated 200 posts this week. Please wait until next week." },
+        { status: 403 }
+      );
+    }
+
     // Call OpenAI API twice with different prompts
     const response1 = await (client as any).responses.create({
       prompt: {
         id: "pmpt_68ac40b0ef3481938b93b0880bd0f7140bf728d80740adbd",
         version: "3",
         variables: {
-          gpt_query_completion_count: String(Math.ceil(Math.sqrt(count))),
+          gpt_query_completion_count: String(Math.min(2,Math.ceil(Math.sqrt(count)))),
           productidea: productIdea,
         },
       },
@@ -61,7 +81,7 @@ export async function POST(
         id: "pmpt_68ac5dc5f3288194a0c30aa6ae7fdbfc0d4b07ecd77da901",
         version: "2",
         variables: {
-          gpt_query_completion_count: String(Math.ceil(Math.sqrt(count))),
+          gpt_query_completion_count: String(Math.min(2,Math.ceil(Math.sqrt(count)))),
           productidea: productIdea,
         },
       },

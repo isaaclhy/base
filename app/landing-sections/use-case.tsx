@@ -1,6 +1,57 @@
+"use client";
+
 import { CheckCircle2 } from "lucide-react";
+import { useState } from "react";
 
 export default function UseCase() {
+    const useCases = [
+        {
+            title: "Startups",
+            description:
+                "Launch faster with our intuitive tools. Perfect for teams that need to move quickly and iterate.",
+            features: ["Fast setup", "Flexible pricing", "Scales with you"],
+        },
+        {
+            title: "Enterprise",
+            description:
+                "Powerful features for large organizations. Advanced security, compliance, and dedicated support.",
+            features: ["Advanced security", "SSO integration", "Dedicated support"],
+        },
+        {
+            title: "Developers",
+            description:
+                "Built by developers, for developers. Extensive API, webhooks, and developer-friendly documentation.",
+            features: ["RESTful API", "Webhooks", "Comprehensive docs"],
+        },
+        {
+            title: "Design Teams",
+            description:
+                "Collaborate seamlessly on designs. Real-time editing, version control, and asset management.",
+            features: ["Real-time collaboration", "Version control", "Asset library"],
+        },
+        {
+            title: "Marketing Teams",
+            description:
+                "Create campaigns, track performance, and analyze results all in one place.",
+            features: ["Campaign builder", "Analytics dashboard", "A/B testing"],
+        },
+        {
+            title: "Remote Teams",
+            description:
+                "Stay connected and productive no matter where your team is located.",
+            features: ["Video conferencing", "Async communication", "Time zone tools"],
+        },
+    ];
+
+    const [textareaValues, setTextareaValues] = useState<Record<number, string>>({});
+
+    const handleTextareaChange = (index: number, value: string) => {
+        setTextareaValues((prev) => ({
+            ...prev,
+            [index]: value,
+        }));
+    };
+
     return (
         <section className="border-t border-border bg-muted/30 py-20">
             <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
@@ -11,50 +62,20 @@ export default function UseCase() {
                     </p>
                 </div>
                 <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-                    {[
-                        {
-                            title: "Startups",
-                            description:
-                                "Launch faster with our intuitive tools. Perfect for teams that need to move quickly and iterate.",
-                            features: ["Fast setup", "Flexible pricing", "Scales with you"],
-                        },
-                        {
-                            title: "Enterprise",
-                            description:
-                                "Powerful features for large organizations. Advanced security, compliance, and dedicated support.",
-                            features: ["Advanced security", "SSO integration", "Dedicated support"],
-                        },
-                        {
-                            title: "Developers",
-                            description:
-                                "Built by developers, for developers. Extensive API, webhooks, and developer-friendly documentation.",
-                            features: ["RESTful API", "Webhooks", "Comprehensive docs"],
-                        },
-                        {
-                            title: "Design Teams",
-                            description:
-                                "Collaborate seamlessly on designs. Real-time editing, version control, and asset management.",
-                            features: ["Real-time collaboration", "Version control", "Asset library"],
-                        },
-                        {
-                            title: "Marketing Teams",
-                            description:
-                                "Create campaigns, track performance, and analyze results all in one place.",
-                            features: ["Campaign builder", "Analytics dashboard", "A/B testing"],
-                        },
-                        {
-                            title: "Remote Teams",
-                            description:
-                                "Stay connected and productive no matter where your team is located.",
-                            features: ["Video conferencing", "Async communication", "Time zone tools"],
-                        },
-                    ].map((useCase, index) => (
+                    {useCases.map((useCase, index) => (
                         <div
                             key={index}
                             className="rounded-lg border border-border bg-card p-8"
                         >
                             <h3 className="mb-3 text-2xl font-semibold">{useCase.title}</h3>
                             <p className="mb-6 text-muted-foreground">{useCase.description}</p>
+                            <textarea
+                                value={textareaValues[index] || ""}
+                                onChange={(e) => handleTextareaChange(index, e.target.value)}
+                                placeholder="Add your notes here..."
+                                className="mb-6 w-full min-h-[100px] rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                                rows={4}
+                            />
                             <ul className="space-y-2">
                                 {useCase.features.map((feature, featureIndex) => (
                                     <li key={featureIndex} className="flex items-center gap-2">

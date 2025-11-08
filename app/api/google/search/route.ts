@@ -13,21 +13,39 @@ function isRedditPostUrl(url: string) {
 async function fetchGoogleCustomSearch(
   query: string,
   postCount: number
-): Promise<customsearch_v1.Schema$Search> {
-  const response = await customsearch.cse.list({
-    auth: process.env.GCS_KEY,
-    cx: "c691f007075074afc",
-    q: query,
-    num: Math.min(10, Math.ceil(Math.sqrt(postCount))),
-    dateRestrict: "d7",
-  });
+): Promise<customsearch_v1.Schema$Search[]> {
+  // Google Custom Search API allows max 10 results per request
+  // We need to make multiple requests if postCount > 10
+  const requestsNeeded = Math.ceil(postCount / 10);
+  const allResults: customsearch_v1.Schema$Search[] = [];
 
-  const results: customsearch_v1.Schema$Search = response.data;
-  if (!results) {
-    throw new Error("No data returned from Google Custom Search");
+  for (let i = 0; i < requestsNeeded; i++) {
+    const startIndex = i * 10 + 1; // Google API uses 1-based indexing
+    const num = Math.min(10, postCount - (i * 10)); // Number of results for this request
+    
+    const response = await customsearch.cse.list({
+      auth: process.env.GCS_KEY,
+      cx: "c691f007075074afc",
+      q: query,
+      num: num,
+      start: startIndex,
+      dateRestrict: "d7",
+    });
+
+    const results = response.data;
+    if (!results) {
+      throw new Error("No data returned from Google Custom Search");
+    }
+
+    allResults.push(results);
+    
+    // If we got fewer results than requested, we've reached the end
+    if (!results.items || results.items.length < num) {
+      break;
+    }
   }
 
-  return results;
+  return allResults;
 }
 
 type RedditSearchResult = {
@@ -48,12 +66,16 @@ export async function POST(
       return NextResponse.json({ error: "No query provided" }, { status: 400 });
     }
 
-    // Fetch Google search results
-    const googleData = await fetchGoogleCustomSearch(searchQuery, postCount);
-    console.log("GOOGLE DATA ", googleData);
+    // Fetch Google search results (may return multiple pages)
+    const googleDataArray = await fetchGoogleCustomSearch(searchQuery, postCount || 10);
+    console.log("GOOGLE DATA ", googleDataArray);
 
-    const results = (googleData.items || [])
+    // Combine all results from multiple pages
+    const allItems = googleDataArray.flatMap((googleData) => googleData.items || []);
+
+    const results = allItems
       .filter((data) => isRedditPostUrl(data.link ?? ""))
+      .slice(0, postCount || 10) // Limit to requested postCount
       .map((item) => ({
         title: item.title,
         link: item.link,

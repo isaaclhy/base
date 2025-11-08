@@ -25,6 +25,8 @@ export interface ChatTextareaProps
     onCallToActionChange?: (value: string) => void;
     persona?: string;
     onPersonaChange?: (value: string) => void;
+    postCount?: number;
+    onPostCountChange?: (value: number) => void;
     showInputs?: boolean;
     disableCallToAction?: boolean;
     disablePersona?: boolean;
@@ -53,6 +55,8 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
             onCallToActionChange,
             persona,
             onPersonaChange,
+            postCount = 10,
+            onPostCountChange,
             showInputs = true,
             disableCallToAction = false,
             disablePersona = false,
@@ -108,8 +112,10 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
         React.useEffect(() => {
             if (value !== undefined && value !== text) {
                 setText(typeof value === "string" ? value : "");
+                // Adjust height when value changes externally
+                setTimeout(() => adjustHeight(), 0);
             }
-        }, [value]);
+        }, [value, adjustHeight]);
 
         const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
             const newValue = e.target.value;
@@ -197,7 +203,7 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
                                         placeholder="https://reddit.com/r/..."
                                         value={redditPost || ""}
                                         onChange={(e) => onRedditPostChange?.(e.target.value)}
-                                        className="w-full"
+                                        className="w-full border-gray-400 dark:border-gray-500"
                                     />
                                 </div>
                             )}
@@ -208,7 +214,7 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
                                         placeholder="Enter your website URL"
                                         value={website || ""}
                                         onChange={(e) => onWebsiteChange?.(e.target.value)}
-                                        className="w-full sm:w-auto sm:min-w-[200px]"
+                                        className="w-full sm:w-auto sm:min-w-[200px] border-gray-400 dark:border-gray-500"
                                     />
                                 </div>
                                 <div className="flex flex-row gap-4 items-center w-fit sm:w-auto">
@@ -217,7 +223,7 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
                                             value={callToAction || ""}
                                             onChange={(e) => onCallToActionChange?.(e.target.value)}
                                             disabled={disableCallToAction}
-                                            className="w-full"
+                                            className="w-full border-gray-400 dark:border-gray-500"
                                         >
                                             <option value="try-it-out">Try It Out</option>
                                             <option value="join-waitlist">Join Waitlist</option>
@@ -229,18 +235,34 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
                                             value={persona || ""}
                                             onChange={(e) => onPersonaChange?.(e.target.value)}
                                             disabled={disablePersona}
-                                            className="w-full"
+                                            className="w-full border-gray-400 dark:border-gray-500"
                                         >
                                             <option value="founder">Founder</option>
                                             <option value="user">User</option>
                                         </Select>
                                     </div>
+                                    {onPostCountChange && (
+                                        <div className="w-auto">
+                                            <Input
+                                                type="number"
+                                                placeholder="Posts"
+                                                value={postCount || 10}
+                                                onChange={(e) => {
+                                                    const value = parseInt(e.target.value) || 10;
+                                                    onPostCountChange?.(Math.max(10, Math.min(100, value)));
+                                                }}
+                                                min={10}
+                                                max={100}
+                                                className="w-full sm:w-20 border-gray-400 dark:border-gray-500"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
                     </div>
                 )}
-                <div className="mx-4 mb-4 mt-1 flex flex-1 flex-col gap-2 rounded-lg bg-muted/30 p-2 min-h-0 border border-input">
+                <div className="mx-4 mb-4 mt-1 flex flex-1 flex-col gap-2 rounded-lg bg-muted/30 p-2 min-h-0 border border-gray-400 dark:border-gray-500">
                     <textarea
                         ref={textareaRef}
                         value={text}
@@ -263,20 +285,36 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
                                 <Select
                                     value={selectedIdea || ""}
                                     onChange={(e) => {
-                                        const value = e.target.value;
-                                        onIdeaSelect?.(value);
-                                        // If a valid idea is selected, populate the textarea
-                                        if (value && previousIdeas.includes(value)) {
-                                            setText(value);
-                                            onChange?.(value);
+                                        const selectedValue = e.target.value;
+                                        
+                                        // Update the selected idea state
+                                        onIdeaSelect?.(selectedValue);
+                                        
+                                        // If a valid idea is selected, autofill the textarea
+                                        if (selectedValue && previousIdeas.includes(selectedValue)) {
+                                            // Set the textarea content to the selected idea
+                                            setText(selectedValue);
+                                            // Notify parent component of the change
+                                            onChange?.(selectedValue);
+                                            // Trigger height adjustment to accommodate the text
+                                            setTimeout(() => {
+                                                adjustHeight();
+                                            }, 0);
+                                        } else if (selectedValue === "") {
+                                            // Clear the textarea when "Select previous idea..." is selected
+                                            setText("");
+                                            onChange?.("");
+                                            setTimeout(() => {
+                                                adjustHeight();
+                                            }, 0);
                                         }
                                     }}
-                                    className="w-full"
+                                    className="w-full border-gray-400 dark:border-gray-500"
                                 >
                                     <option value="">Select previous idea...</option>
                                     {previousIdeas.map((idea, index) => (
                                         <option key={index} value={idea}>
-                                            {idea}
+                                            {idea.length > 30 ? `${idea.substring(0, 30)}...` : idea}
                                         </option>
                                     ))}
                                 </Select>

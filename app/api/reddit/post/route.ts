@@ -1,19 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 
 interface RedditPostRequest {
-  postId: string;
+  postIds: string | string[]; // Accept single post ID or array of post IDs
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const { postId }: RedditPostRequest = await request.json();
+    const { postIds }: RedditPostRequest = await request.json();
 
-    if (!postId) {
+    if (!postIds) {
       return NextResponse.json(
-        { error: "postId is required" },
+        { error: "postIds is required" },
         { status: 400 }
       );
     }
+
+    // Normalize to array
+    const postIdArray = Array.isArray(postIds) ? postIds : [postIds];
+    
+    if (postIdArray.length === 0) {
+      return NextResponse.json(
+        { error: "At least one postId is required" },
+        { status: 400 }
+      );
+    }
+
+    // Reddit API accepts comma-separated post IDs
+    // Format: t3_postId1,t3_postId2,t3_postId3...
+    const postIdsString = postIdArray.join(',');
 
     // For now, using public API since we don't have auth setup
     // If you want to use OAuth, uncomment the auth section below and set up auth
@@ -31,7 +45,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Using public Reddit API for now
     // If you have OAuth setup, replace this with the OAuth endpoint
     const response = await fetch(
-      `https://www.reddit.com/api/info.json?id=${postId}`,
+      `https://www.reddit.com/api/info.json?id=${postIdsString}`,
       {
         headers: {
           "User-Agent": "reddit-comment-tool/0.1 by isaaclhy13",
@@ -40,24 +54,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     );
 
-    console.log("get posts: ", response);
-
     if (!response.ok) {
       return NextResponse.json(
-        { error: "Post not found" },
-        { status: 404 }
+        { error: `Failed to fetch posts: ${response.statusText}` },
+        { status: response.status }
       );
     }
 
     const data = await response.json();
-    console.log("DATTTTTTAAAA");
-    console.log(data);
 
     return NextResponse.json(data);
   } catch (err: unknown) {
-    console.error("Error fetching Reddit post:", err);
+    console.error("Error fetching Reddit posts:", err);
     return NextResponse.json(
-      { error: (err as Error).message || "Failed to fetch Reddit post" },
+      { error: (err as Error).message || "Failed to fetch Reddit posts" },
       { status: 500 }
     );
   }

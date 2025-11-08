@@ -12,6 +12,8 @@ import {
   Menu,
   X,
 } from "lucide-react";
+import { UserInfoCard } from "@/components/auth/user-info-card";
+import { UsageProgress } from "@/components/usage/usage-progress";
 
 interface PlaygroundLayoutProps {
   children: React.ReactNode;
@@ -23,10 +25,12 @@ const PlaygroundTabContext = createContext<{
   activeTab: TabId;
   setActiveTab: (tab: TabId) => void;
   sidebarOpen: boolean;
+  refreshUsage: () => void;
 }>({
   activeTab: "dashboard",
   setActiveTab: () => {},
   sidebarOpen: true,
+  refreshUsage: () => {},
 });
 
 export function usePlaygroundTab() {
@@ -37,6 +41,11 @@ export function usePlaygroundTab() {
 export function usePlaygroundSidebar() {
   const context = useContext(PlaygroundTabContext);
   return context.sidebarOpen;
+}
+
+export function useRefreshUsage() {
+  const context = useContext(PlaygroundTabContext);
+  return context.refreshUsage;
 }
 
 interface Tab {
@@ -57,6 +66,11 @@ export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+
+  const refreshUsage = () => {
+    // Dispatch custom event to refresh usage
+    window.dispatchEvent(new Event("refreshUsage"));
+  };
 
   useEffect(() => {
     const checkScreenSize = () => {
@@ -87,13 +101,13 @@ export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
   const isSidebarVisible = !isMobile || sidebarOpen;
 
   return (
-    <PlaygroundTabContext.Provider value={{ activeTab, setActiveTab, sidebarOpen: isSidebarVisible }}>
+    <PlaygroundTabContext.Provider value={{ activeTab, setActiveTab, sidebarOpen: isSidebarVisible, refreshUsage }}>
       <div className="flex h-screen overflow-hidden bg-background">
       {/* Sidebar */}
       <aside
         className={cn(
           "flex flex-col border-r border-border bg-card transition-all duration-300 ease-in-out",
-          isSidebarVisible ? "w-64" : "w-0 overflow-hidden"
+          isSidebarVisible ? "w-56" : "w-0 overflow-hidden"
         )}
       >
         {/* Sidebar Header */}
@@ -116,26 +130,32 @@ export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
 
         {/* Sidebar Navigation */}
         {isSidebarVisible && (
-          <nav className="flex-1 space-y-1 overflow-y-auto p-4">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors",
-                    activeTab === tab.id
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  )}
-                >
-                  <Icon className="h-5 w-5" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+          <>
+            <nav className="flex-1 space-y-1 overflow-y-auto p-4">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors",
+                      activeTab === tab.id
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    )}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+            {/* Usage Progress */}
+            <UsageProgress />
+            {/* User Info Card at Bottom */}
+            <UserInfoCard />
+          </>
         )}
       </aside>
 
