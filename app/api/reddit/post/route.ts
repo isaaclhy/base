@@ -83,6 +83,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     // Build headers with OAuth if available
+    // Note: Use public API endpoint even with OAuth token, as oauth.reddit.com can be more restrictive
     const headers: Record<string, string> = {
       "User-Agent": "web:comment-tool:0.1 (by /u/isaaclhy13)",
       Accept: "application/json",
@@ -92,10 +93,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       headers["Authorization"] = `Bearer ${accessToken}`;
     }
 
-    // In production, always use OAuth endpoint. In development, fall back to public API if needed
-    const apiUrl = accessToken 
-      ? `https://oauth.reddit.com/api/info.json?id=${postIdsString}`
-      : `https://www.reddit.com/api/info.json?id=${postIdsString}`;
+    // Use public API endpoint even with OAuth token
+    // The public endpoint accepts OAuth tokens and is less restrictive than oauth.reddit.com
+    const apiUrl = `https://www.reddit.com/api/info.json?id=${postIdsString}`;
 
     const response = await fetch(apiUrl, {
       headers,

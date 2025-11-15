@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
       `&state=${state}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&duration=permanent` + // Request permanent access (refresh token)
-      `&scope=submit,identity` // Scopes needed: submit (for posting), identity (for user info)
+      `&scope=read,submit,identity` // Scopes needed: read (for fetching posts), submit (for posting), identity (for user info)
     );
 
     // Store state in httpOnly cookie for verification
