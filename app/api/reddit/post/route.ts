@@ -19,7 +19,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Normalize to array
     const postIdArray = Array.isArray(postIds) ? postIds : [postIds];
-    
+
     if (postIdArray.length === 0) {
       return NextResponse.json(
         { error: "At least one postId is required" },
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Check for session (required)
     const session = await auth();
-    
+
     if (!session) {
       return NextResponse.json(
         { error: "Missing session" },
@@ -54,11 +54,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Always use OAuth endpoint with token
     const response = await fetch(`https://oauth.reddit.com/api/info.json?id=${postIdsString}`, {
       headers: {
-        'User-Agent': 'comment-tool/0.1 by isaaclhy13',
+        'User-Agent': 'reddit-comment-tool/0.1 by isaaclhy13',
         'Accept': 'application/json',
         "Authorization": `Bearer ${access_token}`,
-      },
-      cache: 'no-store',
+      }
     });
 
     // Log full response details for debugging
@@ -68,13 +67,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       postIds: postIdsString,
       hasAccessToken: !!access_token,
     });
-    
+
     console.log(`[Reddit API] Response Status:`, {
       status: response.status,
       statusText: response.statusText,
       ok: response.ok,
     });
-    
+
     console.log(`[Reddit API] Response Headers:`, {
       contentType: response.headers.get('content-type'),
       contentLength: response.headers.get('content-length'),
@@ -92,9 +91,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         postIds: postIdsString,
         responseBody: errorText,
       });
-      
+
       return NextResponse.json(
-        { 
+        {
           error: response.status === 404 ? 'Post not found' : `Failed to fetch posts: ${response.statusText}`,
           details: errorText
         },
@@ -103,7 +102,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const data = await response.json();
-    
+
     // Log successful response for debugging
     console.log(`[Reddit API] Success Response:`, {
       dataKeys: Object.keys(data || {}),
