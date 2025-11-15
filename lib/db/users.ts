@@ -1,7 +1,7 @@
 import { getDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 
-export type UserPlan = "free" | "pro" | "enterprise";
+export type UserPlan = "free" | "premium";
 
 export interface User {
   _id?: ObjectId;
@@ -17,6 +17,11 @@ export interface User {
   redditAccessToken?: string;
   redditRefreshToken?: string;
   redditTokenExpiresAt?: Date;
+  // Stripe billing fields
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripePriceId?: string | null;
+  subscriptionStatus?: string | null;
 }
 
 export async function createOrUpdateUser(userData: {
@@ -141,5 +146,101 @@ export async function updateUserRedditTokens(
   }
 
   return updatedUser as User;
+}
+
+export async function updateUserPlanByEmail(
+  email: string,
+  plan: UserPlan,
+  options?: {
+    stripeCustomerId?: string | null;
+    stripeSubscriptionId?: string | null;
+    stripePriceId?: string | null;
+    subscriptionStatus?: string | null;
+  }
+): Promise<User | null> {
+  const db = await getDatabase();
+  const usersCollection = db.collection<User>('usersv2');
+
+  const update: Partial<User> = {
+    plan,
+    updatedAt: new Date(),
+  };
+
+  if (options) {
+    if (options.stripeCustomerId !== undefined) {
+      update.stripeCustomerId = options.stripeCustomerId;
+    }
+    if (options.stripeSubscriptionId !== undefined) {
+      update.stripeSubscriptionId = options.stripeSubscriptionId;
+    }
+    if (options.stripePriceId !== undefined) {
+      update.stripePriceId = options.stripePriceId;
+    }
+    if (options.subscriptionStatus !== undefined) {
+      update.subscriptionStatus = options.subscriptionStatus;
+    }
+  }
+
+  const result = await usersCollection.findOneAndUpdate(
+    { email },
+    { $set: update },
+    { returnDocument: "after" }
+  );
+
+  return result as User | null;
+}
+
+export async function updateUserPlanByCustomerId(
+  stripeCustomerId: string,
+  plan: UserPlan,
+  options?: {
+    stripeSubscriptionId?: string | null;
+    stripePriceId?: string | null;
+    subscriptionStatus?: string | null;
+    emailFallback?: string;
+  }
+): Promise<User | null> {
+  const db = await getDatabase();
+  const usersCollection = db.collection<User>('usersv2');
+
+  const update: Partial<User> = {
+    plan,
+    updatedAt: new Date(),
+    stripeCustomerId,
+  };
+
+  if (options) {
+    if (options.stripeSubscriptionId !== undefined) {
+      update.stripeSubscriptionId = options.stripeSubscriptionId;
+    }
+    if (options.stripePriceId !== undefined) {
+      update.stripePriceId = options.stripePriceId;
+    }
+    if (options.subscriptionStatus !== undefined) {
+      update.subscriptionStatus = options.subscriptionStatus;
+    }
+  }
+
+  let result = await usersCollection.findOneAndUpdate(
+    { stripeCustomerId },
+    { $set: update },
+    { returnDocument: "after" }
+  );
+
+  if (!result && options?.emailFallback) {
+    result = await usersCollection.findOneAndUpdate(
+      { email: options.emailFallback },
+      { $set: update },
+      { returnDocument: "after" }
+    );
+  }
+
+  return result as User | null;
+}
+ 
+export async function getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | null> {
+  const db = await getDatabase();
+  const usersCollection = db.collection<User>('usersv2');
+  return usersCollection.findOne({ stripeCustomerId });
 }
 

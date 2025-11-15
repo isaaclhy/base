@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { ExternalLink, X, Loader2 } from "lucide-react";
+import { ExternalLink, X, Loader2, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatTextarea } from "@/components/ui/chat-textarea";
 import PlaygroundLayout, { usePlaygroundTab, usePlaygroundSidebar, useRefreshUsage } from "@/components/playground-layout";
 import { RedditPost } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 const normalizeUrl = (url: string): string => {
   return url
@@ -24,6 +25,9 @@ const extractThingIdFromLink = (link: string): string | null => {
 };
 
 function PlaygroundContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const activeTab = usePlaygroundTab();
   const sidebarOpen = usePlaygroundSidebar();
   const refreshUsage = useRefreshUsage();
@@ -41,7 +45,9 @@ function PlaygroundContent() {
   const [error, setError] = useState<string | null>(null);
   const [expandedPosts, setExpandedPosts] = useState<Set<string>>(new Set());
   const [postTextareas, setPostTextareas] = useState<Record<string, string>>({});
+  const postTextareasRef = useRef<Record<string, string>>({});
   const [currentProductIdea, setCurrentProductIdea] = useState<string>("");
+  const [submittedProductIdea, setSubmittedProductIdea] = useState<string>("");
   const [isGeneratingComment, setIsGeneratingComment] = useState<Record<string, boolean>>({});
   const [isPosting, setIsPosting] = useState<Record<string, boolean>>({});
   const [hasRedditToken, setHasRedditToken] = useState<boolean | null>(null); // null = checking, true = has token, false = no token
@@ -50,6 +56,9 @@ function PlaygroundContent() {
   const [toast, setToast] = useState<{ visible: boolean; message: string; link?: string | null; variant?: "success" | "error" } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showCheckoutSuccessModal, setShowCheckoutSuccessModal] = useState(false);
+  const generatedCommentUrlsRef = useRef<Set<string>>(new Set());
+  const generatingCommentUrlsRef = useRef<Set<string>>(new Set());
   
   const hideToast = () => {
     if (toastTimerRef.current) {
@@ -87,6 +96,10 @@ function PlaygroundContent() {
   };
   
   useEffect(() => {
+    postTextareasRef.current = postTextareas;
+  }, [postTextareas]);
+
+  useEffect(() => {
     return () => {
       if (toastTimerRef.current) {
         clearTimeout(toastTimerRef.current);
@@ -119,6 +132,7 @@ function PlaygroundContent() {
   const [analyticsPosts, setAnalyticsPosts] = useState<AnalyticsPost[]>([]);
   const [analyticsFilter, setAnalyticsFilter] = useState<"posted" | "skipped" | "failed">("posted");
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(true);
+  const [analyticsPage, setAnalyticsPage] = useState(1);
 
   const analyticsUrlSet = useMemo(() => {
     const set = new Set<string>();
@@ -133,6 +147,10 @@ function PlaygroundContent() {
   const filteredAnalyticsPosts = useMemo(() => {
     return analyticsPosts.filter((post) => post.status === analyticsFilter);
   }, [analyticsPosts, analyticsFilter]);
+
+  useEffect(() => {
+    setAnalyticsPage(1);
+  }, [analyticsFilter]);
 
   const [selectedAnalyticsPost, setSelectedAnalyticsPost] = useState<AnalyticsPost | null>(null);
   const [isAnalyticsDrawerVisible, setIsAnalyticsDrawerVisible] = useState(false);
@@ -349,6 +367,7 @@ function PlaygroundContent() {
 
     // Store the current product idea
     setCurrentProductIdea(message.trim());
+    setSubmittedProductIdea(message.trim());
 
     setIsLoading(true);
     setError(null);
@@ -526,6 +545,29 @@ function PlaygroundContent() {
       console.error("Error caching post:", e);
     }
   };
+
+const getCommentCacheKey = (url: string, idea: string) =>
+  `${normalizeUrl(url)}::${idea}`;
+
+const getCachedComment = (url: string, idea: string): string | null => {
+  try {
+    const cacheKey = getCommentCacheKey(url, idea);
+    const cached = localStorage.getItem(`redditComment_${cacheKey}`);
+    return cached ?? null;
+  } catch (e) {
+    console.error("Error reading cached comment:", e);
+    return null;
+  }
+};
+
+const cacheComment = (url: string, idea: string, comment: string) => {
+  try {
+    const cacheKey = getCommentCacheKey(url, idea);
+    localStorage.setItem(`redditComment_${cacheKey}`, comment);
+  } catch (e) {
+    console.error("Error caching comment:", e);
+  }
+};
 
   // Batch fetch post content for ALL queries at once
   const batchFetchAllPostContent = async () => {
@@ -1148,65 +1190,127 @@ function PlaygroundContent() {
     }
   };
   
+  const generateCommentForLink = useCallback(
+    async (
+      linkItem: {
+        uniqueKey: string;
+        query: string;
+        title?: string | null;
+        link?: string | null;
+        snippet?: string | null;
+        selftext?: string | null;
+        postData?: RedditPost | null;
+      },
+      options?: { force?: boolean; showAlerts?: boolean }
+    ) => {
+      const { force = false, showAlerts = false } = options || {};
+      const linkKey = linkItem.uniqueKey;
+      const ideaToUse = submittedProductIdea || currentProductIdea;
+
+      if (!ideaToUse || !website) {
+        if (showAlerts) {
+          alert("Please enter a product idea and website URL first.");
+        }
+        return;
+      }
+
+      const postContent =
+        linkItem.selftext || linkItem.snippet || linkItem.title || "";
+      if (!postContent) {
+        if (showAlerts) {
+          alert("No post content available.");
+        }
+        return;
+      }
+
+      const normalizedUrl = linkItem.link
+        ? normalizeUrl(linkItem.link)
+        : null;
+      const commentKey =
+        normalizedUrl && ideaToUse
+          ? `${normalizedUrl}::${ideaToUse}`
+          : null;
+
+      if (normalizedUrl) {
+        if (!force) {
+          if (
+            (commentKey &&
+              (generatedCommentUrlsRef.current.has(commentKey) ||
+                generatingCommentUrlsRef.current.has(commentKey)))
+          ) {
+            return;
+          }
+        } else {
+          if (commentKey) {
+            generatedCommentUrlsRef.current.delete(commentKey);
+          }
+        }
+        if (commentKey) {
+          generatingCommentUrlsRef.current.add(commentKey);
+        }
+      }
+
+      setIsGeneratingComment((prev) => ({ ...prev, [linkKey]: true }));
+
+      try {
+        const response = await fetch("/api/openai/comment", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            productIdea: ideaToUse,
+            productLink: website,
+            postContent: postContent,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to generate comment");
+        }
+
+        const data = await response.json();
+
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
+        if (data.comments && data.comments.length > 0) {
+          const generatedComment = data.comments.join("\n\n");
+          setPostTextareas((prev) => ({
+            ...prev,
+            [linkKey]: generatedComment,
+          }));
+          if (commentKey) {
+            generatedCommentUrlsRef.current.add(commentKey);
+          }
+          if (linkItem.link) {
+            cacheComment(linkItem.link, ideaToUse, generatedComment);
+          }
+        } else if (showAlerts) {
+          alert("No comments generated. Please try again.");
+        }
+      } catch (err) {
+        console.error("Error generating comment:", err);
+        if (showAlerts) {
+          alert(
+            err instanceof Error ? err.message : "Failed to generate comment"
+          );
+        }
+      } finally {
+        setIsGeneratingComment((prev) => ({ ...prev, [linkKey]: false }));
+        if (commentKey) {
+          generatingCommentUrlsRef.current.delete(commentKey);
+        }
+      }
+    },
+    [currentProductIdea, submittedProductIdea, website]
+  );
+
   // Handler for Generate Comment button
   const handleGenerateComment = async (linkItem: { uniqueKey: string; query: string; title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }) => {
-    const linkKey = linkItem.uniqueKey;
-    
-    // Check if we have required data
-    if (!currentProductIdea || !website) {
-      alert("Please enter a product idea and website URL first.");
-      return;
-    }
-
-    const postContent = linkItem.selftext || linkItem.snippet || linkItem.title || "";
-    if (!postContent) {
-      alert("No post content available.");
-      return;
-    }
-
-    // Set loading state for this specific post
-    setIsGeneratingComment((prev) => ({ ...prev, [linkKey]: true }));
-
-    try {
-      const response = await fetch("/api/openai/comment", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          productIdea: currentProductIdea,
-          productLink: website,
-          postContent: postContent,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to generate comment");
-      }
-
-      const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      if (data.comments && data.comments.length > 0) {
-        // Use the first generated comment (or join all if multiple)
-        const generatedComment = data.comments.join("\n\n");
-        setPostTextareas((prev) => ({
-          ...prev,
-          [linkKey]: generatedComment,
-        }));
-      } else {
-        alert("No comments generated. Please try again.");
-      }
-    } catch (err) {
-      console.error("Error generating comment:", err);
-      alert(err instanceof Error ? err.message : "Failed to generate comment");
-    } finally {
-      setIsGeneratingComment((prev) => ({ ...prev, [linkKey]: false }));
-    }
+    await generateCommentForLink(linkItem, { force: true, showAlerts: true });
   };
 
   // Handler for Skip button
@@ -1304,48 +1408,142 @@ function PlaygroundContent() {
     });
   };
 
-  // Calculate filtered distinct links count (matching display logic)
-  const distinctLinksCount = useMemo(() => {
-    // Get all links with query information
+  const distinctLinks = useMemo(() => {
     let globalIndex = 0;
     const allLinksWithQuery = Object.entries(redditLinks)
       .reverse()
-      .flatMap(([query, links]) => 
+      .flatMap(([query, links]) =>
         [...links].reverse().map((link, linkIndex) => {
-          const uniqueKey = `${query}-${link.link || 'no-link'}-${linkIndex}-${globalIndex++}`;
-          return {
+          const uniqueKey = `${query}-${link.link || "no-link"}-${linkIndex}-${globalIndex}`;
+          const item = {
             ...link,
             query,
             linkIndex,
-            uniqueKey
+            uniqueKey,
+            order: globalIndex,
+          } as typeof link & {
+            query: string;
+            linkIndex: number;
+            uniqueKey: string;
+            order: number;
           };
+          globalIndex += 1;
+          return item;
         })
       );
-    
-    // Filter to get distinct links (same logic as display)
-    const seenUrls = new Set<string>();
-    const distinctLinks = allLinksWithQuery.filter((linkItem) => {
-      if (!linkItem.link) {
-        return false;
+
+    const sortedLinks = [...allLinksWithQuery].sort((a, b) => {
+      const timeA =
+        typeof a.postData?.created_utc === "number"
+          ? a.postData.created_utc
+          : -Infinity;
+      const timeB =
+        typeof b.postData?.created_utc === "number"
+          ? b.postData.created_utc
+          : -Infinity;
+      if (timeA !== timeB) {
+        return timeB - timeA;
       }
-      
-      const normalizedUrl = normalizeUrl(linkItem.link);
-      
-      // Skip posts that have already been posted/skipped
-      if (analyticsUrlSet.has(normalizedUrl)) {
-        return false;
-      }
-      
-      if (seenUrls.has(normalizedUrl)) {
-        return false; // Duplicate
-      }
-      
-      seenUrls.add(normalizedUrl);
-      return true;
+      return a.order - b.order;
     });
-    
-    return distinctLinks.length;
+
+    const seenUrls = new Set<string>();
+    const results: Array<(typeof sortedLinks)[number]> = [];
+
+    for (const linkItem of sortedLinks) {
+      if (!linkItem.link) {
+        continue;
+      }
+
+      const normalizedUrl = normalizeUrl(linkItem.link);
+      if (analyticsUrlSet.has(normalizedUrl)) {
+        continue;
+      }
+
+      if (seenUrls.has(normalizedUrl)) {
+        continue;
+      }
+
+      seenUrls.add(normalizedUrl);
+      results.push(linkItem);
+    }
+
+    return results;
   }, [redditLinks, analyticsUrlSet]);
+
+  const distinctLinksCount = distinctLinks.length;
+
+  useEffect(() => {
+    if (!submittedProductIdea || !website) {
+      return;
+    }
+
+    if (distinctLinks.length === 0) {
+      return;
+    }
+
+    const cachedEntries: Record<string, string> = {};
+    const linksToGenerate: typeof distinctLinks = [];
+
+    for (const link of distinctLinks) {
+      if (!link.link) {
+        continue;
+      }
+      const normalizedUrl = normalizeUrl(link.link);
+      const commentKey = getCommentCacheKey(link.link, submittedProductIdea);
+      const cachedComment = getCachedComment(link.link, submittedProductIdea);
+
+      if (cachedComment) {
+        cachedEntries[link.uniqueKey] = cachedComment;
+        generatedCommentUrlsRef.current.add(commentKey);
+        continue;
+      }
+
+      if (generatedCommentUrlsRef.current.has(commentKey)) {
+        continue;
+      }
+      if (generatingCommentUrlsRef.current.has(commentKey)) {
+        continue;
+      }
+
+      if (postTextareasRef.current[link.uniqueKey]?.trim().length) {
+        continue;
+      }
+
+      linksToGenerate.push(link);
+    }
+
+    if (Object.keys(cachedEntries).length > 0) {
+      setPostTextareas((prev) => {
+        const updated = { ...prev };
+        for (const [key, value] of Object.entries(cachedEntries)) {
+          if (!updated[key]) {
+            updated[key] = value;
+          }
+        }
+        return updated;
+      });
+    }
+
+    if (linksToGenerate.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      for (const link of linksToGenerate) {
+        if (cancelled) {
+          break;
+        }
+        await generateCommentForLink(link);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [distinctLinks, submittedProductIdea, website, generateCommentForLink]);
 
   // Helper function to format timestamp as relative time
   const formatTimeAgo = (timestampUtc: number | undefined | null): string => {
@@ -1380,43 +1578,56 @@ function PlaygroundContent() {
     }
   };
 
+  const handleRemoveAllPosts = () => {
+    setRedditLinks(() => {
+      localStorage.removeItem("redditLinks");
+      return {};
+    });
+    generatedCommentUrlsRef.current.clear();
+    generatingCommentUrlsRef.current.clear();
+    setResults([]);
+    localStorage.removeItem("savedQueries");
+    setPostTextareas({});
+    setExpandedPosts(new Set());
+    setIsLoadingLinks({});
+    setIsLoadingPostContent({});
+    setIsGeneratingComment({});
+    setIsPosting({});
+    postTextareasRef.current = {};
+    showToast("All posts have been cleared", { variant: "success" });
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case "analytics":
         return (
           <div className={cn(
-            "flex-1 overflow-y-auto p-6",
+            "flex-1 overflow-y-auto px-2 py-4 sm:px-3",
             !sidebarOpen && "pl-14 pt-14"
           )}>
-            <div className="space-y-6">
-              <div>
-                <h2 className="mb-4 text-2xl font-semibold">Analytics</h2>
-                <p className="text-sm text-muted-foreground mb-6">
-                  Track your posted and skipped Reddit posts
-                </p>
-                <div className="mb-6 flex gap-2">
-                  <Button
-                    variant={analyticsFilter === "posted" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setAnalyticsFilter("posted")}
-                  >
-                    Active
-                  </Button>
-                  <Button
-                    variant={analyticsFilter === "skipped" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setAnalyticsFilter("skipped")}
-                  >
-                    Skipped
-                  </Button>
-                  <Button
-                    variant={analyticsFilter === "failed" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setAnalyticsFilter("failed")}
-                  >
-                    Failed
-                  </Button>
-                </div>
+            <div className="flex h-full flex-col gap-2">
+              <div className="flex gap-1.5">
+                <Button
+                  variant={analyticsFilter === "posted" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setAnalyticsFilter("posted")}
+                >
+                  Active
+                </Button>
+                <Button
+                  variant={analyticsFilter === "skipped" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setAnalyticsFilter("skipped")}
+                >
+                  Skipped
+                </Button>
+                <Button
+                  variant={analyticsFilter === "failed" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setAnalyticsFilter("failed")}
+                >
+                  Failed
+                </Button>
               </div>
               
               {isLoadingAnalytics ? (
@@ -1437,89 +1648,111 @@ function PlaygroundContent() {
                   </p>
                 </div>
               ) : (
-                <div className="rounded-lg border border-border bg-card overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-muted/50">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Title</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Query</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Post Link</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Posted At</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Notes</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {[...filteredAnalyticsPosts]
-                          .sort((a, b) => (b.postedAt || 0) - (a.postedAt || 0))
-                          .map((post, index) => (
-                          <tr
-                            key={post.id || post.uniqueKey || index}
-                            className={cn(
-                              "hover:bg-muted/30",
-                              (analyticsFilter === "skipped" || analyticsFilter === "failed") && "cursor-pointer"
-                            )}
-                            onClick={() => {
-                              if (analyticsFilter === "skipped" || analyticsFilter === "failed") {
-                                openAnalyticsDrawer(post);
-                              }
-                            }}
-                          >
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              <span
-                                className={cn(
-                                  "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
-                                  post.status === "posted"
-                                    ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                                    : post.status === "failed"
-                                    ? "bg-destructive/20 text-destructive"
-                                    : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
-                                )}
-                              >
-                                {post.status === "posted" ? "Posted" : post.status === "failed" ? "Failed" : "Skipped"}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="text-sm font-medium text-foreground max-w-md truncate" title={post.title || ""}>
-                                {post.title || "No title"}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              <div className="text-sm text-muted-foreground max-w-xs truncate" title={post.query}>
-                                {post.query}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              {post.link ? (
-                                <a
-                                  href={post.link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-                                  onClick={(e) => e.stopPropagation()}
+                (() => {
+                  const PAGE_SIZE = 30;
+                  const isSkippedView = analyticsFilter === "skipped";
+                  const totalItems = filteredAnalyticsPosts.length;
+                  const totalPages = isSkippedView ? Math.max(1, Math.ceil(totalItems / PAGE_SIZE)) : 1;
+                  const currentPage = isSkippedView ? Math.min(analyticsPage, totalPages) : 1;
+                  const startIdx = isSkippedView ? (currentPage - 1) * PAGE_SIZE : 0;
+                  const endIdx = isSkippedView ? startIdx + PAGE_SIZE : filteredAnalyticsPosts.length;
+                  const pageItems = filteredAnalyticsPosts.slice(startIdx, endIdx);
+
+                  return (
+                    <div className="flex-1 min-h-0">
+                      <div className="flex h-full flex-col rounded-lg border border-border bg-card overflow-hidden">
+                        <div className="max-h-[65vh] flex-1 overflow-x-auto overflow-y-auto">
+                          <table className="min-w-full">
+                            <thead className="bg-muted/50">
+                              <tr>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Title</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Query</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Updated</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Post</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {pageItems.map((post) => (
+                                <tr
+                                  key={post.id || post.uniqueKey}
+                                  className="cursor-pointer transition hover:bg-muted/40"
+                                  onClick={() => openAnalyticsDrawer(post)}
                                 >
-                                  <span>View</span>
-                                  <ExternalLink className="h-3 w-3" />
-                                </a>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">No link</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-muted-foreground">
-                              {new Date(post.postedAt).toLocaleString()}
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="text-sm text-muted-foreground max-w-xs truncate" title={post.notes || ""}>
-                                {post.notes || "-"}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                                  <td className="px-4 py-3">
+                                    <span
+                                      className={cn(
+                                        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize",
+                                        post.status === "posted" && "bg-emerald-500/10 text-emerald-500",
+                                        post.status === "skipped" && "bg-amber-500/10 text-amber-600",
+                                        post.status === "failed" && "bg-red-500/10 text-red-500"
+                                      )}
+                                    >
+                                      {post.status}
+                                    </span>
+                                  </td>
+                                  <td className="max-w-sm px-4 py-3 text-sm font-medium text-foreground">
+                                    <div className="truncate" title={post.title || "Untitled post"}>
+                                      {post.title || "Untitled post"}
+                                    </div>
+                                  </td>
+                                  <td className="max-w-xs px-4 py-3 text-sm text-muted-foreground">
+                                    <div className="line-clamp-2">{post.query}</div>
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-muted-foreground">
+                                    {new Date(post.postedAt).toLocaleDateString()}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {post.link ? (
+                                      <a
+                                        href={post.link}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-sm font-medium text-primary hover:underline"
+                                      >
+                                        Link
+                                      </a>
+                                    ) : (
+                                      <span className="text-sm text-muted-foreground">-</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {isSkippedView && totalItems > PAGE_SIZE && (
+                          <div className="flex flex-col gap-3 border-t border-border bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                            <span className="text-xs text-muted-foreground">
+                              Showing {startIdx + 1}-{Math.min(endIdx, totalItems)} of {totalItems}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setAnalyticsPage((prev) => Math.max(1, prev - 1))}
+                                disabled={currentPage === 1}
+                              >
+                                Previous
+                              </Button>
+                              <span className="text-xs text-muted-foreground">
+                                Page {currentPage} of {totalPages}
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setAnalyticsPage((prev) => Math.min(totalPages, prev + 1))}
+                                disabled={currentPage === totalPages}
+                              >
+                                Next
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()
               )}
             </div>
           </div>
@@ -1610,14 +1843,25 @@ function PlaygroundContent() {
 
                 {results.length > 0 && (
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold">
-                      Reddit Posts
-                      {distinctLinksCount > 0 && (
-                        <span className="ml-2 text-sm font-normal text-muted-foreground">
-                          ({distinctLinksCount} found)
-                        </span>
-                      )}
-                    </h3>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <h3 className="text-lg font-semibold">
+                        Reddit Posts
+                        {distinctLinksCount > 0 && (
+                          <span className="ml-2 text-sm font-normal text-muted-foreground">
+                            ({distinctLinksCount} found)
+                          </span>
+                        )}
+                      </h3>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRemoveAllPosts}
+                        disabled={distinctLinksCount === 0 && !Object.values(isLoadingLinks).some(Boolean)}
+                        className="self-start sm:self-auto"
+                      >
+                        Remove all posts
+                      </Button>
+                    </div>
                     
                     {/* Show loading state if any query is still loading */}
                     {Object.values(isLoadingLinks).some(Boolean) && (
@@ -1628,58 +1872,16 @@ function PlaygroundContent() {
                     )}
                     
                     {/* Flatten all Reddit links and display in grid - newest first */}
-                    {(() => {
-                      // Get all links in reverse order (newest queries first, and within each query, reverse results)
-                      // Include query information to create unique keys
-                      let globalIndex = 0;
-                      const allLinksWithQuery = Object.entries(redditLinks)
-                        .reverse() // Reverse query order (newest queries first)
-                        .flatMap(([query, links]) => 
-                          [...links].reverse().map((link, linkIndex) => {
-                            // Create a truly unique key using query + link URL + index within query
-                            const uniqueKey = `${query}-${link.link || 'no-link'}-${linkIndex}-${globalIndex++}`;
-                            return {
-                              ...link,
-                              query,
-                              linkIndex,
-                              uniqueKey
-                            };
-                          })
-                        );
-                      
-                      // Filter to show only distinct posts (by URL), keeping the first occurrence (newest)
-                      // Also filter out posts that have already been posted/skipped
-                      const seenUrls = new Set<string>();
-                      const distinctLinks = allLinksWithQuery.filter((linkItem) => {
-                        if (!linkItem.link) {
-                          return false; // Skip links without URLs
-                        }
-                        
-                        // Normalize URL for comparison
-                        const normalizedUrl = normalizeUrl(linkItem.link);
-                        
-                        if (analyticsUrlSet.has(normalizedUrl)) {
-                          return false;
-                        }
-                        
-                        if (seenUrls.has(normalizedUrl)) {
-                          return false; // Duplicate
-                        }
-                        
-                        seenUrls.add(normalizedUrl);
-                        return true;
-                      });
-                      
-                      return distinctLinks.length > 0 ? (
-                        <div className="grid gap-4 md:grid-cols-2">
-                          {distinctLinks.map((linkItem) => {
+                    {distinctLinks.length > 0 ? (
+                      <div className="grid gap-4 md:grid-cols-2">
+                        {distinctLinks.map((linkItem) => {
+                          const link = linkItem;
                             // Extract subreddit from URL
                             const subredditMatch = linkItem.link?.match(/reddit\.com\/r\/([^/]+)/);
                             const subreddit = subredditMatch ? subredditMatch[1] : null;
                             // Use unique key that includes query to avoid duplicates
                             const linkKey = linkItem.uniqueKey;
                             const isExpanded = expandedPosts.has(linkKey);
-                            const link = linkItem;
                           
                           // Clean snippet
                           let cleanSnippet = link.snippet || '';
@@ -1844,15 +2046,14 @@ function PlaygroundContent() {
                             </div>
                           );
                         })}
-                        </div>
-                      ) : (
-                        !Object.values(isLoadingLinks).some(Boolean) && (
-                          <p className="text-sm text-muted-foreground">
-                            No Reddit posts found yet. Searching...
-                          </p>
-                        )
-                      );
-                    })()}
+                      </div>
+                    ) : (
+                      !Object.values(isLoadingLinks).some(Boolean) && (
+                        <p className="text-sm text-muted-foreground">
+                          No Reddit posts found yet. Searching...
+                        </p>
+                      )
+                    )}
                   </div>
                 )}
               </div>
@@ -1877,62 +2078,6 @@ function PlaygroundContent() {
                 onIdeaSelect={setSelectedIdea}
                 selectedIdea={selectedIdea}
               />
-            </div>
-          </div>
-        );
-      case "analytics":
-        return (
-          <div className="space-y-6">
-            <div>
-              <h2 className="mb-2 text-xl font-semibold">Analytics</h2>
-              <p className="text-muted-foreground">
-                Track your performance and engagement metrics.
-              </p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-6">
-              <p className="text-muted-foreground">Analytics data will be displayed here.</p>
-            </div>
-          </div>
-        );
-      case "content":
-        return (
-          <div className="space-y-6">
-            <div>
-              <h2 className="mb-2 text-xl font-semibold">Content</h2>
-              <p className="text-muted-foreground">
-                Manage your generated content and posts.
-              </p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-6">
-              <p className="text-muted-foreground">Content management interface will be displayed here.</p>
-            </div>
-          </div>
-        );
-      case "users":
-        return (
-          <div className="space-y-6">
-            <div>
-              <h2 className="mb-2 text-xl font-semibold">Users</h2>
-              <p className="text-muted-foreground">
-                Manage user accounts and permissions.
-              </p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-6">
-              <p className="text-muted-foreground">User management interface will be displayed here.</p>
-            </div>
-          </div>
-        );
-      case "settings":
-        return (
-          <div className="space-y-6">
-            <div>
-              <h2 className="mb-2 text-xl font-semibold">Settings</h2>
-              <p className="text-muted-foreground">
-                Configure your preferences and account settings.
-              </p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-6">
-              <p className="text-muted-foreground">Settings options will be displayed here.</p>
             </div>
           </div>
         );
@@ -1969,6 +2114,17 @@ function PlaygroundContent() {
       setDrawerComment(selectedAnalyticsPost.comment || selectedAnalyticsPost.notes || "");
     }
   }, [selectedAnalyticsPost]);
+
+  useEffect(() => {
+    const checkout = searchParams?.get("checkout");
+    if (checkout === "success") {
+      setShowCheckoutSuccessModal(true);
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("checkout");
+      const newQuery = params.toString();
+      router.replace(`${pathname}${newQuery ? `?${newQuery}` : ""}`, { scroll: false });
+    }
+  }, [searchParams, router, pathname]);
 
   const handleAnalyticsPostSubmit = async () => {
     if (!selectedAnalyticsPost) {
@@ -2145,12 +2301,6 @@ function PlaygroundContent() {
                       placeholder="Enter the comment to post"
                       className="mt-2 w-full min-h-[160px] rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
                     />
-                  </div>
-                )}
-                {selectedAnalyticsPost.notes && (
-                  <div>
-                    <h4 className="text-sm font-medium text-foreground">Notes</h4>
-                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">{selectedAnalyticsPost.notes}</p>
                   </div>
                 )}
               </div>

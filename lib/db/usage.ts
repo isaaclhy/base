@@ -9,7 +9,14 @@ export interface UserUsage {
   lastUpdated: Date;
 }
 
-const MAX_POSTS_PER_WEEK = 200;
+export const FREE_POST_LIMIT = 200;
+export const PREMIUM_POST_LIMIT = 1000;
+
+const DEFAULT_MAX_POSTS_PER_WEEK = FREE_POST_LIMIT;
+
+export function getMaxPostsPerWeekForPlan(plan: "free" | "premium"): number {
+  return plan === "premium" ? PREMIUM_POST_LIMIT : FREE_POST_LIMIT;
+}
 
 // Get the start of the current week (Monday)
 function getWeekStart(): Date {
@@ -75,7 +82,7 @@ export async function getUserUsage(userId: string): Promise<UserUsage> {
   return usage;
 }
 
-export async function incrementUsage(userId: string, count: number = 1): Promise<UserUsage> {
+export async function incrementUsage(userId: string, count: number = 1, maxPerWeek: number = DEFAULT_MAX_POSTS_PER_WEEK): Promise<UserUsage> {
   const db = await getDatabase();
   const usageCollection = db.collection<UserUsage>("usage");
 
@@ -83,14 +90,14 @@ export async function incrementUsage(userId: string, count: number = 1): Promise
   const currentUsage = await getUserUsage(userId);
 
   // Check if user has reached the limit
-  if (currentUsage.currentCount >= MAX_POSTS_PER_WEEK) {
-    throw new Error("Weekly limit reached. You have generated 200 posts this week.");
+  if (currentUsage.currentCount >= maxPerWeek) {
+    throw new Error(`Weekly limit reached. You have generated ${maxPerWeek} posts this week.`);
   }
 
   // Check if adding count would exceed limit
-  if (currentUsage.currentCount + count > MAX_POSTS_PER_WEEK) {
+  if (currentUsage.currentCount + count > maxPerWeek) {
     throw new Error(
-      `This action would exceed your weekly limit. You have ${MAX_POSTS_PER_WEEK - currentUsage.currentCount} posts remaining.`
+      `This action would exceed your weekly limit. You have ${Math.max(maxPerWeek - currentUsage.currentCount, 0)} posts remaining.`
     );
   }
 
@@ -111,10 +118,8 @@ export async function incrementUsage(userId: string, count: number = 1): Promise
   return updatedUsage as UserUsage;
 }
 
-export async function canGeneratePosts(userId: string, count: number = 1): Promise<boolean> {
+export async function canGeneratePosts(userId: string, count: number = 1, maxPerWeek: number = DEFAULT_MAX_POSTS_PER_WEEK): Promise<boolean> {
   const usage = await getUserUsage(userId);
-  return usage.currentCount + count <= MAX_POSTS_PER_WEEK;
+  return usage.currentCount + count <= maxPerWeek;
 }
-
-export { MAX_POSTS_PER_WEEK };
 

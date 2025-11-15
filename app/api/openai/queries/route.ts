@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { auth } from "@/auth";
-import { canGeneratePosts } from "@/lib/db/usage";
+import { canGeneratePosts, getMaxPostsPerWeekForPlan } from "@/lib/db/usage";
+import { getUserByEmail } from "@/lib/db/users";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -55,8 +56,12 @@ export async function POST(
     // Default postCount to 10 if not provided
     const count = postCount || 10;
 
+    const dbUser = await getUserByEmail(session.user.email);
+    const plan = dbUser?.plan ?? "free";
+    const maxPerWeek = getMaxPostsPerWeekForPlan(plan);
+
     // Check if user can generate posts (check usage limit)
-    const canGenerate = await canGeneratePosts(session.user.email, count);
+    const canGenerate = await canGeneratePosts(session.user.email, count, maxPerWeek);
     if (!canGenerate) {
       return NextResponse.json(
         { error: "Weekly limit reached. You have generated 200 posts this week. Please wait until next week." },
@@ -100,7 +105,7 @@ export async function POST(
     const parsed2 = JSON.parse(response2.output_text || "[]");
     const combinedResponse = [...parsed1, ...parsed2];
 
-    return NextResponse.json({ result: combinedResponse });
+    return NextResponse.json({ result: combinedResponse, plan });
   } catch (err: unknown) {
     console.error("API Error:", err);
     return NextResponse.json(

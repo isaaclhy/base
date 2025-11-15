@@ -8,6 +8,7 @@ interface UsageData {
   currentCount: number;
   maxCount: number;
   weekStartDate: string;
+  plan?: "free" | "premium";
 }
 
 export function UsageProgress() {
@@ -58,13 +59,14 @@ export function UsageProgress() {
   }
 
   const percentage = (usage.currentCount / usage.maxCount) * 100;
+  const activePlan = usage.plan || session.user?.plan || "free";
 
   return (
     <div className="px-4 pb-4">
       <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <span className="inline-flex items-center rounded-full bg-black px-2.5 py-0.5 text-xs font-medium text-white capitalize">
-            {session?.user?.plan || "free"} Plan
+            {activePlan} plan
           </span>
         </div>
         <div className="mb-2 flex items-center justify-between text-xs">

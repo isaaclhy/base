@@ -44,12 +44,6 @@ export default function Navbar() {
                     </Link>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    {!session && (
-                        <Button onClick={handleTryItOut} className="text-xs sm:text-sm whitespace-nowrap">
-                            <span className="hidden sm:inline">I bet you want to try it out</span>
-                            <span className="sm:hidden">Try it out</span>
-                        </Button>
-                    )}
                     {session ? <UserMenu /> : <SignInButton />}
                 </div>
             </div>

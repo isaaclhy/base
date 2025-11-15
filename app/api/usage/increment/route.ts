@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { incrementUsage } from "@/lib/db/usage";
+import { incrementUsage, getMaxPostsPerWeekForPlan } from "@/lib/db/usage";
+import { getUserByEmail } from "@/lib/db/users";
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,11 +17,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const count = body.count || 1;
 
-    const usage = await incrementUsage(session.user.email, count);
+    const dbUser = await getUserByEmail(session.user.email);
+    const plan = dbUser?.plan ?? "free";
+    const usage = await incrementUsage(
+      session.user.email,
+      count,
+      getMaxPostsPerWeekForPlan(plan)
+    );
 
     return NextResponse.json({
       success: true,
       currentCount: usage.currentCount,
+      plan,
     });
   } catch (error) {
     console.error("Error incrementing usage:", error);

@@ -52,7 +52,21 @@ REDDIT_CLIENT_ID=your-reddit-client-id
 REDDIT_CLIENT_SECRET=your-reddit-client-secret
 REDDIT_REDIRECT_URI=http://localhost:3000/api/reddit/callback
 # For production, use: https://yourdomain.com/api/reddit/callback
+
+# Stripe Configuration
+# Create a product with a recurring price in your Stripe dashboard and enable the billing portal in test mode
+STRIPE_SECRET_KEY=sk_live_or_test_key
+STRIPE_PRICE_ID=price_for_premium_plan
+STRIPE_WEBHOOK_SECRET=whsec_from_stripe_cli_or_dashboard
+STRIPE_PORTAL_CONFIGURATION_ID=bpc_optional_portal_configuration
 ```
+
+### Stripe Billing Portal
+
+1. Go to [Dashboard → Settings → Billing → Customer portal](https://dashboard.stripe.com/test/settings/billing/portal).
+2. Configure the options you want exposed to customers and click **Save** to create the default configuration.
+3. (Optional) If you want to lock the portal to a specific configuration, copy the ID (starts with `bpc_...`) and set it as `STRIPE_PORTAL_CONFIGURATION_ID`. Leaving it unset uses Stripe's default portal.
+4. For local testing, run `stripe listen --forward-to http://localhost:3000/api/stripe/webhook` and copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
 
 ### Generating NEXTAUTH_SECRET
 
