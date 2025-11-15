@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, Suspense } from "react";
 import { ExternalLink, X, Loader2, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatTextarea } from "@/components/ui/chat-textarea";
@@ -2472,7 +2472,16 @@ function PlaygroundContent() {
 export default function PlaygroundPage() {
   return (
     <PlaygroundLayout>
-      <PlaygroundContent />
+      <Suspense fallback={
+        <div className="flex h-full w-full items-center justify-center">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Loading...</span>
+          </div>
+        </div>
+      }>
+        <PlaygroundContent />
+      </Suspense>
     </PlaygroundLayout>
   );
 }
