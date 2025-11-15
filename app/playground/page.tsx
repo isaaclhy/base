@@ -37,7 +37,7 @@ function PlaygroundContent() {
   const [callToAction, setCallToAction] = useState("");
   const [persona, setPersona] = useState("");
   const [postCount, setPostCount] = useState<number>(10);
-  const [autoGenerateComments, setAutoGenerateComments] = useState<boolean>(true);
+  const [autoGenerateComments, setAutoGenerateComments] = useState<boolean>(false);
   const [previousIdeas, setPreviousIdeas] = useState<string[]>([]);
   const [selectedIdea, setSelectedIdea] = useState("");
   const [results, setResults] = useState<string[]>([]);

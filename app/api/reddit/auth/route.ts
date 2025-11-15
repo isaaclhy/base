@@ -2,7 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 
 const REDDIT_CLIENT_ID = process.env.REDDIT_CLIENT_ID || "";
-const REDDIT_REDIRECT_URI = process.env.REDDIT_REDIRECT_URI || "http://localhost:3000/api/reddit/callback";
+
+// Dynamically determine redirect URI based on environment
+function getRedirectUri(request: NextRequest): string {
+  // Use explicit environment variable if set
+  if (process.env.REDDIT_REDIRECT_URI) {
+    return process.env.REDDIT_REDIRECT_URI;
+  }
+
+  // Otherwise, build from request URL or environment
+  const baseUrl = process.env.NEXTAUTH_URL || 
+                  process.env.NEXT_PUBLIC_APP_URL || 
+                  request.nextUrl.origin;
+  
+  return `${baseUrl}/api/reddit/callback`;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,6 +38,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL("/", request.url));
     }
 
+    // Get redirect URI based on current environment
+    const redirectUri = getRedirectUri(request);
+
     // Generate a random state for CSRF protection
     const state = Buffer.from(
       JSON.stringify({
@@ -38,7 +55,7 @@ export async function GET(request: NextRequest) {
       `client_id=${REDDIT_CLIENT_ID}` +
       `&response_type=code` +
       `&state=${state}` +
-      `&redirect_uri=${encodeURIComponent(REDDIT_REDIRECT_URI)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&duration=permanent` + // Request permanent access (refresh token)
       `&scope=submit,identity` // Scopes needed: submit (for posting), identity (for user info)
     );

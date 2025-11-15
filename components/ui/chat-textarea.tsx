@@ -59,7 +59,7 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
             onPersonaChange,
             postCount = 10,
             onPostCountChange,
-            autoGenerateComments = true,
+            autoGenerateComments = false,
             onAutoGenerateCommentsChange,
             showInputs = true,
             disableCallToAction = false,

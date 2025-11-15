@@ -4,7 +4,21 @@ import { updateUserRedditTokens } from "@/lib/db/users";
 
 const REDDIT_CLIENT_ID = process.env.REDDIT_CLIENT_ID || "";
 const REDDIT_CLIENT_SECRET = process.env.REDDIT_CLIENT_SECRET || "";
-const REDDIT_REDIRECT_URI = process.env.REDDIT_REDIRECT_URI || "http://localhost:3000/api/reddit/callback";
+
+// Dynamically determine redirect URI based on environment
+function getRedirectUri(request: NextRequest): string {
+  // Use explicit environment variable if set
+  if (process.env.REDDIT_REDIRECT_URI) {
+    return process.env.REDDIT_REDIRECT_URI;
+  }
+
+  // Otherwise, build from request URL or environment
+  const baseUrl = process.env.NEXTAUTH_URL || 
+                  process.env.NEXT_PUBLIC_APP_URL || 
+                  request.nextUrl.origin;
+  
+  return `${baseUrl}/api/reddit/callback`;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -42,6 +56,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Get redirect URI (must match the one used in auth route)
+    const redirectUri = getRedirectUri(request);
+
     // Exchange authorization code for access token
     const tokenResponse = await fetch("https://www.reddit.com/api/v1/access_token", {
       method: "POST",
@@ -53,7 +70,7 @@ export async function GET(request: NextRequest) {
       body: new URLSearchParams({
         grant_type: "authorization_code",
         code: code,
-        redirect_uri: REDDIT_REDIRECT_URI,
+        redirect_uri: redirectUri,
       }).toString(),
     });
 
