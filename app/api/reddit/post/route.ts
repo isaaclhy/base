@@ -93,18 +93,51 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     // In production, always use OAuth endpoint. In development, fall back to public API if needed
-    const apiUrl = `https://www.reddit.com/api/info.json?id=${postIdsString}`;
+    const apiUrl = accessToken 
+      ? `https://oauth.reddit.com/api/info.json?id=${postIdsString}`
+      : `https://www.reddit.com/api/info.json?id=${postIdsString}`;
 
     const response = await fetch(apiUrl, {
       headers,
       cache: 'no-store',
     });
 
+    // Log full response details for debugging
+    console.log(`[Reddit API] Request Details:`, {
+      url: apiUrl,
+      method: 'GET',
+      headers,
+      postIds: postIdsString,
+      hasAccessToken: !!accessToken,
+      isProduction,
+    });
+    
+    console.log(`[Reddit API] Response Status:`, {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+    });
+    
+    console.log(`[Reddit API] Response Headers:`, {
+      contentType: response.headers.get('content-type'),
+      contentLength: response.headers.get('content-length'),
+      rateLimitRemaining: response.headers.get('x-ratelimit-remaining'),
+      rateLimitUsed: response.headers.get('x-ratelimit-used'),
+      rateLimitReset: response.headers.get('x-ratelimit-reset'),
+    });
+
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Reddit API error (${response.status}) for ${apiUrl}:`, errorText);
-      console.error(`Headers used:`, JSON.stringify(headers, null, 2));
-      console.error(`Post IDs:`, postIdsString);
+      console.error(`[Reddit API] Error Response Body:`, errorText);
+      console.error(`[Reddit API] Full Error Details:`, {
+        status: response.status,
+        statusText: response.statusText,
+        url: apiUrl,
+        headersUsed: headers,
+        postIds: postIdsString,
+        responseBody: errorText,
+        hasAccessToken: !!accessToken,
+      });
       
       // If authenticated request failed in production, don't try public API (it will also be blocked)
       if (isProduction && response.status === 403) {
@@ -150,6 +183,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const data = await response.json();
+    
+    // Log successful response for debugging
+    console.log(`[Reddit API] Success Response:`, {
+      dataKeys: Object.keys(data || {}),
+      hasData: !!data?.data,
+      childrenCount: data?.data?.children?.length || 0,
+      postCount: postIdArray.length,
+    });
 
     return NextResponse.json(data);
   } catch (err: unknown) {
