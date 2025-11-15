@@ -58,7 +58,7 @@ export async function PATCH(request: NextRequest) {
       { returnDocument: "after" }
     );
 
-    if (!result.value) {
+    if (!result || !result.value) {
       return NextResponse.json(
         { error: "Post not found" },
         { status: 404 }

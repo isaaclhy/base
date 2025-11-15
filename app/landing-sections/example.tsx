@@ -4,8 +4,8 @@ export default function Examples() {
     return (
         <section className="pb-20 pt-8">
             <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
-                <div className="mb-12 text-center">
-                    <h2 className="mb-4 text-3xl font-bold sm:text-4xl">See It In Action</h2>
+                <div className="space-y-3 text-center mb-12">
+                    <h2 className="text-3xl font-bold sm:text-4xl">See It In Action</h2>
                     <p className="mx-auto max-w-2xl text-muted-foreground">
                         Discover how others are using our platform to transform their workflow.
                     </p>

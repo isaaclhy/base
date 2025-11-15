@@ -27,6 +27,8 @@ export interface ChatTextareaProps
     onPersonaChange?: (value: string) => void;
     postCount?: number;
     onPostCountChange?: (value: number) => void;
+    autoGenerateComments?: boolean;
+    onAutoGenerateCommentsChange?: (value: boolean) => void;
     showInputs?: boolean;
     disableCallToAction?: boolean;
     disablePersona?: boolean;
@@ -57,6 +59,8 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
             onPersonaChange,
             postCount = 10,
             onPostCountChange,
+            autoGenerateComments = true,
+            onAutoGenerateCommentsChange,
             showInputs = true,
             disableCallToAction = false,
             disablePersona = false,
@@ -195,7 +199,7 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
                         <div className="flex flex-col gap-4">
                             {onRedditPostChange && (
                                 <div className="w-full">
-                                    <label className="mb-1.5 block text-left text-xs font-medium text-muted-foreground">
+                                    <label className="mb-1 block text-left text-xs font-medium text-muted-foreground">
                                         Reddit Post Link
                                     </label>
                                     <Input
@@ -207,8 +211,13 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
                                     />
                                 </div>
                             )}
-                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:w-fit">
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:w-full">
                                 <div className="w-full sm:w-auto">
+                                    {onRedditPostChange && (
+                                        <label className="mb-1 block text-left text-xs font-medium text-muted-foreground">
+                                            Website
+                                        </label>
+                                    )}
                                     <Input
                                         type="url"
                                         placeholder="Enter your website URL"
@@ -219,6 +228,11 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
                                 </div>
                                 <div className="flex flex-row gap-4 items-center w-fit sm:w-auto">
                                     <div className="w-auto">
+                                        {onRedditPostChange && (
+                                            <label className="mb-1 block text-left text-xs font-medium text-muted-foreground">
+                                                Call To Action
+                                            </label>
+                                        )}
                                         <Select
                                             value={callToAction || ""}
                                             onChange={(e) => onCallToActionChange?.(e.target.value)}
@@ -231,6 +245,11 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
                                         </Select>
                                     </div>
                                     <div className="w-auto">
+                                        {onRedditPostChange && (
+                                            <label className="mb-1 block text-left text-xs font-medium text-muted-foreground">
+                                                Persona
+                                            </label>
+                                        )}
                                         <Select
                                             value={persona || ""}
                                             onChange={(e) => onPersonaChange?.(e.target.value)}
@@ -258,6 +277,32 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
                                         </div>
                                     )}
                                 </div>
+                                {onAutoGenerateCommentsChange && (
+                                    <div className="w-auto flex items-center gap-2 ml-auto">
+                                        <label className="text-xs text-muted-foreground whitespace-nowrap">
+                                            Auto generate comment
+                                        </label>
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                aria-checked={autoGenerateComments}
+                                                onClick={() => onAutoGenerateCommentsChange?.(!autoGenerateComments)}
+                                                className={cn(
+                                                    "relative inline-flex h-5 w-9 items-center rounded-full transition-colors border focus:outline-none",
+                                                    autoGenerateComments
+                                                        ? "bg-primary border-primary"
+                                                        : "bg-muted border-gray-400 dark:border-gray-500"
+                                                )}
+                                            >
+                                            <span
+                                                className={cn(
+                                                    "inline-block h-4 w-4 transform rounded-full bg-white border border-gray-300 shadow-sm transition-transform",
+                                                    autoGenerateComments ? "translate-x-5" : "translate-x-1"
+                                                )}
+                                            />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

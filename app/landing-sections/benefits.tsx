@@ -36,8 +36,8 @@ export default function BenefitsSection() {
         className="pointer-events-none absolute right-[8%] top-32 h-40 w-40 translate-x-1/2 rounded-full bg-[#ffeadd]/50 blur-3xl"
         aria-hidden="true"
       />
-      <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-12 px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-3xl space-y-3 text-center">
+      <div className="relative mx-auto flex w-full max-w-6xl flex-col px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl space-y-3 text-center mb-12">
           <span className="inline-flex items-center rounded-full bg-[#ff4500]/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#ff4500]">
             Why founders choose us
           </span>
@@ -49,7 +49,7 @@ export default function BenefitsSection() {
           </p>
         </div>
 
-        <div className="relative mx-auto mt-2 flex w-full max-w-5xl justify-center lg:mt-6">
+        <div className="relative mx-auto flex w-full max-w-5xl justify-center">
           {/* Left callouts with arrows (desktop) */}
           {benefits.map((benefit, index) => {
             const config = calloutConfig[index];
@@ -60,7 +60,7 @@ export default function BenefitsSection() {
                 style={{
                   position: "absolute",
                   top: `${config.top}px`,
-                  ...(config.side === "left" ? { left: "-120px" } : { right: "-120px" }),
+                  ...(config.side === "left" ? { left: "-20px" } : { right: "-20px" }),
                 }}
               >
                 <div className="relative flex flex-col gap-2.5 rounded-2xl bg-white/90 p-4 shadow-md ring-1 ring-[#ff6f3c]/20 backdrop-blur">
@@ -70,27 +70,6 @@ export default function BenefitsSection() {
                   <p className="text-xs leading-relaxed text-[#663826]">
                     {benefit.description}
                   </p>
-                  <svg
-                    className="pointer-events-none absolute top-1/2 hidden h-10 w-20 -translate-y-1/2 text-[#ff6f3c] lg:block"
-                    style={config.side === "left" ? { left: "calc(100% + 2px)" } : { right: "calc(100% + 2px)", transform: "scaleX(-1)" }}
-                    viewBox="0 0 100 40"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      d="M2 20H70C75 20 78 17 76 13L70 5"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M70 13L96 20L70 27"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
                 </div>
               </div>
             );

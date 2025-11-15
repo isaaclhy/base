@@ -8,6 +8,7 @@ import PlaygroundLayout, { usePlaygroundTab, usePlaygroundSidebar, useRefreshUsa
 import { RedditPost } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 const normalizeUrl = (url: string): string => {
   return url
@@ -25,6 +26,7 @@ const extractThingIdFromLink = (link: string): string | null => {
 };
 
 function PlaygroundContent() {
+  const { data: session, status } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -35,6 +37,7 @@ function PlaygroundContent() {
   const [callToAction, setCallToAction] = useState("");
   const [persona, setPersona] = useState("");
   const [postCount, setPostCount] = useState<number>(10);
+  const [autoGenerateComments, setAutoGenerateComments] = useState<boolean>(true);
   const [previousIdeas, setPreviousIdeas] = useState<string[]>([]);
   const [selectedIdea, setSelectedIdea] = useState("");
   const [results, setResults] = useState<string[]>([]);
@@ -52,68 +55,13 @@ function PlaygroundContent() {
   const [isPosting, setIsPosting] = useState<Record<string, boolean>>({});
   const [hasRedditToken, setHasRedditToken] = useState<boolean | null>(null); // null = checking, true = has token, false = no token
   const [isCheckingReddit, setIsCheckingReddit] = useState(true);
-  
   const [toast, setToast] = useState<{ visible: boolean; message: string; link?: string | null; variant?: "success" | "error" } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showCheckoutSuccessModal, setShowCheckoutSuccessModal] = useState(false);
   const generatedCommentUrlsRef = useRef<Set<string>>(new Set());
   const generatingCommentUrlsRef = useRef<Set<string>>(new Set());
-  
-  const hideToast = () => {
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current);
-      toastTimerRef.current = null;
-    }
-    setToast((prev) => (prev ? { ...prev, visible: false } : prev));
-    if (toastHideTimerRef.current) {
-      clearTimeout(toastHideTimerRef.current);
-    }
-    toastHideTimerRef.current = setTimeout(() => {
-      setToast(null);
-      toastHideTimerRef.current = null;
-    }, 300);
-  };
-  
-  const showToast = (message: string, options?: { link?: string | null; variant?: "success" | "error" }) => {
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current);
-      toastTimerRef.current = null;
-    }
-    if (toastHideTimerRef.current) {
-      clearTimeout(toastHideTimerRef.current);
-      toastHideTimerRef.current = null;
-    }
-    setToast({
-      visible: true,
-      message,
-      link: options?.link ?? null,
-      variant: options?.variant ?? "success",
-    });
-    toastTimerRef.current = setTimeout(() => {
-      hideToast();
-    }, 5000);
-  };
-  
-  useEffect(() => {
-    postTextareasRef.current = postTextareas;
-  }, [postTextareas]);
 
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current) {
-        clearTimeout(toastTimerRef.current);
-      }
-      if (toastHideTimerRef.current) {
-        clearTimeout(toastHideTimerRef.current);
-      }
-      if (analyticsDrawerTimerRef.current) {
-        clearTimeout(analyticsDrawerTimerRef.current);
-      }
-    };
-  }, []);
-  
-  
   // Analytics state: track posted/skipped posts from MongoDB
   interface AnalyticsPost {
     id?: string;
@@ -133,6 +81,11 @@ function PlaygroundContent() {
   const [analyticsFilter, setAnalyticsFilter] = useState<"posted" | "skipped" | "failed">("posted");
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(true);
   const [analyticsPage, setAnalyticsPage] = useState(1);
+  const [selectedAnalyticsPost, setSelectedAnalyticsPost] = useState<AnalyticsPost | null>(null);
+  const [isAnalyticsDrawerVisible, setIsAnalyticsDrawerVisible] = useState(false);
+  const [drawerComment, setDrawerComment] = useState<string>("");
+  const [isPostingFromAnalytics, setIsPostingFromAnalytics] = useState(false);
+  const analyticsDrawerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const analyticsUrlSet = useMemo(() => {
     const set = new Set<string>();
@@ -148,15 +101,35 @@ function PlaygroundContent() {
     return analyticsPosts.filter((post) => post.status === analyticsFilter);
   }, [analyticsPosts, analyticsFilter]);
 
+  // All useEffect hooks must be called before any early returns
+  useEffect(() => {
+    postTextareasRef.current = postTextareas;
+  }, [postTextareas]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+      if (toastHideTimerRef.current) {
+        clearTimeout(toastHideTimerRef.current);
+      }
+      if (analyticsDrawerTimerRef.current) {
+        clearTimeout(analyticsDrawerTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Redirect to landing page if not authenticated
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/");
+    }
+  }, [status, router]);
+
   useEffect(() => {
     setAnalyticsPage(1);
   }, [analyticsFilter]);
-
-  const [selectedAnalyticsPost, setSelectedAnalyticsPost] = useState<AnalyticsPost | null>(null);
-  const [isAnalyticsDrawerVisible, setIsAnalyticsDrawerVisible] = useState(false);
-  const [drawerComment, setDrawerComment] = useState<string>("");
-  const [isPostingFromAnalytics, setIsPostingFromAnalytics] = useState(false);
-  const analyticsDrawerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load previous ideas from localStorage on mount
   useEffect(() => {
@@ -176,7 +149,9 @@ function PlaygroundContent() {
       try {
         const links = JSON.parse(savedLinks);
         setRedditLinks(links);
-        
+
+        // Load cached comments from localStorage - we'll restore them when distinctLinks are computed
+
         // Load cached posts from localStorage and populate links
         // Then fetch only posts that aren't cached
         setTimeout(() => {
@@ -199,7 +174,7 @@ function PlaygroundContent() {
                 }
                 return link;
               });
-              
+
               // Update state if we found cached posts
               if (hasUpdates) {
                 setRedditLinks((prev) => {
@@ -208,7 +183,7 @@ function PlaygroundContent() {
                   return updated;
                 });
               }
-              
+
               // Don't fetch here - batchFetchAllPostContent will handle it after all queries load
             }
           });
@@ -228,12 +203,14 @@ function PlaygroundContent() {
         console.error("Failed to parse saved queries:", e);
       }
     }
-    
+
     // Analytics posts will be loaded from MongoDB via useEffect
   }, []);
 
   // Check Reddit connection status on mount
   useEffect(() => {
+    if (!session?.user) return;
+
     const checkRedditConnection = async () => {
       setIsCheckingReddit(true);
       try {
@@ -253,7 +230,7 @@ function PlaygroundContent() {
     };
 
     checkRedditConnection();
-  }, []);
+  }, [session?.user]);
 
   // Re-check Reddit connection when URL params indicate success
   useEffect(() => {
@@ -267,6 +244,8 @@ function PlaygroundContent() {
 
   // Load analytics posts from MongoDB
   useEffect(() => {
+    if (!session?.user) return;
+
     const fetchAnalyticsPosts = async () => {
       setIsLoadingAnalytics(true);
       try {
@@ -316,7 +295,385 @@ function PlaygroundContent() {
     };
 
     fetchAnalyticsPosts();
+  }, [session?.user]);
+
+  // All useCallback and useMemo hooks must be before early returns
+  const generateCommentForLink = useCallback(
+    async (
+      linkItem: {
+        uniqueKey: string;
+        query: string;
+        title?: string | null;
+        link?: string | null;
+        snippet?: string | null;
+        selftext?: string | null;
+        postData?: RedditPost | null;
+      },
+      options?: { force?: boolean; showAlerts?: boolean }
+    ) => {
+      const { force = false, showAlerts = false } = options || {};
+      const linkKey = linkItem.uniqueKey;
+      const ideaToUse = submittedProductIdea || currentProductIdea;
+
+      if (!ideaToUse || !website) {
+        if (showAlerts) {
+          alert("Please enter a product idea and website URL first.");
+        }
+        return;
+      }
+
+      const postContent =
+        linkItem.selftext || linkItem.snippet || linkItem.title || "";
+      if (!postContent) {
+        if (showAlerts) {
+          alert("No post content available.");
+        }
+        return;
+      }
+
+      const normalizedUrl = linkItem.link
+        ? normalizeUrl(linkItem.link)
+        : null;
+
+      if (normalizedUrl) {
+        if (!force) {
+          if (
+            generatedCommentUrlsRef.current.has(normalizedUrl) ||
+            generatingCommentUrlsRef.current.has(normalizedUrl)
+          ) {
+            return;
+          }
+        } else {
+          generatedCommentUrlsRef.current.delete(normalizedUrl);
+        }
+        generatingCommentUrlsRef.current.add(normalizedUrl);
+      }
+
+      setIsGeneratingComment((prev) => ({ ...prev, [linkKey]: true }));
+
+      try {
+        const response = await fetch("/api/openai/comment", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            productIdea: ideaToUse,
+            productLink: website,
+            postContent: postContent,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to generate comment");
+        }
+
+        const data = await response.json();
+
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
+        if (data.comments && data.comments.length > 0) {
+          const generatedComment = data.comments.join("\n\n");
+          setPostTextareas((prev) => ({
+            ...prev,
+            [linkKey]: generatedComment,
+          }));
+          if (normalizedUrl) {
+            generatedCommentUrlsRef.current.add(normalizedUrl);
+          }
+          if (linkItem.link) {
+            cacheComment(linkItem.link, generatedComment);
+          }
+        } else if (showAlerts) {
+          alert("No comments generated. Please try again.");
+        }
+      } catch (err) {
+        console.error("Error generating comment:", err);
+        if (showAlerts) {
+          alert(
+            err instanceof Error ? err.message : "Failed to generate comment"
+          );
+        }
+      } finally {
+        setIsGeneratingComment((prev) => ({ ...prev, [linkKey]: false }));
+        if (normalizedUrl) {
+          generatingCommentUrlsRef.current.delete(normalizedUrl);
+        }
+      }
+    },
+    [currentProductIdea, submittedProductIdea, website]
+  );
+
+  const distinctLinks = useMemo(() => {
+    let globalIndex = 0;
+    const allLinksWithQuery = Object.entries(redditLinks)
+      .reverse()
+      .flatMap(([query, links]) =>
+        [...links].reverse().map((link, linkIndex) => {
+          const uniqueKey = `${query}-${link.link || "no-link"}-${linkIndex}-${globalIndex}`;
+          const item = {
+            ...link,
+            query,
+            linkIndex,
+            uniqueKey,
+            order: globalIndex,
+          } as typeof link & {
+            query: string;
+            linkIndex: number;
+            uniqueKey: string;
+            order: number;
+          };
+          globalIndex += 1;
+          return item;
+        })
+      );
+
+    const sortedLinks = [...allLinksWithQuery].sort((a, b) => {
+      const timeA =
+        typeof a.postData?.created_utc === "number"
+          ? a.postData.created_utc
+          : -Infinity;
+      const timeB =
+        typeof b.postData?.created_utc === "number"
+          ? b.postData.created_utc
+          : -Infinity;
+      if (timeA !== timeB) {
+        return timeB - timeA;
+      }
+      return a.order - b.order;
+    });
+
+    const seenUrls = new Set<string>();
+    const results: Array<(typeof sortedLinks)[number]> = [];
+
+    for (const linkItem of sortedLinks) {
+      if (!linkItem.link) {
+        continue;
+      }
+
+      const normalizedUrl = normalizeUrl(linkItem.link);
+      if (analyticsUrlSet.has(normalizedUrl)) {
+        continue;
+      }
+
+      if (seenUrls.has(normalizedUrl)) {
+        continue;
+      }
+
+      seenUrls.add(normalizedUrl);
+      results.push(linkItem);
+    }
+
+    return results;
+  }, [redditLinks, analyticsUrlSet]);
+
+  const openAnalyticsDrawer = useCallback((post: AnalyticsPost) => {
+    setSelectedAnalyticsPost(post);
+    setDrawerComment(post.comment || post.notes || "");
+    setIsAnalyticsDrawerVisible(true);
   }, []);
+
+  const closeAnalyticsDrawer = useCallback(() => {
+    setIsAnalyticsDrawerVisible(false);
+    if (analyticsDrawerTimerRef.current) {
+      clearTimeout(analyticsDrawerTimerRef.current);
+    }
+    analyticsDrawerTimerRef.current = setTimeout(() => {
+      setSelectedAnalyticsPost(null);
+      setDrawerComment("");
+      analyticsDrawerTimerRef.current = null;
+    }, 300);
+  }, []);
+
+  // Helper functions for comment caching (must be defined before use)
+  const getCommentCacheKey = (url: string) => normalizeUrl(url);
+
+  const getCachedComment = (url: string): string | null => {
+    try {
+      const cacheKey = getCommentCacheKey(url);
+      const cached = localStorage.getItem(`redditComment_${cacheKey}`);
+      return cached ?? null;
+    } catch (e) {
+      console.error("Error reading cached comment:", e);
+      return null;
+    }
+  };
+
+  const cacheComment = (url: string, comment: string) => {
+    try {
+      const cacheKey = getCommentCacheKey(url);
+      localStorage.setItem(`redditComment_${cacheKey}`, comment);
+    } catch (e) {
+      console.error("Error caching comment:", e);
+    }
+  };
+
+  // Restore cached comments when links are loaded (e.g., on page refresh)
+  useEffect(() => {
+    if (distinctLinks.length === 0) {
+      return;
+    }
+
+    const cachedEntries: Record<string, string> = {};
+
+    for (const link of distinctLinks) {
+      if (!link.link) {
+        continue;
+      }
+      const normalizedUrl = normalizeUrl(link.link);
+      const cachedComment = getCachedComment(link.link);
+
+      if (cachedComment) {
+        cachedEntries[link.uniqueKey] = cachedComment;
+        generatedCommentUrlsRef.current.add(normalizedUrl);
+      }
+    }
+
+    if (Object.keys(cachedEntries).length > 0) {
+      setPostTextareas((prev) => {
+        const updated = { ...prev };
+        for (const [key, value] of Object.entries(cachedEntries)) {
+          if (!updated[key]) {
+            updated[key] = value;
+          }
+        }
+        return updated;
+      });
+    }
+  }, [distinctLinks]);
+
+  // Generate new comments when product idea is submitted (only if auto-generate is enabled)
+  useEffect(() => {
+    if (!autoGenerateComments) {
+      return;
+    }
+
+    if (!submittedProductIdea || !website) {
+      return;
+    }
+
+    if (distinctLinks.length === 0) {
+      return;
+    }
+
+    const linksToGenerate: typeof distinctLinks = [];
+
+    for (const link of distinctLinks) {
+      if (!link.link) {
+        continue;
+      }
+      const normalizedUrl = normalizeUrl(link.link);
+
+      // Skip if already has cached comment or is generating
+      if (generatedCommentUrlsRef.current.has(normalizedUrl)) {
+        continue;
+      }
+      if (generatingCommentUrlsRef.current.has(normalizedUrl)) {
+        continue;
+      }
+
+      // Skip if already has a comment in textarea
+      if (postTextareasRef.current[link.uniqueKey]?.trim().length) {
+        continue;
+      }
+
+      linksToGenerate.push(link);
+    }
+
+    if (linksToGenerate.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      // Generate comments in parallel for better performance
+      await Promise.all(
+        linksToGenerate.map((link) => {
+          if (cancelled) {
+            return Promise.resolve();
+          }
+          return generateCommentForLink(link);
+        })
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [distinctLinks, submittedProductIdea, website, generateCommentForLink, autoGenerateComments]);
+
+  useEffect(() => {
+    if (selectedAnalyticsPost) {
+      setDrawerComment(selectedAnalyticsPost.comment || selectedAnalyticsPost.notes || "");
+    }
+  }, [selectedAnalyticsPost]);
+
+  useEffect(() => {
+    const checkout = searchParams?.get("checkout");
+    if (checkout === "success") {
+      setShowCheckoutSuccessModal(true);
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("checkout");
+      const newQuery = params.toString();
+      router.replace(`${pathname}${newQuery ? `?${newQuery}` : ""}`, { scroll: false });
+    }
+  }, [searchParams, router, pathname]);
+
+  // Show loading state while checking authentication
+  if (status === "loading") {
+    return (
+      <div className="flex h-full w-full items-center justify-center">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Loading...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated (redirect will happen)
+  if (status === "unauthenticated" || !session?.user) {
+    return null;
+  }
+
+  const hideToast = () => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setToast((prev) => (prev ? { ...prev, visible: false } : prev));
+    if (toastHideTimerRef.current) {
+      clearTimeout(toastHideTimerRef.current);
+    }
+    toastHideTimerRef.current = setTimeout(() => {
+      setToast(null);
+      toastHideTimerRef.current = null;
+    }, 300);
+  };
+
+  const showToast = (message: string, options?: { link?: string | null; variant?: "success" | "error" }) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    if (toastHideTimerRef.current) {
+      clearTimeout(toastHideTimerRef.current);
+      toastHideTimerRef.current = null;
+    }
+    setToast({
+      visible: true,
+      message,
+      link: options?.link ?? null,
+      variant: options?.variant ?? "success",
+    });
+    toastTimerRef.current = setTimeout(() => {
+      hideToast();
+    }, 5000);
+  };
 
   // Refresh analytics when a post is posted or skipped
   const refreshAnalytics = async () => {
@@ -376,7 +733,7 @@ function PlaygroundContent() {
     // Save product idea to localStorage
     const saved = localStorage.getItem("productIdeas");
     let ideas: string[] = [];
-    
+
     if (saved) {
       try {
         ideas = JSON.parse(saved);
@@ -384,7 +741,7 @@ function PlaygroundContent() {
         console.error("Failed to parse saved ideas:", e);
       }
     }
-    
+
     // Add new idea if it doesn't already exist
     if (!ideas.includes(message.trim())) {
       ideas.unshift(message.trim()); // Add to beginning
@@ -415,7 +772,7 @@ function PlaygroundContent() {
       }
 
       const data = await response.json();
-      
+
       if (data.error) {
         throw new Error(data.error);
       }
@@ -423,15 +780,15 @@ function PlaygroundContent() {
       if (data.result && Array.isArray(data.result)) {
         console.log("Generated queries:", data.result);
         setResults(data.result);
-        
+
         // Save queries to localStorage
         localStorage.setItem("savedQueries", JSON.stringify(data.result));
-        
+
         // Fetch Reddit links for each query in parallel
         const linkPromises = data.result.map((query: string) => {
           return fetchRedditLinks(query, postCount);
         });
-        
+
         // Wait for all links to be fetched, then batch fetch all post content together
         Promise.all(linkPromises).then(() => {
           // Small delay to ensure all links are saved to localStorage and state is updated
@@ -452,7 +809,7 @@ function PlaygroundContent() {
 
   const fetchRedditLinks = async (query: string, postCount: number) => {
     setIsLoadingLinks((prev) => ({ ...prev, [query]: true }));
-    
+
     try {
       const response = await fetch("/api/google/search", {
         method: "POST",
@@ -471,7 +828,7 @@ function PlaygroundContent() {
       }
 
       const data = await response.json();
-      
+
       if (data.error) {
         throw new Error(data.error);
       }
@@ -512,7 +869,7 @@ function PlaygroundContent() {
           return updated;
         });
         setError(null);
-        
+
         // Don't fetch post content here - will be batched together after all queries complete
       }
     } catch (err) {
@@ -546,34 +903,11 @@ function PlaygroundContent() {
     }
   };
 
-const getCommentCacheKey = (url: string, idea: string) =>
-  `${normalizeUrl(url)}::${idea}`;
-
-const getCachedComment = (url: string, idea: string): string | null => {
-  try {
-    const cacheKey = getCommentCacheKey(url, idea);
-    const cached = localStorage.getItem(`redditComment_${cacheKey}`);
-    return cached ?? null;
-  } catch (e) {
-    console.error("Error reading cached comment:", e);
-    return null;
-  }
-};
-
-const cacheComment = (url: string, idea: string, comment: string) => {
-  try {
-    const cacheKey = getCommentCacheKey(url, idea);
-    localStorage.setItem(`redditComment_${cacheKey}`, comment);
-  } catch (e) {
-    console.error("Error caching comment:", e);
-  }
-};
-
   // Batch fetch post content for ALL queries at once
   const batchFetchAllPostContent = async () => {
     // Read from localStorage to get the latest state (since we save there immediately)
     let currentState: Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>> = {};
-    
+
     try {
       const saved = localStorage.getItem("redditLinks");
       if (saved) {
@@ -587,10 +921,10 @@ const cacheComment = (url: string, idea: string, comment: string) => {
         return prev;
       });
     }
-    
+
     const allPostsNeedingFetch: Array<{ url: string; query: string; linkIndex: number; postFullname: string }> = [];
     const postsToUpdate: Array<{ query: string; linkIndex: number; cached: { selftext?: string | null; postData?: RedditPost | null } }> = [];
-    
+
     // Collect all posts that need fetching across all queries
     Object.entries(currentState).forEach(([query, links]) => {
       links.forEach((link, index) => {
@@ -599,7 +933,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
           if (urlMatch) {
             const [, , postId] = urlMatch;
             const postFullname = `t3_${postId}`;
-            
+
             // Check if post is cached
             const cached = getCachedPost(link.link);
             if (cached && (cached.selftext || cached.postData)) {
@@ -615,7 +949,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
         }
       });
     });
-    
+
     // Update state with cached posts first
     if (postsToUpdate.length > 0) {
       setRedditLinks((prev) => {
@@ -633,7 +967,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
         return updated;
       });
     }
-    
+
     // Process fetching if needed
     if (allPostsNeedingFetch.length > 0) {
       console.log(`Batch fetching ${allPostsNeedingFetch.length} posts from ${Object.keys(currentState).length} queries in a single batch operation`);
@@ -642,7 +976,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
       console.log("All posts were found in cache, no fetching needed");
     }
   };
-  
+
   // Helper function to process batch fetching
   const processBatchFetch = async (
     allPostsNeedingFetch: Array<{ url: string; query: string; linkIndex: number; postFullname: string }>
@@ -658,11 +992,11 @@ const cacheComment = (url: string, idea: string, comment: string) => {
     const batchSize = 100;
     const postFullnames = allPostsNeedingFetch.map(item => item.postFullname);
     const batches: string[][] = [];
-    
+
     for (let i = 0; i < postFullnames.length; i += batchSize) {
       batches.push(postFullnames.slice(i, i + batchSize));
     }
-    
+
     // Create a map for quick lookup: postFullname -> url, linkIndex, and query
     const postDataMap = new Map<string, { url: string; linkIndex: number; query: string }>();
     allPostsNeedingFetch.forEach(({ url, linkIndex, postFullname, query }) => {
@@ -674,7 +1008,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
     // Process each batch sequentially with delays and retry logic
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
-      
+
       // Add delay between batches (except for the first one)
       if (batchIndex > 0) {
         console.log(`Waiting 3 seconds before next batch to avoid rate limits...`);
@@ -688,7 +1022,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
       while (retryCount < maxRetries && !success) {
         try {
           console.log(`Fetching batch ${batchIndex + 1}/${batches.length} with ${batch.length} posts (attempt ${retryCount + 1}/${maxRetries})`);
-          
+
           const response = await fetch("/api/reddit/post", {
             method: "POST",
             headers: {
@@ -698,7 +1032,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
               postIds: batch,
             }),
           });
-          
+
           if (!response.ok) {
             if (response.status === 429) {
               retryCount++;
@@ -737,12 +1071,12 @@ const cacheComment = (url: string, idea: string, comment: string) => {
               break;
             }
           }
-          
+
           success = true;
 
           const data = await response.json();
           const posts: RedditPost[] = data?.data?.children?.map((child: any) => child.data) || [];
-          
+
           console.log(`Batch ${batchIndex + 1} returned ${posts.length} posts`);
 
           const postMap = new Map<string, RedditPost>();
@@ -756,27 +1090,27 @@ const cacheComment = (url: string, idea: string, comment: string) => {
           // Update all links in this batch with their post content
           setRedditLinks((prev) => {
             const updated = { ...prev };
-            
+
             batch.forEach((postFullname) => {
               const postData = postDataMap.get(postFullname);
               if (postData) {
                 const { url, linkIndex, query } = postData;
                 const post = postMap.get(postFullname);
-                
+
                 if (post && updated[query] && updated[query][linkIndex]) {
                   const postContent = {
                     selftext: post.selftext || null,
                     postData: post,
                   };
-                  
+
                   updated[query][linkIndex] = {
                     ...updated[query][linkIndex],
                     ...postContent,
                   };
-                  
+
                   cachePost(url, postContent);
                 }
-                
+
                 setIsLoadingPostContent((prevLoading) => {
                   const newState = { ...prevLoading };
                   delete newState[url];
@@ -784,7 +1118,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
                 });
               }
             });
-            
+
             localStorage.setItem("redditLinks", JSON.stringify(updated));
             return updated;
           });
@@ -822,7 +1156,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
     // Load cached posts first and update state
     const cachedPostsMap = new Map<string, { selftext?: string | null; postData?: RedditPost | null }>();
     const postsNeedingFetch: Array<{ url: string; linkIndex: number; postFullname: string }> = [];
-    
+
     // Process links: check cache first, only fetch if not cached
     links.forEach((link, index) => {
       if (link.link) {
@@ -830,7 +1164,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
         if (urlMatch) {
           const [, , postId] = urlMatch;
           const postFullname = `t3_${postId}`;
-          
+
           // Check if post is cached
           const cached = getCachedPost(link.link);
           if (cached && (cached.selftext || cached.postData)) {
@@ -872,11 +1206,11 @@ const cacheComment = (url: string, idea: string, comment: string) => {
     const batchSize = 100;
     const postFullnames = postsNeedingFetch.map(item => item.postFullname);
     const batches: string[][] = [];
-    
+
     for (let i = 0; i < postFullnames.length; i += batchSize) {
       batches.push(postFullnames.slice(i, i + batchSize));
     }
-    
+
     // Create a map for quick lookup: postFullname -> url, linkIndex, and query
     const postDataMap = new Map<string, { url: string; linkIndex: number; query: string }>();
     postsNeedingFetch.forEach(({ url, linkIndex, postFullname }) => {
@@ -888,7 +1222,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
     // Process each batch sequentially with delays and retry logic to avoid rate limits
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
-      
+
       // Add delay between batches (except for the first one)
       // Increased delay to 3 seconds to respect Reddit's rate limits
       if (batchIndex > 0) {
@@ -903,7 +1237,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
       while (retryCount < maxRetries && !success) {
         try {
           console.log(`Fetching batch ${batchIndex + 1}/${batches.length} with ${batch.length} posts (attempt ${retryCount + 1}/${maxRetries})`);
-          
+
           // Call /api/reddit/post with POST method for the batch
           const response = await fetch("/api/reddit/post", {
             method: "POST",
@@ -914,7 +1248,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
               postIds: batch,
             }),
           });
-          
+
           if (!response.ok) {
             // Handle 429 (Too Many Requests) with exponential backoff
             if (response.status === 429) {
@@ -958,16 +1292,16 @@ const cacheComment = (url: string, idea: string, comment: string) => {
               break; // Skip this batch and move to next
             }
           }
-          
+
           // Success - process the response
           success = true;
 
           const data = await response.json();
-          
+
           // The /api/reddit/post endpoint returns Reddit API response
           // Format: { data: { children: [{ data: RedditPost }] } }
           const posts: RedditPost[] = data?.data?.children?.map((child: any) => child.data) || [];
-          
+
           console.log(`Batch ${batchIndex + 1} returned ${posts.length} posts`);
 
           // Create a map of post ID to post data for quick lookup
@@ -983,30 +1317,30 @@ const cacheComment = (url: string, idea: string, comment: string) => {
           // Update all links in this batch with their post content and cache them
           setRedditLinks((prev) => {
             const updated = { ...prev };
-            
+
             // Update each post in the batch
             batch.forEach((postFullname) => {
               const postData = postDataMap.get(postFullname);
               if (postData) {
                 const { url, linkIndex } = postData;
                 const post = postMap.get(postFullname);
-                
+
                 if (post && updated[query] && updated[query][linkIndex]) {
                   const postContent = {
                     selftext: post.selftext || null,
                     postData: post,
                   };
-                  
+
                   // Update the link with post content
                   updated[query][linkIndex] = {
                     ...updated[query][linkIndex],
                     ...postContent,
                   };
-                  
+
                   // Cache the post in localStorage
                   cachePost(url, postContent);
                 }
-                
+
                 // Remove loading state
                 setIsLoadingPostContent((prev) => {
                   const newState = { ...prev };
@@ -1015,7 +1349,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
                 });
               }
             });
-            
+
             // Save to localStorage
             localStorage.setItem("redditLinks", JSON.stringify(updated));
             return updated;
@@ -1130,7 +1464,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
 
       // Refresh analytics from database after posting
       await refreshAnalytics();
-      
+
       // Remove from redditLinks (filter it out from the dashboard)
       setRedditLinks((prev) => {
         const updated = { ...prev };
@@ -1149,7 +1483,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
         }
         return updated;
       });
-      
+
       // Remove textarea value if it exists
       setPostTextareas((prev) => {
         const updated = { ...prev };
@@ -1189,124 +1523,6 @@ const cacheComment = (url: string, idea: string, comment: string) => {
       setIsPosting((prev) => ({ ...prev, [linkKey]: false }));
     }
   };
-  
-  const generateCommentForLink = useCallback(
-    async (
-      linkItem: {
-        uniqueKey: string;
-        query: string;
-        title?: string | null;
-        link?: string | null;
-        snippet?: string | null;
-        selftext?: string | null;
-        postData?: RedditPost | null;
-      },
-      options?: { force?: boolean; showAlerts?: boolean }
-    ) => {
-      const { force = false, showAlerts = false } = options || {};
-      const linkKey = linkItem.uniqueKey;
-      const ideaToUse = submittedProductIdea || currentProductIdea;
-
-      if (!ideaToUse || !website) {
-        if (showAlerts) {
-          alert("Please enter a product idea and website URL first.");
-        }
-        return;
-      }
-
-      const postContent =
-        linkItem.selftext || linkItem.snippet || linkItem.title || "";
-      if (!postContent) {
-        if (showAlerts) {
-          alert("No post content available.");
-        }
-        return;
-      }
-
-      const normalizedUrl = linkItem.link
-        ? normalizeUrl(linkItem.link)
-        : null;
-      const commentKey =
-        normalizedUrl && ideaToUse
-          ? `${normalizedUrl}::${ideaToUse}`
-          : null;
-
-      if (normalizedUrl) {
-        if (!force) {
-          if (
-            (commentKey &&
-              (generatedCommentUrlsRef.current.has(commentKey) ||
-                generatingCommentUrlsRef.current.has(commentKey)))
-          ) {
-            return;
-          }
-        } else {
-          if (commentKey) {
-            generatedCommentUrlsRef.current.delete(commentKey);
-          }
-        }
-        if (commentKey) {
-          generatingCommentUrlsRef.current.add(commentKey);
-        }
-      }
-
-      setIsGeneratingComment((prev) => ({ ...prev, [linkKey]: true }));
-
-      try {
-        const response = await fetch("/api/openai/comment", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            productIdea: ideaToUse,
-            productLink: website,
-            postContent: postContent,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "Failed to generate comment");
-        }
-
-        const data = await response.json();
-
-        if (data.error) {
-          throw new Error(data.error);
-        }
-
-        if (data.comments && data.comments.length > 0) {
-          const generatedComment = data.comments.join("\n\n");
-          setPostTextareas((prev) => ({
-            ...prev,
-            [linkKey]: generatedComment,
-          }));
-          if (commentKey) {
-            generatedCommentUrlsRef.current.add(commentKey);
-          }
-          if (linkItem.link) {
-            cacheComment(linkItem.link, ideaToUse, generatedComment);
-          }
-        } else if (showAlerts) {
-          alert("No comments generated. Please try again.");
-        }
-      } catch (err) {
-        console.error("Error generating comment:", err);
-        if (showAlerts) {
-          alert(
-            err instanceof Error ? err.message : "Failed to generate comment"
-          );
-        }
-      } finally {
-        setIsGeneratingComment((prev) => ({ ...prev, [linkKey]: false }));
-        if (commentKey) {
-          generatingCommentUrlsRef.current.delete(commentKey);
-        }
-      }
-    },
-    [currentProductIdea, submittedProductIdea, website]
-  );
 
   // Handler for Generate Comment button
   const handleGenerateComment = async (linkItem: { uniqueKey: string; query: string; title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }) => {
@@ -1340,7 +1556,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
 
     // Refresh analytics from database after skipping
     await refreshAnalytics();
-    
+
     // Remove from redditLinks
     setRedditLinks((prev) => {
       const updated = { ...prev };
@@ -1350,7 +1566,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
       }
       return updated;
     });
-    
+
     // Remove textarea value
     setPostTextareas((prev) => {
       const updated = { ...prev };
@@ -1388,7 +1604,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
 
     // Refresh analytics from database after closing
     await refreshAnalytics();
-    
+
     // Remove from redditLinks
     setRedditLinks((prev) => {
       const updated = { ...prev };
@@ -1399,7 +1615,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
       }
       return updated;
     });
-    
+
     // Remove textarea value
     setPostTextareas((prev) => {
       const updated = { ...prev };
@@ -1408,142 +1624,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
     });
   };
 
-  const distinctLinks = useMemo(() => {
-    let globalIndex = 0;
-    const allLinksWithQuery = Object.entries(redditLinks)
-      .reverse()
-      .flatMap(([query, links]) =>
-        [...links].reverse().map((link, linkIndex) => {
-          const uniqueKey = `${query}-${link.link || "no-link"}-${linkIndex}-${globalIndex}`;
-          const item = {
-            ...link,
-            query,
-            linkIndex,
-            uniqueKey,
-            order: globalIndex,
-          } as typeof link & {
-            query: string;
-            linkIndex: number;
-            uniqueKey: string;
-            order: number;
-          };
-          globalIndex += 1;
-          return item;
-        })
-      );
-
-    const sortedLinks = [...allLinksWithQuery].sort((a, b) => {
-      const timeA =
-        typeof a.postData?.created_utc === "number"
-          ? a.postData.created_utc
-          : -Infinity;
-      const timeB =
-        typeof b.postData?.created_utc === "number"
-          ? b.postData.created_utc
-          : -Infinity;
-      if (timeA !== timeB) {
-        return timeB - timeA;
-      }
-      return a.order - b.order;
-    });
-
-    const seenUrls = new Set<string>();
-    const results: Array<(typeof sortedLinks)[number]> = [];
-
-    for (const linkItem of sortedLinks) {
-      if (!linkItem.link) {
-        continue;
-      }
-
-      const normalizedUrl = normalizeUrl(linkItem.link);
-      if (analyticsUrlSet.has(normalizedUrl)) {
-        continue;
-      }
-
-      if (seenUrls.has(normalizedUrl)) {
-        continue;
-      }
-
-      seenUrls.add(normalizedUrl);
-      results.push(linkItem);
-    }
-
-    return results;
-  }, [redditLinks, analyticsUrlSet]);
-
   const distinctLinksCount = distinctLinks.length;
-
-  useEffect(() => {
-    if (!submittedProductIdea || !website) {
-      return;
-    }
-
-    if (distinctLinks.length === 0) {
-      return;
-    }
-
-    const cachedEntries: Record<string, string> = {};
-    const linksToGenerate: typeof distinctLinks = [];
-
-    for (const link of distinctLinks) {
-      if (!link.link) {
-        continue;
-      }
-      const normalizedUrl = normalizeUrl(link.link);
-      const commentKey = getCommentCacheKey(link.link, submittedProductIdea);
-      const cachedComment = getCachedComment(link.link, submittedProductIdea);
-
-      if (cachedComment) {
-        cachedEntries[link.uniqueKey] = cachedComment;
-        generatedCommentUrlsRef.current.add(commentKey);
-        continue;
-      }
-
-      if (generatedCommentUrlsRef.current.has(commentKey)) {
-        continue;
-      }
-      if (generatingCommentUrlsRef.current.has(commentKey)) {
-        continue;
-      }
-
-      if (postTextareasRef.current[link.uniqueKey]?.trim().length) {
-        continue;
-      }
-
-      linksToGenerate.push(link);
-    }
-
-    if (Object.keys(cachedEntries).length > 0) {
-      setPostTextareas((prev) => {
-        const updated = { ...prev };
-        for (const [key, value] of Object.entries(cachedEntries)) {
-          if (!updated[key]) {
-            updated[key] = value;
-          }
-        }
-        return updated;
-      });
-    }
-
-    if (linksToGenerate.length === 0) {
-      return;
-    }
-
-    let cancelled = false;
-
-    (async () => {
-      for (const link of linksToGenerate) {
-        if (cancelled) {
-          break;
-        }
-        await generateCommentForLink(link);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [distinctLinks, submittedProductIdea, website, generateCommentForLink]);
 
   // Helper function to format timestamp as relative time
   const formatTimeAgo = (timestampUtc: number | undefined | null): string => {
@@ -1629,7 +1710,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
                   Failed
                 </Button>
               </div>
-              
+
               {isLoadingAnalytics ? (
                 <div className="rounded-lg border border-border bg-card p-8 text-center">
                   <div className="flex items-center justify-center gap-2">
@@ -1643,8 +1724,8 @@ const cacheComment = (url: string, idea: string, comment: string) => {
                     {analyticsFilter === "posted"
                       ? "No active posts yet. Generate comments and post them to see activity here."
                       : analyticsFilter === "skipped"
-                      ? "No skipped posts yet. Skip a post in the Discovery tab to review it here."
-                      : "No failed posts yet. If a post fails to publish, it will appear here."}
+                        ? "No skipped posts yet. Skip a post in the Discovery tab to review it here."
+                        : "No failed posts yet. If a post fails to publish, it will appear here."}
                   </p>
                 </div>
               ) : (
@@ -1825,13 +1906,30 @@ const cacheComment = (url: string, idea: string, comment: string) => {
               <div className="space-y-6">
                 {/* Results */}
                 {isLoading && (
-                  <div className="flex flex-col items-center justify-center py-8">
-                    <div className="mb-4 flex space-x-2">
-                      <div className="h-3 w-3 animate-bounce rounded-full bg-primary [animation-delay:-0.3s]"></div>
-                      <div className="h-3 w-3 animate-bounce rounded-full bg-primary [animation-delay:-0.15s]"></div>
-                      <div className="h-3 w-3 animate-bounce rounded-full bg-primary"></div>
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="w-full max-w-md space-y-4">
+                      <div className="space-y-2 text-center">
+                        <h3 className="text-base font-semibold text-foreground">Finding Reddit posts...</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Generating search queries and discovering relevant posts for your product
+                        </p>
+                      </div>
+                      <div className="w-full">
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-muted relative">
+                          <div
+                            className="h-full w-3/4 rounded-full bg-primary absolute"
+                            style={{
+                              background: 'linear-gradient(90deg, hsl(var(--primary) / 0.3) 0%, hsl(var(--primary)) 50%, hsl(var(--primary) / 0.3) 100%)',
+                              animation: 'progress 1.5s ease-in-out infinite',
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>This may take a few moments...</span>
+                      </div>
                     </div>
-                    <p className="text-sm text-muted-foreground">Generating queries...</p>
                   </div>
                 )}
 
@@ -1862,7 +1960,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
                         Remove all posts
                       </Button>
                     </div>
-                    
+
                     {/* Show loading state if any query is still loading */}
                     {Object.values(isLoadingLinks).some(Boolean) && (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1870,19 +1968,19 @@ const cacheComment = (url: string, idea: string, comment: string) => {
                         <span>Searching Reddit...</span>
                       </div>
                     )}
-                    
+
                     {/* Flatten all Reddit links and display in grid - newest first */}
                     {distinctLinks.length > 0 ? (
                       <div className="grid gap-4 md:grid-cols-2">
                         {distinctLinks.map((linkItem) => {
                           const link = linkItem;
-                            // Extract subreddit from URL
-                            const subredditMatch = linkItem.link?.match(/reddit\.com\/r\/([^/]+)/);
-                            const subreddit = subredditMatch ? subredditMatch[1] : null;
-                            // Use unique key that includes query to avoid duplicates
-                            const linkKey = linkItem.uniqueKey;
-                            const isExpanded = expandedPosts.has(linkKey);
-                          
+                          // Extract subreddit from URL
+                          const subredditMatch = linkItem.link?.match(/reddit\.com\/r\/([^/]+)/);
+                          const subreddit = subredditMatch ? subredditMatch[1] : null;
+                          // Use unique key that includes query to avoid duplicates
+                          const linkKey = linkItem.uniqueKey;
+                          const isExpanded = expandedPosts.has(linkKey);
+
                           // Clean snippet
                           let cleanSnippet = link.snippet || '';
                           cleanSnippet = cleanSnippet.replace(/\d+\s*(hours?|days?|minutes?|weeks?|months?|years?)\s+ago/gi, '');
@@ -1892,7 +1990,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
                           cleanSnippet = cleanSnippet.replace(/^[\s\u00A0]+/g, '');
                           cleanSnippet = cleanSnippet.replace(/^\.{1,}/g, '');
                           cleanSnippet = cleanSnippet.trim();
-                          
+
                           // Helper function to estimate if content would exceed 3 lines
                           // With text-xs (12px) and typical card width (~300-400px), roughly 60-80 chars per line
                           // For 3 lines, that's approximately 180-240 characters
@@ -1902,20 +2000,20 @@ const cacheComment = (url: string, idea: string, comment: string) => {
                             // Count actual line breaks first
                             const lineBreaks = (text.match(/\n/g) || []).length;
                             if (lineBreaks >= 3) return lineBreaks + 1; // Already has 3+ line breaks
-                            
+
                             // Estimate based on character count
                             // Assuming ~65 characters per line for text-xs in card width
                             const charsPerLine = 65;
                             const estimatedLines = Math.ceil(text.length / charsPerLine);
                             return estimatedLines;
                           };
-                          
+
                           // Get the actual content to check
                           const contentToCheck = link.selftext || cleanSnippet || '';
                           const estimatedLines = estimateLines(contentToCheck);
                           const maxLines = 3;
                           const shouldShowSeeMore = estimatedLines > maxLines;
-                          
+
                           return (
                             <div
                               key={linkKey}
@@ -1930,7 +2028,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
                               >
                                 <X className="h-4 w-4" />
                               </button>
-                              
+
                               {/* Top section - Content area */}
                               <div className="flex-1">
                                 {/* Subreddit name */}
@@ -1941,12 +2039,12 @@ const cacheComment = (url: string, idea: string, comment: string) => {
                                     </span>
                                   </div>
                                 )}
-                                
+
                                 {/* Title */}
                                 <h3 className="mb-2 pr-6 text-sm font-semibold leading-tight text-foreground line-clamp-2">
                                   {link.title}
                                 </h3>
-                                
+
                                 {/* Post Content - Show selftext if available, otherwise show snippet */}
                                 {isLoadingPostContent[link.link || ''] ? (
                                   <div className="mb-3 flex items-center gap-2">
@@ -1982,42 +2080,53 @@ const cacheComment = (url: string, idea: string, comment: string) => {
                                   )
                                 )}
                               </div>
-                              
-                              {/* Bottom section - Textarea and Footer (pushed to bottom) */}
-                              <div className="mt-auto">
+
+                              {/* Bottom section - Textarea and Footer */}
+                              <div className={postTextareas[linkKey]?.trim() ? "mt-auto" : "mt-4"}>
                                 {/* Textarea */}
-                                <textarea
-                                  value={postTextareas[linkKey] || ""}
-                                  onChange={(e) => {
-                                    setPostTextareas((prev) => ({
-                                      ...prev,
-                                      [linkKey]: e.target.value,
-                                    }));
-                                  }}
-                                  placeholder="Add your notes or comments here..."
-                                  className="mb-2 w-full min-h-[100px] rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none resize-y"
-                                  rows={4}
-                                />
-                                
+                                {isGeneratingComment[linkKey] ? (
+                                  <div className="mb-2 flex min-h-[100px] items-center justify-center rounded-md border border-border bg-background px-3 py-2">
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                      <span>Generating comment...</span>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <textarea
+                                    value={postTextareas[linkKey] || ""}
+                                    onChange={(e) => {
+                                      setPostTextareas((prev) => ({
+                                        ...prev,
+                                        [linkKey]: e.target.value,
+                                      }));
+                                    }}
+                                    placeholder="Add your notes or comments here..."
+                                    className="mb-2 w-full min-h-[100px] rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none resize-y"
+                                    rows={4}
+                                  />
+                                )}
+
                                 {/* Generate Comment button */}
-                                <div className="mb-3 flex justify-start">
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    className="text-xs px-2 py-0.5 h-6"
-                                    onClick={() => handleGenerateComment(linkItem)}
-                                    disabled={isGeneratingComment[linkKey]}
-                                  >
-                                    {isGeneratingComment[linkKey] ? "Generating..." : "Generate Comment"}
-                                  </Button>
-                                </div>
-                                
+                                {!postTextareas[linkKey]?.trim() && (
+                                  <div className="mb-3 flex justify-start">
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      className="text-xs px-2 py-0.5 h-6"
+                                      onClick={() => handleGenerateComment(linkItem)}
+                                      disabled={isGeneratingComment[linkKey]}
+                                    >
+                                      {isGeneratingComment[linkKey] ? "Generating..." : "Generate Comment"}
+                                    </Button>
+                                  </div>
+                                )}
+
                                 {/* Footer with timestamp, link, and post button */}
                                 {link.link && (
                                   <div className="flex items-center justify-between border-t border-border pt-2">
                                     <div className="flex items-center gap-3">
                                       <span className="text-xs text-muted-foreground">
-                                        {link.postData?.created_utc 
+                                        {link.postData?.created_utc
                                           ? formatTimeAgo(link.postData.created_utc)
                                           : "Unknown"}
                                       </span>
@@ -2058,7 +2167,7 @@ const cacheComment = (url: string, idea: string, comment: string) => {
                 )}
               </div>
             </div>
-            
+
             {/* Fixed input at bottom */}
             <div className="bg-background">
               <ChatTextarea
@@ -2070,6 +2179,8 @@ const cacheComment = (url: string, idea: string, comment: string) => {
                 onPersonaChange={setPersona}
                 postCount={postCount}
                 onPostCountChange={setPostCount}
+                autoGenerateComments={autoGenerateComments}
+                onAutoGenerateCommentsChange={setAutoGenerateComments}
                 onSend={handleSubmit}
                 onChange={(value) => setCurrentProductIdea(value)}
                 placeholder="Tell us about your product and what it does..."
@@ -2090,41 +2201,6 @@ const cacheComment = (url: string, idea: string, comment: string) => {
         );
     }
   };
-
-  const openAnalyticsDrawer = useCallback((post: AnalyticsPost) => {
-    setSelectedAnalyticsPost(post);
-    setDrawerComment(post.comment || post.notes || "");
-    setIsAnalyticsDrawerVisible(true);
-  }, []);
-
-  const closeAnalyticsDrawer = useCallback(() => {
-    setIsAnalyticsDrawerVisible(false);
-    if (analyticsDrawerTimerRef.current) {
-      clearTimeout(analyticsDrawerTimerRef.current);
-    }
-    analyticsDrawerTimerRef.current = setTimeout(() => {
-      setSelectedAnalyticsPost(null);
-      setDrawerComment("");
-      analyticsDrawerTimerRef.current = null;
-    }, 300);
-  }, []);
-
-  useEffect(() => {
-    if (selectedAnalyticsPost) {
-      setDrawerComment(selectedAnalyticsPost.comment || selectedAnalyticsPost.notes || "");
-    }
-  }, [selectedAnalyticsPost]);
-
-  useEffect(() => {
-    const checkout = searchParams?.get("checkout");
-    if (checkout === "success") {
-      setShowCheckoutSuccessModal(true);
-      const params = new URLSearchParams(searchParams.toString());
-      params.delete("checkout");
-      const newQuery = params.toString();
-      router.replace(`${pathname}${newQuery ? `?${newQuery}` : ""}`, { scroll: false });
-    }
-  }, [searchParams, router, pathname]);
 
   const handleAnalyticsPostSubmit = async () => {
     if (!selectedAnalyticsPost) {

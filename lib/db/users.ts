@@ -244,3 +244,14 @@ export async function getUserByStripeCustomerId(stripeCustomerId: string): Promi
   return usersCollection.findOne({ stripeCustomerId });
 }
 
+export async function deleteUserByEmail(email: string): Promise<boolean> {
+  const db = await getDatabase();
+  const usersCollection = db.collection<User>('usersv2');
+  
+  const normalizedEmail = email.toLowerCase();
+  
+  const result = await usersCollection.deleteOne({ email: normalizedEmail });
+  
+  return result.deletedCount > 0;
+}
+

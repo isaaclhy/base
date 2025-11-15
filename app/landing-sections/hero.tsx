@@ -124,13 +124,15 @@ export default function Hero() {
     return (
         <section id="hero" className="relative flex min-h-screen flex-col items-center overflow-hidden px-4 py-20 sm:px-6 lg:px-8">
             <div className="mx-auto w-full max-w-6xl text-center relative z-10">
-                <h1 className="mb-6 text-3xl font-bold sm:text-6xl lg:text-6xl">
-                    Find <span className="underline" style={{ textDecorationColor: 'oklch(0.65 0.22 30)', color: 'oklch(0.65 0.22 30)' }}>desperate users</span> on
-                    <span className="block text-primary">Reddit in seconds</span>
-                </h1>
-                <p className="mx-auto mb-8 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                    Connect with users who already need and want your product.
-                </p>
+                <div className="space-y-3 mb-12">
+                    <h1 className="text-3xl font-bold sm:text-6xl lg:text-6xl">
+                        Find <span className="underline" style={{ textDecorationColor: 'oklch(0.65 0.22 30)', color: 'oklch(0.65 0.22 30)' }}>desperate users</span> on
+                        <span className="block text-primary">Reddit in seconds</span>
+                    </h1>
+                    <p className="mx-auto max-w-2xl text-sm text-muted-foreground sm:text-base">
+                        Connect with users who already need and want your product.
+                    </p>
+                </div>
 
                 <div className="mx-auto w-full max-w-5xl">
                     <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-lg lg:flex-row lg:h-[500px]">
