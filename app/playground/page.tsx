@@ -101,6 +101,19 @@ function PlaygroundContent() {
     return analyticsPosts.filter((post) => post.status === analyticsFilter);
   }, [analyticsPosts, analyticsFilter]);
 
+  const getCachedPost = (url: string): { selftext?: string | null; postData?: RedditPost | null } | null => {
+    try {
+      const cacheKey = normalizeUrl(url);
+      const cached = localStorage.getItem(`redditPost_${cacheKey}`);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (e) {
+      console.error("Error reading cached post:", e);
+    }
+    return null;
+  };
+
   // All useEffect hooks must be called before any early returns
   useEffect(() => {
     postTextareasRef.current = postTextareas;
@@ -877,20 +890,6 @@ function PlaygroundContent() {
     } finally {
       setIsLoadingLinks((prev) => ({ ...prev, [query]: false }));
     }
-  };
-
-  // Helper function to get cached post
-  const getCachedPost = (url: string): { selftext?: string | null; postData?: RedditPost | null } | null => {
-    try {
-      const cacheKey = normalizeUrl(url);
-      const cached = localStorage.getItem(`redditPost_${cacheKey}`);
-      if (cached) {
-        return JSON.parse(cached);
-      }
-    } catch (e) {
-      console.error("Error reading cached post:", e);
-    }
-    return null;
   };
 
   // Helper function to cache post
