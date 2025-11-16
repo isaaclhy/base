@@ -53,8 +53,6 @@ function PlaygroundContent() {
   const [submittedProductIdea, setSubmittedProductIdea] = useState<string>("");
   const [isGeneratingComment, setIsGeneratingComment] = useState<Record<string, boolean>>({});
   const [isPosting, setIsPosting] = useState<Record<string, boolean>>({});
-  const [hasRedditToken, setHasRedditToken] = useState<boolean | null>(null); // null = checking, true = has token, false = no token
-  const [isCheckingReddit, setIsCheckingReddit] = useState(true);
   const [toast, setToast] = useState<{ visible: boolean; message: string; link?: string | null; variant?: "success" | "error" } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1807,63 +1805,6 @@ function PlaygroundContent() {
           </div>
         );
       case "dashboard":
-        // Show Reddit connection prompt if no token
-        if (isCheckingReddit) {
-          return (
-            <div className="flex h-full flex-col items-center justify-center">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-                <span>Checking Reddit connection...</span>
-              </div>
-            </div>
-          );
-        }
-
-        if (hasRedditToken === false) {
-          return (
-            <div className="flex h-full flex-col items-center justify-center p-6">
-              <div className="max-w-md space-y-4 text-center">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                  <svg
-                    className="h-8 w-8 text-muted-foreground"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-5.248a1.25 1.25 0 0 1 2.634.312l1.211 2.44zM9.5 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056L5.655 0.752a1.25 1.25 0 0 1 2.634.312l1.211 2.44zM4.5 12c0-1.5.5-2.5 1.5-3.5s2-1.5 3-1.5 2.5.5 3.5 1.5 1.5 2 1.5 3.5-.5 2.5-1.5 3.5-2 1.5-3.5 1.5-2.5-.5-3.5-1.5-1.5-2-1.5-3.5zm11.5 0c0-1.5.5-2.5 1.5-3.5s2-1.5 3-1.5 2.5.5 3.5 1.5 1.5 2 1.5 3.5-.5 2.5-1.5 3.5-2 1.5-3.5 1.5-2.5-.5-3.5-1.5-1.5-2-1.5-3.5z" />
-                  </svg>
-                </div>
-                <div className="space-y-2">
-                  <h2 className="text-2xl font-semibold">Connect Your Reddit Account</h2>
-                  <p className="text-muted-foreground">
-                    To post comments to Reddit, you need to connect your Reddit account first.
-                    This allows us to post comments on your behalf.
-                  </p>
-                </div>
-                <div className="pt-4">
-                  <Button
-                    onClick={() => {
-                      window.location.href = "/api/reddit/auth";
-                    }}
-                    size="lg"
-                    className="gap-2"
-                  >
-                    <svg
-                      className="h-5 w-5"
-                      fill="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-5.248a1.25 1.25 0 0 1 2.634.312l1.211 2.44zM9.5 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056L5.655 0.752a1.25 1.25 0 0 1 2.634.312l1.211 2.44zM4.5 12c0-1.5.5-2.5 1.5-3.5s2-1.5 3-1.5 2.5.5 3.5 1.5 1.5 2 1.5 3.5-.5 2.5-1.5 3.5-2 1.5-3.5 1.5-2.5-.5-3.5-1.5-1.5-2-1.5-3.5zm11.5 0c0-1.5.5-2.5 1.5-3.5s2-1.5 3-1.5 2.5.5 3.5 1.5 1.5 2 1.5 3.5-.5 2.5-1.5 3.5-2 1.5-3.5 1.5-2.5-.5-3.5-1.5-1.5-2-1.5-3.5z" />
-                    </svg>
-                    Connect Reddit Account
-                  </Button>
-                </div>
-              </div>
-            </div>
-          );
-        }
-
         return (
           <div className="flex h-full flex-col">
             {/* Main content area - scrollable */}
