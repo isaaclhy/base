@@ -56,7 +56,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   );
 
   const data = await response.json();
-
+  console.log("Reddit API Response:", data);
   return NextResponse.json(data);
 }
 
