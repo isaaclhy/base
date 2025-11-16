@@ -148,6 +148,25 @@ export async function updateUserRedditTokens(
   return updatedUser as User;
 }
 
+export async function clearUserRedditTokens(email: string): Promise<void> {
+  const db = await getDatabase();
+  const usersCollection = db.collection<User>("usersv2");
+
+  await usersCollection.updateOne(
+    { email },
+    {
+      $unset: {
+        redditAccessToken: "",
+        redditRefreshToken: "",
+        redditTokenExpiresAt: "",
+      },
+      $set: {
+        updatedAt: new Date(),
+      },
+    }
+  );
+}
+
 export async function updateUserPlanByEmail(
   email: string,
   plan: UserPlan,

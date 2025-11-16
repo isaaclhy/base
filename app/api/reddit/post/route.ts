@@ -43,12 +43,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Get valid access token (refreshes if needed)
   const access_token = await refreshAccessToken(session.user.email);
 
+  console.log("Access Token:", access_token);
   // Always use OAuth endpoint with token
   const response = await fetch(
     `https://oauth.reddit.com/api/info.json?id=${postIdsString}`,
     {
       headers: {
-        "User-Agent"  : "comment-tool/0.1 by isaaclhy13",
+        "User-Agent": "comment-tool/0.1 by isaaclhy13",
         "Accept": "application/json",
         "Authorization": `Bearer ${access_token}`,
       },

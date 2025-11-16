@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { clearUserRedditTokens } from "@/lib/db/users";
 
 const REDDIT_CLIENT_ID = process.env.REDDIT_CLIENT_ID || "";
 
@@ -20,6 +21,9 @@ function getRedirectUri(request: NextRequest): string {
 
 export async function GET(request: NextRequest) {
   try {
+    const searchParams = request.nextUrl.searchParams;
+    const shouldReset = searchParams.get("reset") === "1";
+
     // Validate Reddit OAuth configuration
     if (!REDDIT_CLIENT_ID || REDDIT_CLIENT_ID.trim() === "") {
       console.error("REDDIT_CLIENT_ID is not set in environment variables");
@@ -36,6 +40,15 @@ export async function GET(request: NextRequest) {
 
     if (!session?.user?.email) {
       return NextResponse.redirect(new URL("/", request.url));
+    }
+
+    // Optionally clear existing Reddit tokens before starting a new OAuth flow
+    if (shouldReset) {
+      try {
+        await clearUserRedditTokens(session.user.email);
+      } catch (err) {
+        console.error("Failed to clear existing Reddit tokens before reconnect:", err);
+      }
     }
 
     // Get redirect URI based on current environment

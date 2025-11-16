@@ -12,6 +12,7 @@ export function UserInfoCard() {
   const [imageError, setImageError] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isReconnectingReddit, setIsReconnectingReddit] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -47,6 +48,13 @@ export function UserInfoCard() {
   const handleDeleteAccount = () => {
     setShowDeleteModal(true);
     setIsMenuOpen(false);
+  };
+
+  const handleReconnectReddit = () => {
+    setIsMenuOpen(false);
+    setIsReconnectingReddit(true);
+    // Start Reddit OAuth flow with reset flag to clear existing tokens
+    window.location.href = "/api/reddit/auth?reset=1";
   };
 
   const clearAllCache = () => {
@@ -146,6 +154,24 @@ export function UserInfoCard() {
               />
               <div className="absolute bottom-full right-0 mb-2 z-20 w-48 rounded-md border border-border bg-card shadow-lg">
                 <div className="p-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2 text-xs"
+                    onClick={handleReconnectReddit}
+                    disabled={isReconnectingReddit}
+                  >
+                    {isReconnectingReddit ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Reconnecting Reddit...
+                      </>
+                    ) : (
+                      <>Reconnect Reddit</>
+                    )}
+                  </Button>
+                </div>
+                <div className="p-1 border-t border-border">
                   <Button
                     variant="ghost"
                     size="sm"

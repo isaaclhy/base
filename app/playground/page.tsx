@@ -164,7 +164,7 @@ function PlaygroundContent() {
         setRedditLinks(links);
 
         // Load cached comments from localStorage - we'll restore them when distinctLinks are computed
-
+        
         // Load cached posts from localStorage and populate links
         // Then fetch only posts that aren't cached
         setTimeout(() => {
@@ -187,7 +187,7 @@ function PlaygroundContent() {
                 }
                 return link;
               });
-
+              
               // Update state if we found cached posts
               if (hasUpdates) {
                 setRedditLinks((prev) => {
@@ -196,7 +196,7 @@ function PlaygroundContent() {
                   return updated;
                 });
               }
-
+              
               // Don't fetch here - batchFetchAllPostContent will handle it after all queries load
             }
           });
@@ -216,44 +216,12 @@ function PlaygroundContent() {
         console.error("Failed to parse saved queries:", e);
       }
     }
-
+    
     // Analytics posts will be loaded from MongoDB via useEffect
   }, []);
 
-  // Check Reddit connection status on mount
-  useEffect(() => {
-    if (!session?.user) return;
-
-    const checkRedditConnection = async () => {
-      setIsCheckingReddit(true);
-      try {
-        const response = await fetch("/api/reddit/status");
-        if (response.ok) {
-          const data = await response.json();
-          setHasRedditToken(data.connected);
-        } else {
-          setHasRedditToken(false);
-        }
-      } catch (error) {
-        console.error("Error checking Reddit connection:", error);
-        setHasRedditToken(false);
-      } finally {
-        setIsCheckingReddit(false);
-      }
-    };
-
-    checkRedditConnection();
-  }, [session?.user]);
-
-  // Re-check Reddit connection when URL params indicate success
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("reddit_connected") === "success") {
-      setHasRedditToken(true);
-      // Clean up URL
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, []);
+  // We no longer auto-check Reddit connection on focus/tab changes.
+  // Connection is now explicitly (re)established via the sidebar "Reconnect Reddit" button.
 
   // Load analytics posts from MongoDB
   useEffect(() => {
@@ -746,7 +714,7 @@ function PlaygroundContent() {
     // Save product idea to localStorage
     const saved = localStorage.getItem("productIdeas");
     let ideas: string[] = [];
-
+    
     if (saved) {
       try {
         ideas = JSON.parse(saved);
@@ -754,7 +722,7 @@ function PlaygroundContent() {
         console.error("Failed to parse saved ideas:", e);
       }
     }
-
+    
     // Add new idea if it doesn't already exist
     if (!ideas.includes(message.trim())) {
       ideas.unshift(message.trim()); // Add to beginning
@@ -785,7 +753,7 @@ function PlaygroundContent() {
       }
 
       const data = await response.json();
-
+      
       if (data.error) {
         throw new Error(data.error);
       }
@@ -793,15 +761,15 @@ function PlaygroundContent() {
       if (data.result && Array.isArray(data.result)) {
         console.log("Generated queries:", data.result);
         setResults(data.result);
-
+        
         // Save queries to localStorage
         localStorage.setItem("savedQueries", JSON.stringify(data.result));
-
+        
         // Fetch Reddit links for each query in parallel
         const linkPromises = data.result.map((query: string) => {
           return fetchRedditLinks(query, postCount);
         });
-
+        
         // Wait for all links to be fetched, then batch fetch all post content together
         Promise.all(linkPromises).then(() => {
           // Small delay to ensure all links are saved to localStorage and state is updated
@@ -822,7 +790,7 @@ function PlaygroundContent() {
 
   const fetchRedditLinks = async (query: string, postCount: number) => {
     setIsLoadingLinks((prev) => ({ ...prev, [query]: true }));
-
+    
     try {
       const response = await fetch("/api/google/search", {
         method: "POST",
@@ -841,7 +809,7 @@ function PlaygroundContent() {
       }
 
       const data = await response.json();
-
+      
       if (data.error) {
         throw new Error(data.error);
       }
@@ -882,7 +850,7 @@ function PlaygroundContent() {
           return updated;
         });
         setError(null);
-
+        
         // Don't fetch post content here - will be batched together after all queries complete
       }
     } catch (err) {
@@ -906,7 +874,7 @@ function PlaygroundContent() {
   const batchFetchAllPostContent = async () => {
     // Read from localStorage to get the latest state (since we save there immediately)
     let currentState: Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>> = {};
-
+    
     try {
       const saved = localStorage.getItem("redditLinks");
       if (saved) {
@@ -920,10 +888,10 @@ function PlaygroundContent() {
         return prev;
       });
     }
-
+    
     const allPostsNeedingFetch: Array<{ url: string; query: string; linkIndex: number; postFullname: string }> = [];
     const postsToUpdate: Array<{ query: string; linkIndex: number; cached: { selftext?: string | null; postData?: RedditPost | null } }> = [];
-
+    
     // Collect all posts that need fetching across all queries
     Object.entries(currentState).forEach(([query, links]) => {
       links.forEach((link, index) => {
@@ -932,7 +900,7 @@ function PlaygroundContent() {
           if (urlMatch) {
             const [, , postId] = urlMatch;
             const postFullname = `t3_${postId}`;
-
+            
             // Check if post is cached
             const cached = getCachedPost(link.link);
             if (cached && (cached.selftext || cached.postData)) {
@@ -948,7 +916,7 @@ function PlaygroundContent() {
         }
       });
     });
-
+    
     // Update state with cached posts first
     if (postsToUpdate.length > 0) {
       setRedditLinks((prev) => {
@@ -966,7 +934,7 @@ function PlaygroundContent() {
         return updated;
       });
     }
-
+    
     // Process fetching if needed
     if (allPostsNeedingFetch.length > 0) {
       console.log(`Batch fetching ${allPostsNeedingFetch.length} posts from ${Object.keys(currentState).length} queries in a single batch operation`);
@@ -975,7 +943,7 @@ function PlaygroundContent() {
       console.log("All posts were found in cache, no fetching needed");
     }
   };
-
+  
   // Helper function to process batch fetching
   const processBatchFetch = async (
     allPostsNeedingFetch: Array<{ url: string; query: string; linkIndex: number; postFullname: string }>
@@ -991,11 +959,11 @@ function PlaygroundContent() {
     const batchSize = 100;
     const postFullnames = allPostsNeedingFetch.map(item => item.postFullname);
     const batches: string[][] = [];
-
+    
     for (let i = 0; i < postFullnames.length; i += batchSize) {
       batches.push(postFullnames.slice(i, i + batchSize));
     }
-
+    
     // Create a map for quick lookup: postFullname -> url, linkIndex, and query
     const postDataMap = new Map<string, { url: string; linkIndex: number; query: string }>();
     allPostsNeedingFetch.forEach(({ url, linkIndex, postFullname, query }) => {
@@ -1007,7 +975,7 @@ function PlaygroundContent() {
     // Process each batch sequentially with delays and retry logic
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
-
+      
       // Add delay between batches (except for the first one)
       if (batchIndex > 0) {
         console.log(`Waiting 3 seconds before next batch to avoid rate limits...`);
@@ -1021,17 +989,18 @@ function PlaygroundContent() {
       while (retryCount < maxRetries && !success) {
         try {
           console.log(`Fetching batch ${batchIndex + 1}/${batches.length} with ${batch.length} posts (attempt ${retryCount + 1}/${maxRetries})`);
-
+          
           const response = await fetch("/api/reddit/post", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              "User-Agent"  : "comment-tool/0.1 by isaaclhy13",
             },
             body: JSON.stringify({
               postIds: batch,
             }),
           });
-
+          
           if (!response.ok) {
             if (response.status === 429) {
               retryCount++;
@@ -1070,12 +1039,12 @@ function PlaygroundContent() {
               break;
             }
           }
-
+          
           success = true;
 
           const data = await response.json();
           const posts: RedditPost[] = data?.data?.children?.map((child: any) => child.data) || [];
-
+          
           console.log(`Batch ${batchIndex + 1} returned ${posts.length} posts`);
 
           const postMap = new Map<string, RedditPost>();
@@ -1089,27 +1058,27 @@ function PlaygroundContent() {
           // Update all links in this batch with their post content
           setRedditLinks((prev) => {
             const updated = { ...prev };
-
+            
             batch.forEach((postFullname) => {
               const postData = postDataMap.get(postFullname);
               if (postData) {
                 const { url, linkIndex, query } = postData;
                 const post = postMap.get(postFullname);
-
+                
                 if (post && updated[query] && updated[query][linkIndex]) {
                   const postContent = {
                     selftext: post.selftext || null,
                     postData: post,
                   };
-
+                  
                   updated[query][linkIndex] = {
                     ...updated[query][linkIndex],
                     ...postContent,
                   };
-
+                  
                   cachePost(url, postContent);
                 }
-
+                
                 setIsLoadingPostContent((prevLoading) => {
                   const newState = { ...prevLoading };
                   delete newState[url];
@@ -1117,7 +1086,7 @@ function PlaygroundContent() {
                 });
               }
             });
-
+            
             localStorage.setItem("redditLinks", JSON.stringify(updated));
             return updated;
           });
@@ -1155,7 +1124,7 @@ function PlaygroundContent() {
     // Load cached posts first and update state
     const cachedPostsMap = new Map<string, { selftext?: string | null; postData?: RedditPost | null }>();
     const postsNeedingFetch: Array<{ url: string; linkIndex: number; postFullname: string }> = [];
-
+    
     // Process links: check cache first, only fetch if not cached
     links.forEach((link, index) => {
       if (link.link) {
@@ -1163,7 +1132,7 @@ function PlaygroundContent() {
         if (urlMatch) {
           const [, , postId] = urlMatch;
           const postFullname = `t3_${postId}`;
-
+          
           // Check if post is cached
           const cached = getCachedPost(link.link);
           if (cached && (cached.selftext || cached.postData)) {
@@ -1205,11 +1174,11 @@ function PlaygroundContent() {
     const batchSize = 100;
     const postFullnames = postsNeedingFetch.map(item => item.postFullname);
     const batches: string[][] = [];
-
+    
     for (let i = 0; i < postFullnames.length; i += batchSize) {
       batches.push(postFullnames.slice(i, i + batchSize));
     }
-
+    
     // Create a map for quick lookup: postFullname -> url, linkIndex, and query
     const postDataMap = new Map<string, { url: string; linkIndex: number; query: string }>();
     postsNeedingFetch.forEach(({ url, linkIndex, postFullname }) => {
@@ -1221,7 +1190,7 @@ function PlaygroundContent() {
     // Process each batch sequentially with delays and retry logic to avoid rate limits
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
-
+      
       // Add delay between batches (except for the first one)
       // Increased delay to 3 seconds to respect Reddit's rate limits
       if (batchIndex > 0) {
@@ -1236,7 +1205,7 @@ function PlaygroundContent() {
       while (retryCount < maxRetries && !success) {
         try {
           console.log(`Fetching batch ${batchIndex + 1}/${batches.length} with ${batch.length} posts (attempt ${retryCount + 1}/${maxRetries})`);
-
+          
           // Call /api/reddit/post with POST method for the batch
           const response = await fetch("/api/reddit/post", {
             method: "POST",
@@ -1247,7 +1216,7 @@ function PlaygroundContent() {
               postIds: batch,
             }),
           });
-
+          
           if (!response.ok) {
             // Handle 429 (Too Many Requests) with exponential backoff
             if (response.status === 429) {
@@ -1291,16 +1260,16 @@ function PlaygroundContent() {
               break; // Skip this batch and move to next
             }
           }
-
+          
           // Success - process the response
           success = true;
 
           const data = await response.json();
-
+          
           // The /api/reddit/post endpoint returns Reddit API response
           // Format: { data: { children: [{ data: RedditPost }] } }
           const posts: RedditPost[] = data?.data?.children?.map((child: any) => child.data) || [];
-
+          
           console.log(`Batch ${batchIndex + 1} returned ${posts.length} posts`);
 
           // Create a map of post ID to post data for quick lookup
@@ -1316,30 +1285,30 @@ function PlaygroundContent() {
           // Update all links in this batch with their post content and cache them
           setRedditLinks((prev) => {
             const updated = { ...prev };
-
+            
             // Update each post in the batch
             batch.forEach((postFullname) => {
               const postData = postDataMap.get(postFullname);
               if (postData) {
                 const { url, linkIndex } = postData;
                 const post = postMap.get(postFullname);
-
+                
                 if (post && updated[query] && updated[query][linkIndex]) {
                   const postContent = {
                     selftext: post.selftext || null,
                     postData: post,
                   };
-
+                  
                   // Update the link with post content
                   updated[query][linkIndex] = {
                     ...updated[query][linkIndex],
                     ...postContent,
                   };
-
+                  
                   // Cache the post in localStorage
                   cachePost(url, postContent);
                 }
-
+                
                 // Remove loading state
                 setIsLoadingPostContent((prev) => {
                   const newState = { ...prev };
@@ -1348,7 +1317,7 @@ function PlaygroundContent() {
                 });
               }
             });
-
+            
             // Save to localStorage
             localStorage.setItem("redditLinks", JSON.stringify(updated));
             return updated;
@@ -1438,12 +1407,12 @@ function PlaygroundContent() {
           },
           body: JSON.stringify({
             status: "posted",
-            query: linkItem.query,
-            title: linkItem.title || null,
-            link: linkItem.link || null,
-            snippet: linkItem.snippet || null,
-            selftext: linkItem.selftext || null,
-            postData: linkItem.postData || null,
+      query: linkItem.query,
+      title: linkItem.title || null,
+      link: linkItem.link || null,
+      snippet: linkItem.snippet || null,
+      selftext: linkItem.selftext || null,
+      postData: linkItem.postData || null,
             comment: commentText.trim(),
             notes: commentText.trim(),
           }),
@@ -1463,32 +1432,32 @@ function PlaygroundContent() {
 
       // Refresh analytics from database after posting
       await refreshAnalytics();
-
-      // Remove from redditLinks (filter it out from the dashboard)
-      setRedditLinks((prev) => {
-        const updated = { ...prev };
-        if (updated[linkItem.query]) {
-          // Remove the post by filtering it out
-          updated[linkItem.query] = updated[linkItem.query].filter((link, index) => {
-            // Check if this is the post we want to remove
-            // We'll use the link URL to identify it since uniqueKey might not be stored
-            if (link.link === linkItem.link) {
-              return false; // Remove this post
-            }
-            return true;
-          });
-          // If the query has no more links, we could remove the query key, but let's keep it
-          localStorage.setItem("redditLinks", JSON.stringify(updated));
-        }
-        return updated;
-      });
-
-      // Remove textarea value if it exists
-      setPostTextareas((prev) => {
-        const updated = { ...prev };
+    
+    // Remove from redditLinks (filter it out from the dashboard)
+    setRedditLinks((prev) => {
+      const updated = { ...prev };
+      if (updated[linkItem.query]) {
+        // Remove the post by filtering it out
+        updated[linkItem.query] = updated[linkItem.query].filter((link, index) => {
+          // Check if this is the post we want to remove
+          // We'll use the link URL to identify it since uniqueKey might not be stored
+          if (link.link === linkItem.link) {
+            return false; // Remove this post
+          }
+          return true;
+        });
+        // If the query has no more links, we could remove the query key, but let's keep it
+        localStorage.setItem("redditLinks", JSON.stringify(updated));
+      }
+      return updated;
+    });
+    
+    // Remove textarea value if it exists
+    setPostTextareas((prev) => {
+      const updated = { ...prev };
         delete updated[linkKey];
-        return updated;
-      });
+      return updated;
+    });
 
       // Show success message
       showToast("Comment posted successfully.", { link: linkItem.link || null, variant: "success" });
@@ -1498,11 +1467,11 @@ function PlaygroundContent() {
       showToast(errorMessage, { variant: "error" });
       try {
         await fetch("/api/posts/create", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
             status: "failed",
             query: linkItem.query,
             title: linkItem.title || null,
@@ -1512,8 +1481,8 @@ function PlaygroundContent() {
             postData: linkItem.postData || null,
             comment: (postTextareas[linkKey] || "").trim() || null,
             notes: errorMessage,
-          }),
-        });
+        }),
+      });
         await refreshAnalytics();
       } catch (recordError) {
         console.error("Error recording failed analytics entry:", recordError);
@@ -1539,12 +1508,12 @@ function PlaygroundContent() {
         },
         body: JSON.stringify({
           status: "skipped",
-          query: linkItem.query,
-          title: linkItem.title || null,
-          link: linkItem.link || null,
-          snippet: linkItem.snippet || null,
-          selftext: linkItem.selftext || null,
-          postData: linkItem.postData || null,
+      query: linkItem.query,
+      title: linkItem.title || null,
+      link: linkItem.link || null,
+      snippet: linkItem.snippet || null,
+      selftext: linkItem.selftext || null,
+      postData: linkItem.postData || null,
           notes: postTextareas[linkItem.uniqueKey] || null,
         }),
       });
@@ -1555,7 +1524,7 @@ function PlaygroundContent() {
 
     // Refresh analytics from database after skipping
     await refreshAnalytics();
-
+    
     // Remove from redditLinks
     setRedditLinks((prev) => {
       const updated = { ...prev };
@@ -1565,7 +1534,7 @@ function PlaygroundContent() {
       }
       return updated;
     });
-
+    
     // Remove textarea value
     setPostTextareas((prev) => {
       const updated = { ...prev };
@@ -1709,7 +1678,7 @@ function PlaygroundContent() {
                   Failed
                 </Button>
               </div>
-
+              
               {isLoadingAnalytics ? (
                 <div className="rounded-lg border border-border bg-card p-8 text-center">
                   <div className="flex items-center justify-center gap-2">
@@ -1743,16 +1712,16 @@ function PlaygroundContent() {
                       <div className="flex h-full flex-col rounded-lg border border-border bg-card overflow-hidden">
                         <div className="max-h-[65vh] flex-1 overflow-x-auto overflow-y-auto">
                           <table className="min-w-full">
-                            <thead className="bg-muted/50">
-                              <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Title</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Query</th>
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Title</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Query</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Updated</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Post</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border">
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
                               {pageItems.map((post) => (
                                 <tr
                                   key={post.id || post.uniqueKey}
@@ -1760,7 +1729,7 @@ function PlaygroundContent() {
                                   onClick={() => openAnalyticsDrawer(post)}
                                 >
                                   <td className="px-4 py-3">
-                                    <span
+                              <span
                                       className={cn(
                                         "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize",
                                         post.status === "posted" && "bg-emerald-500/10 text-emerald-500",
@@ -1769,37 +1738,37 @@ function PlaygroundContent() {
                                       )}
                                     >
                                       {post.status}
-                                    </span>
-                                  </td>
+                              </span>
+                            </td>
                                   <td className="max-w-sm px-4 py-3 text-sm font-medium text-foreground">
                                     <div className="truncate" title={post.title || "Untitled post"}>
                                       {post.title || "Untitled post"}
-                                    </div>
-                                  </td>
+                              </div>
+                            </td>
                                   <td className="max-w-xs px-4 py-3 text-sm text-muted-foreground">
                                     <div className="line-clamp-2">{post.query}</div>
-                                  </td>
+                            </td>
                                   <td className="px-4 py-3 text-sm text-muted-foreground">
                                     {new Date(post.postedAt).toLocaleDateString()}
                                   </td>
                                   <td className="px-4 py-3">
-                                    {post.link ? (
-                                      <a
-                                        href={post.link}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
+                              {post.link ? (
+                                <a
+                                  href={post.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                         className="text-sm font-medium text-primary hover:underline"
-                                      >
+                                >
                                         Link
-                                      </a>
-                                    ) : (
+                                </a>
+                              ) : (
                                       <span className="text-sm text-muted-foreground">-</span>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                         </div>
                         {isSkippedView && totalItems > PAGE_SIZE && (
                           <div className="flex flex-col gap-3 border-t border-border bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1826,8 +1795,8 @@ function PlaygroundContent() {
                               >
                                 Next
                               </Button>
-                            </div>
-                          </div>
+                  </div>
+                </div>
                         )}
                       </div>
                     </div>
@@ -1912,7 +1881,7 @@ function PlaygroundContent() {
                         <p className="text-sm text-muted-foreground">
                           Generating search queries and discovering relevant posts for your product
                         </p>
-                      </div>
+                    </div>
                       <div className="w-full">
                         <div className="h-2 w-full overflow-hidden rounded-full bg-muted relative">
                           <div
@@ -1941,14 +1910,14 @@ function PlaygroundContent() {
                 {results.length > 0 && (
                   <div className="space-y-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <h3 className="text-lg font-semibold">
-                        Reddit Posts
-                        {distinctLinksCount > 0 && (
-                          <span className="ml-2 text-sm font-normal text-muted-foreground">
-                            ({distinctLinksCount} found)
-                          </span>
-                        )}
-                      </h3>
+                    <h3 className="text-lg font-semibold">
+                      Reddit Posts
+                      {distinctLinksCount > 0 && (
+                        <span className="ml-2 text-sm font-normal text-muted-foreground">
+                          ({distinctLinksCount} found)
+                        </span>
+                      )}
+                    </h3>
                       <Button
                         variant="outline"
                         size="sm"
@@ -1959,7 +1928,7 @@ function PlaygroundContent() {
                         Remove all posts
                       </Button>
                     </div>
-
+                    
                     {/* Show loading state if any query is still loading */}
                     {Object.values(isLoadingLinks).some(Boolean) && (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1967,19 +1936,19 @@ function PlaygroundContent() {
                         <span>Searching Reddit...</span>
                       </div>
                     )}
-
+                    
                     {/* Flatten all Reddit links and display in grid - newest first */}
                     {distinctLinks.length > 0 ? (
-                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="grid gap-4 md:grid-cols-2">
                         {distinctLinks.map((linkItem) => {
                           const link = linkItem;
-                          // Extract subreddit from URL
-                          const subredditMatch = linkItem.link?.match(/reddit\.com\/r\/([^/]+)/);
-                          const subreddit = subredditMatch ? subredditMatch[1] : null;
-                          // Use unique key that includes query to avoid duplicates
-                          const linkKey = linkItem.uniqueKey;
-                          const isExpanded = expandedPosts.has(linkKey);
-
+                            // Extract subreddit from URL
+                            const subredditMatch = linkItem.link?.match(/reddit\.com\/r\/([^/]+)/);
+                            const subreddit = subredditMatch ? subredditMatch[1] : null;
+                            // Use unique key that includes query to avoid duplicates
+                            const linkKey = linkItem.uniqueKey;
+                            const isExpanded = expandedPosts.has(linkKey);
+                          
                           // Clean snippet
                           let cleanSnippet = link.snippet || '';
                           cleanSnippet = cleanSnippet.replace(/\d+\s*(hours?|days?|minutes?|weeks?|months?|years?)\s+ago/gi, '');
@@ -1989,7 +1958,7 @@ function PlaygroundContent() {
                           cleanSnippet = cleanSnippet.replace(/^[\s\u00A0]+/g, '');
                           cleanSnippet = cleanSnippet.replace(/^\.{1,}/g, '');
                           cleanSnippet = cleanSnippet.trim();
-
+                          
                           // Helper function to estimate if content would exceed 3 lines
                           // With text-xs (12px) and typical card width (~300-400px), roughly 60-80 chars per line
                           // For 3 lines, that's approximately 180-240 characters
@@ -1999,20 +1968,20 @@ function PlaygroundContent() {
                             // Count actual line breaks first
                             const lineBreaks = (text.match(/\n/g) || []).length;
                             if (lineBreaks >= 3) return lineBreaks + 1; // Already has 3+ line breaks
-
+                            
                             // Estimate based on character count
                             // Assuming ~65 characters per line for text-xs in card width
                             const charsPerLine = 65;
                             const estimatedLines = Math.ceil(text.length / charsPerLine);
                             return estimatedLines;
                           };
-
+                          
                           // Get the actual content to check
                           const contentToCheck = link.selftext || cleanSnippet || '';
                           const estimatedLines = estimateLines(contentToCheck);
                           const maxLines = 3;
                           const shouldShowSeeMore = estimatedLines > maxLines;
-
+                          
                           return (
                             <div
                               key={linkKey}
@@ -2027,7 +1996,7 @@ function PlaygroundContent() {
                               >
                                 <X className="h-4 w-4" />
                               </button>
-
+                              
                               {/* Top section - Content area */}
                               <div className="flex-1">
                                 {/* Subreddit name */}
@@ -2038,12 +2007,12 @@ function PlaygroundContent() {
                                     </span>
                                   </div>
                                 )}
-
+                                
                                 {/* Title */}
                                 <h3 className="mb-2 pr-6 text-sm font-semibold leading-tight text-foreground line-clamp-2">
                                   {link.title}
                                 </h3>
-
+                                
                                 {/* Post Content - Show selftext if available, otherwise show snippet */}
                                 {isLoadingPostContent[link.link || ''] ? (
                                   <div className="mb-3 flex items-center gap-2">
@@ -2079,7 +2048,7 @@ function PlaygroundContent() {
                                   )
                                 )}
                               </div>
-
+                              
                               {/* Bottom section - Textarea and Footer */}
                               <div className={postTextareas[linkKey]?.trim() ? "mt-auto" : "mt-4"}>
                                 {/* Textarea */}
@@ -2091,41 +2060,41 @@ function PlaygroundContent() {
                                     </div>
                                   </div>
                                 ) : (
-                                  <textarea
-                                    value={postTextareas[linkKey] || ""}
-                                    onChange={(e) => {
-                                      setPostTextareas((prev) => ({
-                                        ...prev,
-                                        [linkKey]: e.target.value,
-                                      }));
-                                    }}
-                                    placeholder="Add your notes or comments here..."
-                                    className="mb-2 w-full min-h-[100px] rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none resize-y"
-                                    rows={4}
-                                  />
+                                <textarea
+                                  value={postTextareas[linkKey] || ""}
+                                  onChange={(e) => {
+                                    setPostTextareas((prev) => ({
+                                      ...prev,
+                                      [linkKey]: e.target.value,
+                                    }));
+                                  }}
+                                  placeholder="Add your notes or comments here..."
+                                  className="mb-2 w-full min-h-[100px] rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none resize-y"
+                                  rows={4}
+                                />
                                 )}
-
+                                
                                 {/* Generate Comment button */}
                                 {!postTextareas[linkKey]?.trim() && (
-                                  <div className="mb-3 flex justify-start">
-                                    <Button
-                                      size="sm"
-                                      variant="secondary"
-                                      className="text-xs px-2 py-0.5 h-6"
-                                      onClick={() => handleGenerateComment(linkItem)}
-                                      disabled={isGeneratingComment[linkKey]}
-                                    >
-                                      {isGeneratingComment[linkKey] ? "Generating..." : "Generate Comment"}
-                                    </Button>
-                                  </div>
+                                <div className="mb-3 flex justify-start">
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    className="text-xs px-2 py-0.5 h-6"
+                                    onClick={() => handleGenerateComment(linkItem)}
+                                    disabled={isGeneratingComment[linkKey]}
+                                  >
+                                    {isGeneratingComment[linkKey] ? "Generating..." : "Generate Comment"}
+                                  </Button>
+                                </div>
                                 )}
-
+                                
                                 {/* Footer with timestamp, link, and post button */}
                                 {link.link && (
                                   <div className="flex items-center justify-between border-t border-border pt-2">
                                     <div className="flex items-center gap-3">
                                       <span className="text-xs text-muted-foreground">
-                                        {link.postData?.created_utc
+                                        {link.postData?.created_utc 
                                           ? formatTimeAgo(link.postData.created_utc)
                                           : "Unknown"}
                                       </span>
@@ -2154,19 +2123,19 @@ function PlaygroundContent() {
                             </div>
                           );
                         })}
-                      </div>
-                    ) : (
-                      !Object.values(isLoadingLinks).some(Boolean) && (
-                        <p className="text-sm text-muted-foreground">
-                          No Reddit posts found yet. Searching...
-                        </p>
-                      )
+                        </div>
+                      ) : (
+                        !Object.values(isLoadingLinks).some(Boolean) && (
+                          <p className="text-sm text-muted-foreground">
+                            No Reddit posts found yet. Searching...
+                          </p>
+                        )
                     )}
                   </div>
                 )}
               </div>
             </div>
-
+            
             {/* Fixed input at bottom */}
             <div className="bg-background">
               <ChatTextarea
@@ -2303,16 +2272,16 @@ function PlaygroundContent() {
 
   return (
     <>
-      <div className="flex h-full flex-col">
-        {activeTab === "dashboard" ? (
-          renderContent()
-        ) : (
-          <div className={cn(
-            "flex-1 overflow-y-auto",
-            sidebarOpen ? "p-6" : "p-6 pl-14 pt-14"
-          )}>{renderContent()}</div>
-        )}
-      </div>
+    <div className="flex h-full flex-col">
+      {activeTab === "dashboard" ? (
+        renderContent()
+      ) : (
+        <div className={cn(
+          "flex-1 overflow-y-auto",
+          sidebarOpen ? "p-6" : "p-6 pl-14 pt-14"
+        )}>{renderContent()}</div>
+      )}
+    </div>
       {selectedAnalyticsPost && (
         <>
           <div
@@ -2479,7 +2448,7 @@ export default function PlaygroundPage() {
           </div>
         </div>
       }>
-        <PlaygroundContent />
+      <PlaygroundContent />
       </Suspense>
     </PlaygroundLayout>
   );
