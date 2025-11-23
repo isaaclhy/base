@@ -9,6 +9,7 @@ import { RedditPost } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import PricingSection from "@/app/landing-sections/pricing";
 
 const normalizeUrl = (url: string): string => {
   return url
@@ -53,6 +54,8 @@ function PlaygroundContent() {
   const [submittedProductIdea, setSubmittedProductIdea] = useState<string>("");
   const [isGeneratingComment, setIsGeneratingComment] = useState<Record<string, boolean>>({});
   const [isPosting, setIsPosting] = useState<Record<string, boolean>>({});
+  const [isBulkPostModalOpen, setIsBulkPostModalOpen] = useState(false);
+  const [isBulkPosting, setIsBulkPosting] = useState(false);
   const [toast, setToast] = useState<{ visible: boolean; message: string; link?: string | null; variant?: "success" | "error" } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -76,6 +79,7 @@ function PlaygroundContent() {
     comment?: string | null;
   }
   const [analyticsPosts, setAnalyticsPosts] = useState<AnalyticsPost[]>([]);
+  const [analyticsView, setAnalyticsView] = useState<"activity" | "premium">("activity");
   const [analyticsFilter, setAnalyticsFilter] = useState<"posted" | "skipped" | "failed">("posted");
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(true);
   const [analyticsPage, setAnalyticsPage] = useState(1);
@@ -1490,6 +1494,27 @@ function PlaygroundContent() {
     }
   };
 
+  const handleBulkPostAll = async () => {
+    setIsBulkPosting(true);
+    try {
+      // Only post comments for posts that currently have a non-empty comment
+      const itemsToPost = distinctLinks.filter((item) => {
+        const comment = postTextareas[item.uniqueKey];
+        return comment && comment.trim().length > 0;
+      });
+
+      for (const item of itemsToPost) {
+        // Sequentially post each comment using the existing handler
+        // eslint-disable-next-line no-await-in-loop
+        await handlePostClick(item);
+      }
+
+      setIsBulkPostModalOpen(false);
+    } finally {
+      setIsBulkPosting(false);
+    }
+  };
+
   // Handler for Generate Comment button
   const handleGenerateComment = async (linkItem: { uniqueKey: string; query: string; title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }) => {
     await generateCommentForLink(linkItem, { force: true, showAlerts: true });
@@ -1625,7 +1650,43 @@ function PlaygroundContent() {
     }
   };
 
-  const handleRemoveAllPosts = () => {
+  const handleRemoveAllPosts = async () => {
+    // First, record all currently visible posts as skipped in analytics
+    try {
+      const itemsToSkip = distinctLinks;
+
+      await Promise.all(
+        itemsToSkip.map(async (linkItem) => {
+          try {
+            await fetch("/api/posts/create", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                status: "skipped",
+                query: linkItem.query,
+                title: linkItem.title || null,
+                link: linkItem.link || null,
+                snippet: linkItem.snippet || null,
+                selftext: linkItem.selftext || null,
+                postData: linkItem.postData || null,
+                notes: postTextareas[linkItem.uniqueKey] || null,
+              }),
+            });
+          } catch (dbError) {
+            console.error("Error saving skipped post to database (bulk remove):", dbError);
+          }
+        })
+      );
+
+      // Refresh analytics so they appear under the Skipped tab
+      await refreshAnalytics();
+    } catch (error) {
+      console.error("Error bulk-skipping posts during remove-all:", error);
+    }
+
+    // Then clear all local state and cached posts/comments
     setRedditLinks(() => {
       localStorage.removeItem("redditLinks");
       return {};
@@ -1653,63 +1714,87 @@ function PlaygroundContent() {
             !sidebarOpen && "pl-14 pt-14"
           )}>
             <div className="flex h-full flex-col gap-2">
-              <div className="flex gap-1.5">
-                <Button
-                  variant={analyticsFilter === "posted" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setAnalyticsFilter("posted")}
-                >
-                  Active
-                </Button>
-                <Button
-                  variant={analyticsFilter === "skipped" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setAnalyticsFilter("skipped")}
-                >
-                  Skipped
-                </Button>
-                <Button
-                  variant={analyticsFilter === "failed" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setAnalyticsFilter("failed")}
-                >
-                  Failed
-                </Button>
-              </div>
-              
-              {isLoadingAnalytics ? (
-                <div className="rounded-lg border border-border bg-card p-8 text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-                    <p className="text-muted-foreground">Loading analytics...</p>
-                  </div>
-                </div>
-              ) : filteredAnalyticsPosts.length === 0 ? (
-                <div className="rounded-lg border border-border bg-card p-8 text-center">
-                  <p className="text-muted-foreground">
-                    {analyticsFilter === "posted"
-                      ? "No active posts yet. Generate comments and post them to see activity here."
-                      : analyticsFilter === "skipped"
-                        ? "No skipped posts yet. Skip a post in the Discovery tab to review it here."
-                        : "No failed posts yet. If a post fails to publish, it will appear here."}
-                  </p>
-                </div>
-              ) : (
-                (() => {
-                  const PAGE_SIZE = 30;
-                  const isSkippedView = analyticsFilter === "skipped";
-                  const totalItems = filteredAnalyticsPosts.length;
-                  const totalPages = isSkippedView ? Math.max(1, Math.ceil(totalItems / PAGE_SIZE)) : 1;
-                  const currentPage = isSkippedView ? Math.min(analyticsPage, totalPages) : 1;
-                  const startIdx = isSkippedView ? (currentPage - 1) * PAGE_SIZE : 0;
-                  const endIdx = isSkippedView ? startIdx + PAGE_SIZE : filteredAnalyticsPosts.length;
-                  const pageItems = filteredAnalyticsPosts.slice(startIdx, endIdx);
+            {/* Sub-tabs inside Analytics: Activity vs Premium */}
+            <div className="flex gap-1.5">
+              <Button
+                variant={analyticsView === "activity" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setAnalyticsView("activity")}
+              >
+                Activity
+              </Button>
+              <Button
+                variant={analyticsView === "premium" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setAnalyticsView("premium")}
+              >
+                Premium
+              </Button>
+            </div>
 
-                  return (
-                    <div className="flex-1 min-h-0">
-                      <div className="flex h-full flex-col rounded-lg border border-border bg-card overflow-hidden">
-                        <div className="max-h-[65vh] flex-1 overflow-x-auto overflow-y-auto">
-                          <table className="min-w-full">
+            {analyticsView === "premium" ? (
+              <div className="flex-1 overflow-y-auto">
+                <PricingSection showCTAButtons />
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-1.5">
+                  <Button
+                    variant={analyticsFilter === "posted" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setAnalyticsFilter("posted")}
+                  >
+                    Active
+                  </Button>
+                  <Button
+                    variant={analyticsFilter === "skipped" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setAnalyticsFilter("skipped")}
+                  >
+                    Skipped
+                  </Button>
+                  <Button
+                    variant={analyticsFilter === "failed" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setAnalyticsFilter("failed")}
+                  >
+                    Failed
+                  </Button>
+                </div>
+
+                {isLoadingAnalytics ? (
+                  <div className="rounded-lg border border-border bg-card p-8 text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                      <p className="text-muted-foreground">Loading analytics...</p>
+                    </div>
+                  </div>
+                ) : filteredAnalyticsPosts.length === 0 ? (
+                  <div className="rounded-lg border border-border bg-card p-8 text-center">
+                    <p className="text-muted-foreground">
+                      {analyticsFilter === "posted"
+                        ? "No active posts yet. Generate comments and post them to see activity here."
+                        : analyticsFilter === "skipped"
+                          ? "No skipped posts yet. Skip a post in the Discovery tab to review it here."
+                          : "No failed posts yet. If a post fails to publish, it will appear here."}
+                    </p>
+                  </div>
+                ) : (
+                  (() => {
+                    const PAGE_SIZE = 30;
+                    const isSkippedView = analyticsFilter === "skipped";
+                    const totalItems = filteredAnalyticsPosts.length;
+                    const totalPages = isSkippedView ? Math.max(1, Math.ceil(totalItems / PAGE_SIZE)) : 1;
+                    const currentPage = isSkippedView ? Math.min(analyticsPage, totalPages) : 1;
+                    const startIdx = isSkippedView ? (currentPage - 1) * PAGE_SIZE : 0;
+                    const endIdx = isSkippedView ? startIdx + PAGE_SIZE : filteredAnalyticsPosts.length;
+                    const pageItems = filteredAnalyticsPosts.slice(startIdx, endIdx);
+
+                    return (
+                      <div className="flex-1 min-h-0">
+                        <div className="flex h-full flex-col rounded-lg border border-border bg-card overflow-hidden">
+                          <div className="max-h-[65vh] flex-1 overflow-x-auto overflow-y-auto">
+                            <table className="min-w-full">
                       <thead className="bg-muted/50">
                         <tr>
                           <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
@@ -1851,23 +1936,42 @@ function PlaygroundContent() {
                 {results.length > 0 && (
                   <div className="space-y-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <h3 className="text-lg font-semibold">
-                      Reddit Posts
-                      {distinctLinksCount > 0 && (
-                        <span className="ml-2 text-sm font-normal text-muted-foreground">
-                          ({distinctLinksCount} found)
-                        </span>
-                      )}
-                    </h3>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRemoveAllPosts}
-                        disabled={distinctLinksCount === 0 && !Object.values(isLoadingLinks).some(Boolean)}
-                        className="self-start sm:self-auto"
-                      >
-                        Remove all posts
-                      </Button>
+                      <h3 className="text-lg font-semibold">
+                        Reddit Posts
+                        {distinctLinksCount > 0 && (
+                          <span className="ml-2 text-sm font-normal text-muted-foreground">
+                            ({distinctLinksCount} found)
+                          </span>
+                        )}
+                      </h3>
+                      <div className="flex gap-2 self-start sm:self-auto">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsBulkPostModalOpen(true)}
+                          disabled={
+                            distinctLinksCount === 0 ||
+                            distinctLinks.every(
+                              (item) =>
+                                !postTextareas[item.uniqueKey] ||
+                                !postTextareas[item.uniqueKey].trim()
+                            )
+                          }
+                        >
+                          Post all comments
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRemoveAllPosts}
+                          disabled={
+                            distinctLinksCount === 0 &&
+                            !Object.values(isLoadingLinks).some(Boolean)
+                          }
+                        >
+                          Remove all posts
+                        </Button>
+                      </div>
                     </div>
                     
                     {/* Show loading state if any query is still loading */}
@@ -2321,6 +2425,59 @@ function PlaygroundContent() {
                   </Button>
                 </div>
               )}
+            </div>
+          </div>
+        </>
+      )}
+      {isBulkPostModalOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-background/40 backdrop-blur-sm"
+            onClick={() => {
+              if (!isBulkPosting) {
+                setIsBulkPostModalOpen(false);
+              }
+            }}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="w-full max-w-md rounded-lg border border-border bg-card shadow-lg">
+              <div className="border-b border-border px-6 py-4">
+                <h3 className="text-lg font-semibold text-foreground">
+                  Post all comments
+                </h3>
+              </div>
+              <div className="px-6 py-4 space-y-3 text-sm text-muted-foreground">
+                <p>
+                  This will post all generated comments for the Reddit posts currently
+                  shown on this page. Only posts that already have a comment will be posted.
+                </p>
+                <p>
+                  Comments will be posted one by one to Reddit and saved in your analytics.
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
+                <Button
+                  variant="outline"
+                  onClick={() => !isBulkPosting && setIsBulkPostModalOpen(false)}
+                  disabled={isBulkPosting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="default"
+                  onClick={handleBulkPostAll}
+                  disabled={isBulkPosting}
+                >
+                  {isBulkPosting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Posting...
+                    </>
+                  ) : (
+                    <>Post all comments</>
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         </>

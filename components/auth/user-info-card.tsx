@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
-import { LogOut, MoreVertical, Trash2, Loader2, X, AlertTriangle } from "lucide-react";
+import { LogOut, MoreVertical, Trash2, Loader2, X, AlertTriangle, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState, useRef, useEffect } from "react";
@@ -13,6 +13,7 @@ export function UserInfoCard() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isReconnectingReddit, setIsReconnectingReddit] = useState(false);
+  const [isManagingBilling, setIsManagingBilling] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -55,6 +56,39 @@ export function UserInfoCard() {
     setIsReconnectingReddit(true);
     // Start Reddit OAuth flow with reset flag to clear existing tokens
     window.location.href = "/api/reddit/auth?reset=1";
+  };
+
+  const handleManageBilling = async () => {
+    setIsMenuOpen(false);
+
+    // If user is not premium yet, send them to pricing
+    if (session?.user?.plan !== "premium") {
+      router.push("/pricing");
+      return;
+    }
+
+    try {
+      setIsManagingBilling(true);
+      const response = await fetch("/api/stripe/portal", {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Unable to open billing portal.");
+      }
+
+      const data = await response.json();
+      window.location.href = data.url;
+    } catch (error) {
+      console.error("Error opening billing portal:", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to open billing portal."
+      );
+      setIsManagingBilling(false);
+    }
   };
 
   const clearAllCache = () => {
@@ -168,6 +202,27 @@ export function UserInfoCard() {
                       </>
                     ) : (
                       <>Reconnect Reddit</>
+                    )}
+                  </Button>
+                </div>
+                <div className="p-1 border-t border-border">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2 text-xs"
+                    onClick={handleManageBilling}
+                    disabled={isManagingBilling}
+                  >
+                    {isManagingBilling ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Opening billing...
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="h-4 w-4" />
+                        Manage billing
+                      </>
                     )}
                   </Button>
                 </div>
