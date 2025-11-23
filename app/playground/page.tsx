@@ -60,6 +60,8 @@ function PlaygroundContent() {
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showCheckoutSuccessModal, setShowCheckoutSuccessModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeModalContext, setUpgradeModalContext] = useState<{ limitReached?: boolean; remaining?: number } | null>(null);
   const generatedCommentUrlsRef = useRef<Set<string>>(new Set());
   const generatingCommentUrlsRef = useRef<Set<string>>(new Set());
 
@@ -767,6 +769,14 @@ function PlaygroundContent() {
         // Save queries to localStorage
         localStorage.setItem("savedQueries", JSON.stringify(data.result));
         
+        // Store usage info for showing upgrade modal later
+        if (data.partialFulfillment || (data.remaining !== undefined && data.remaining <= 10)) {
+          setUpgradeModalContext({
+            limitReached: data.remaining === 0,
+            remaining: data.remaining
+          });
+        }
+        
         // Fetch Reddit links for each query in parallel
         const linkPromises = data.result.map((query: string) => {
           return fetchRedditLinks(query, postCount);
@@ -777,6 +787,12 @@ function PlaygroundContent() {
           // Small delay to ensure all links are saved to localStorage and state is updated
           setTimeout(() => {
             batchFetchAllPostContent();
+            // Show upgrade modal after posts are fetched if we hit the limit or are close
+            if (upgradeModalContext) {
+              setTimeout(() => {
+                setShowUpgradeModal(true);
+              }, 500);
+            }
           }, 1000);
         });
       } else {
@@ -831,7 +847,30 @@ function PlaygroundContent() {
 
             if (!usageResponse.ok) {
               const usageError = await usageResponse.json().catch(() => ({}));
-              throw new Error(usageError.error || "Weekly usage limit reached. Please try again later.");
+              // If limit reached, show upgrade modal instead of throwing error
+              if (usageError.error && usageError.error.includes("limit")) {
+                setUpgradeModalContext({ limitReached: true, remaining: 0 });
+                setTimeout(() => {
+                  setShowUpgradeModal(true);
+                }, 500);
+              } else {
+                throw new Error(usageError.error || "Weekly usage limit reached. Please try again later.");
+              }
+            } else {
+              // Check if we're close to or at the limit after increment
+              const usageData = await usageResponse.json().catch(() => ({}));
+              if (usageData.currentCount && usageData.plan === "free") {
+                const remaining = 200 - usageData.currentCount;
+                if (remaining <= 10) {
+                  setUpgradeModalContext({ 
+                    limitReached: remaining === 0, 
+                    remaining 
+                  });
+                  setTimeout(() => {
+                    setShowUpgradeModal(true);
+                  }, 500);
+                }
+              }
             }
 
             refreshUsage();
@@ -1886,6 +1925,8 @@ function PlaygroundContent() {
                   );
                 })()
               )}
+              </>
+            )}
             </div>
           </div>
         );
@@ -2476,6 +2517,138 @@ function PlaygroundContent() {
                   ) : (
                     <>Post all comments</>
                   )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+      {showUpgradeModal && upgradeModalContext && (
+        <>
+          <div
+            className="fixed inset-0 z-50 bg-background/40 backdrop-blur-sm"
+            onClick={() => setShowUpgradeModal(false)}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="w-full max-w-2xl rounded-lg border border-border bg-card shadow-lg">
+              <div className="border-b border-border px-6 py-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xl font-semibold text-foreground">
+                    {upgradeModalContext.limitReached 
+                      ? "Weekly Limit Reached" 
+                      : "Running Low on Posts"}
+                  </h3>
+                  <button
+                    onClick={() => setShowUpgradeModal(false)}
+                    className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                    aria-label="Close modal"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+              <div className="px-6 py-6">
+                <div className="space-y-4 mb-6">
+                  {upgradeModalContext.limitReached ? (
+                    <p className="text-sm text-muted-foreground">
+                      You've reached your weekly limit of 200 posts. Upgrade to Premium to get 10,000 posts per month and never worry about limits again.
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      You have {upgradeModalContext.remaining} posts remaining this week. Upgrade to Premium for 10,000 posts per month and unlock more features.
+                    </p>
+                  )}
+                </div>
+                
+                <div className="grid gap-6 md:grid-cols-2 mb-6">
+                  <div className="flex h-full flex-col gap-4 rounded-xl border border-border bg-muted/30 p-6 text-left">
+                    <div>
+                      <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        Free
+                      </span>
+                      <h4 className="mt-3 text-2xl font-semibold text-foreground">$0</h4>
+                      <p className="text-sm text-muted-foreground">No credit card required</p>
+                    </div>
+                    <ul className="space-y-2 text-sm text-muted-foreground">
+                      <li className="flex items-start gap-2">
+                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                        <span>Generate up to 200 posts per week</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                        <span>Usage analytics</span>
+                      </li>
+                    </ul>
+                    <Button variant="outline" size="sm" disabled className="mt-auto cursor-default">
+                      Current Plan
+                    </Button>
+                  </div>
+
+                  <div className="flex h-full flex-col gap-4 rounded-xl border border-[#ff4500]/60 bg-white p-6 text-left shadow-[0_0_35px_-12px_rgba(255,69,0,0.65)]">
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="rounded-full bg-[#ff4500] px-3 py-1 text-xs font-medium uppercase tracking-wide text-white">
+                          Premium
+                        </span>
+                        <span className="rounded-full bg-white/80 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#ff4500] shadow-[0_0_0_1px_rgba(255,69,0,0.2)]">
+                          Popular
+                        </span>
+                      </div>
+                      <h4 className="text-2xl font-semibold text-[#2d1510]">$9.99</h4>
+                      <p className="text-sm text-[#72341e]">per month, cancel anytime</p>
+                    </div>
+                    <ul className="space-y-2 text-sm text-muted-foreground">
+                      <li className="flex items-start gap-2">
+                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                        <span>Includes everything in Free</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                        <span>Generate up to 10,000 comments per month</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                        <span>Priority access to new features</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                        <span>Access to daily automated posting</span>
+                      </li>
+                    </ul>
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          const response = await fetch("/api/stripe/create-checkout-session", {
+                            method: "POST",
+                          });
+                          if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({}));
+                            throw new Error(errorData.error || "Unable to start checkout.");
+                          }
+                          const data = await response.json();
+                          window.location.href = data.url;
+                        } catch (error) {
+                          console.error("Error starting Stripe checkout:", error);
+                          showToast(
+                            error instanceof Error ? error.message : "Unable to start checkout.",
+                            { variant: "error" }
+                          );
+                        }
+                      }}
+                      className="mt-auto"
+                    >
+                      Upgrade to Premium
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <div className="border-t border-border px-6 py-4 flex items-center justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowUpgradeModal(false)}
+                >
+                  Maybe Later
                 </Button>
               </div>
             </div>

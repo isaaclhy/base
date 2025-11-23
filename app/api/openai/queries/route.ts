@@ -60,13 +60,33 @@ export async function POST(
     const plan = dbUser?.plan ?? "free";
     const maxPerWeek = getMaxPostsPerWeekForPlan(plan);
 
-    // Check if user can generate posts (check usage limit)
-    const canGenerate = await canGeneratePosts(session.user.email, count, maxPerWeek);
-    if (!canGenerate) {
+    // Check current usage and allow partial fulfillment
+    const { getUserUsage } = await import("@/lib/db/usage");
+    const currentUsage = await getUserUsage(session.user.email);
+    const remaining = Math.max(0, maxPerWeek - currentUsage.currentCount);
+    
+    // If no remaining quota, return error
+    if (remaining === 0) {
       return NextResponse.json(
-        { error: "Weekly limit reached. You have generated 200 posts this week. Please wait until next week." },
+        { 
+          error: `Weekly limit reached. You have generated ${maxPerWeek} posts this week. Please wait until next week or upgrade to Premium for 10,000 posts per month.`,
+          limitReached: true,
+          remaining: 0
+        },
         { status: 403 }
       );
+    }
+
+    // Allow partial fulfillment - use the minimum of requested count and remaining quota
+    const adjustedCount = Math.min(count, remaining);
+    
+    // Return information about partial fulfillment if applicable
+    const responseData: any = { plan };
+    if (adjustedCount < count) {
+      responseData.partialFulfillment = true;
+      responseData.requestedCount = count;
+      responseData.adjustedCount = adjustedCount;
+      responseData.remaining = remaining;
     }
 
     // Call OpenAI API twice with different prompts
@@ -105,7 +125,13 @@ export async function POST(
     const parsed2 = JSON.parse(response2.output_text || "[]");
     const combinedResponse = [...parsed1, ...parsed2];
 
-    return NextResponse.json({ result: combinedResponse, plan });
+    return NextResponse.json({ 
+      result: combinedResponse, 
+      ...responseData,
+      currentUsage: currentUsage.currentCount,
+      maxPerWeek,
+      remaining: remaining // Remaining before this request (will be decremented when posts are fetched)
+    });
   } catch (err: unknown) {
     console.error("API Error:", err);
     return NextResponse.json(
