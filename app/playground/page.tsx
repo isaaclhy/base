@@ -9,7 +9,6 @@ import { RedditPost } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import PricingSection from "@/app/landing-sections/pricing";
 
 const normalizeUrl = (url: string): string => {
   return url
@@ -81,7 +80,6 @@ function PlaygroundContent() {
     comment?: string | null;
   }
   const [analyticsPosts, setAnalyticsPosts] = useState<AnalyticsPost[]>([]);
-  const [analyticsView, setAnalyticsView] = useState<"activity" | "premium">("activity");
   const [analyticsFilter, setAnalyticsFilter] = useState<"posted" | "skipped" | "failed">("posted");
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(true);
   const [analyticsPage, setAnalyticsPage] = useState(1);
@@ -90,6 +88,10 @@ function PlaygroundContent() {
   const [drawerComment, setDrawerComment] = useState<string>("");
   const [isPostingFromAnalytics, setIsPostingFromAnalytics] = useState(false);
   const analyticsDrawerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isRedditConnected, setIsRedditConnected] = useState<boolean | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState<string>("");
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
 
   const analyticsUrlSet = useMemo(() => {
     const set = new Set<string>();
@@ -143,6 +145,40 @@ function PlaygroundContent() {
       router.push("/");
     }
   }, [status, router]);
+
+  // Check Reddit connection status on page load and refresh
+  useEffect(() => {
+    if (status === "authenticated" && session?.user?.email) {
+      const checkRedditConnection = async () => {
+        try {
+          const response = await fetch("/api/reddit/status");
+          if (response.ok) {
+            const data = await response.json();
+            setIsRedditConnected(data.connected);
+            console.log("🔗 Reddit Connection Status Check:", {
+              connected: data.connected,
+              hasAccessToken: data.hasAccessToken,
+              hasRefreshToken: data.hasRefreshToken,
+              user: session.user.email
+            });
+          } else {
+            setIsRedditConnected(false);
+            console.log("🔗 Reddit Connection Status Check: Failed to fetch status", {
+              status: response.status,
+              user: session.user.email
+            });
+          }
+        } catch (error) {
+          console.error("🔗 Error checking Reddit connection status:", error);
+          setIsRedditConnected(false);
+        }
+      };
+      
+      checkRedditConnection();
+    } else {
+      setIsRedditConnected(null);
+    }
+  }, [status, session]);
 
   useEffect(() => {
     setAnalyticsPage(1);
@@ -530,7 +566,17 @@ function PlaygroundContent() {
     }
   }, [distinctLinks]);
 
+  // Memoize loading states to create stable dependencies
+  const hasLoadingLinks = useMemo(() => {
+    return Object.values(isLoadingLinks).some(Boolean);
+  }, [isLoadingLinks]);
+
+  const hasLoadingPostContent = useMemo(() => {
+    return Object.values(isLoadingPostContent).some(Boolean);
+  }, [isLoadingPostContent]);
+
   // Generate new comments when product idea is submitted (only if auto-generate is enabled)
+  // Wait until all posts are loaded and their content is fetched before generating comments
   useEffect(() => {
     if (!autoGenerateComments) {
       return;
@@ -542,6 +588,16 @@ function PlaygroundContent() {
 
     if (distinctLinks.length === 0) {
       return;
+    }
+
+    // Check if any posts are still loading
+    if (hasLoadingLinks) {
+      return; // Wait for all posts to be fetched
+    }
+
+    // Check if any post content is still loading
+    if (hasLoadingPostContent) {
+      return; // Wait for all post content to be loaded
     }
 
     const linksToGenerate: typeof distinctLinks = [];
@@ -589,7 +645,7 @@ function PlaygroundContent() {
     return () => {
       cancelled = true;
     };
-  }, [distinctLinks, submittedProductIdea, website, generateCommentForLink, autoGenerateComments]);
+  }, [distinctLinks.length, submittedProductIdea, website, generateCommentForLink, autoGenerateComments, hasLoadingLinks, hasLoadingPostContent]);
 
   useEffect(() => {
     if (selectedAnalyticsPost) {
@@ -1767,30 +1823,6 @@ function PlaygroundContent() {
             !sidebarOpen && "pl-14 pt-14"
           )}>
             <div className="flex h-full flex-col gap-2">
-            {/* Sub-tabs inside Analytics: Activity vs Premium */}
-            <div className="flex gap-1.5">
-              <Button
-                variant={analyticsView === "activity" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setAnalyticsView("activity")}
-              >
-                Activity
-              </Button>
-              <Button
-                variant={analyticsView === "premium" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setAnalyticsView("premium")}
-              >
-                Premium
-              </Button>
-            </div>
-
-            {analyticsView === "premium" ? (
-              <div className="flex-1 overflow-y-auto">
-                <PricingSection showCTAButtons />
-              </div>
-            ) : (
-              <>
                 <div className="flex gap-1.5">
                   <Button
                     variant={analyticsFilter === "posted" ? "default" : "outline"}
@@ -1939,12 +1971,50 @@ function PlaygroundContent() {
                   );
                 })()
               )}
-              </>
-            )}
             </div>
           </div>
         );
       case "dashboard":
+        // Show Reddit connection prompt if not connected
+        if (isRedditConnected === false) {
+          return (
+            <div className="flex h-full flex-col items-center justify-center p-6">
+              <div className="w-full max-w-md space-y-6 rounded-lg border border-border bg-card p-8 text-center">
+                <div className="space-y-2">
+                  <h2 className="text-2xl font-semibold text-foreground">Connect Your Reddit Account</h2>
+                  <p className="text-sm text-muted-foreground">
+                    To get started, you need to connect your Reddit account. This allows us to fetch Reddit posts and post comments on your behalf.
+                  </p>
+                </div>
+                <Button
+                  size="lg"
+                  onClick={() => {
+                    window.location.href = "/api/reddit/auth";
+                  }}
+                  className="w-full"
+                >
+                  Connect Reddit Account
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  You'll be redirected to Reddit to authorize the connection
+                </p>
+              </div>
+            </div>
+          );
+        }
+        
+        // Show loading state while checking connection
+        if (isRedditConnected === null && status === "authenticated") {
+          return (
+            <div className="flex h-full flex-col items-center justify-center p-6">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Checking Reddit connection...</span>
+              </div>
+            </div>
+          );
+        }
+
         return (
           <div className="flex h-full flex-col">
             {/* Main content area - scrollable */}
@@ -2013,7 +2083,7 @@ function PlaygroundContent() {
                             )
                           }
                         >
-                          Post  ents
+                          Post all comments
                         </Button>
                         <Button
                           variant="outline"
@@ -2257,6 +2327,112 @@ function PlaygroundContent() {
                 onIdeaSelect={setSelectedIdea}
                 selectedIdea={selectedIdea}
               />
+            </div>
+          </div>
+        );
+      case "feedback":
+        return (
+          <div className={cn(
+            "flex-1 overflow-y-auto p-6",
+            !sidebarOpen && "pl-14 pt-14"
+          )}>
+            <div className="mx-auto max-w-2xl">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-semibold text-foreground">Feedback</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Share your thoughts, suggestions, or report any issues. We'd love to hear from you!
+                  </p>
+                </div>
+
+                {feedbackSubmitted ? (
+                  <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 p-6 text-center">
+                    <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500 mb-4" />
+                    <h3 className="text-lg font-semibold text-emerald-500 mb-2">Thank you for your feedback!</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      We appreciate you taking the time to share your thoughts with us.
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setFeedbackSubmitted(false);
+                        setFeedbackMessage("");
+                      }}
+                    >
+                      Submit Another Feedback
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-border bg-card p-6">
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        if (!feedbackMessage.trim() || isSubmittingFeedback) {
+                          return;
+                        }
+
+                        setIsSubmittingFeedback(true);
+                        try {
+                          const response = await fetch("/api/feedback", {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                              message: feedbackMessage.trim(),
+                            }),
+                          });
+
+                          if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.error || "Failed to submit feedback");
+                          }
+
+                          setFeedbackSubmitted(true);
+                          setFeedbackMessage("");
+                        } catch (error) {
+                          console.error("Error submitting feedback:", error);
+                          alert(error instanceof Error ? error.message : "Failed to submit feedback. Please try again.");
+                        } finally {
+                          setIsSubmittingFeedback(false);
+                        }
+                      }}
+                      className="space-y-4"
+                    >
+                      <div>
+                        <label htmlFor="feedback-message" className="block text-sm font-medium text-foreground mb-2">
+                          Your Message
+                        </label>
+                        <textarea
+                          id="feedback-message"
+                          value={feedbackMessage}
+                          onChange={(e) => setFeedbackMessage(e.target.value)}
+                          placeholder="Tell us what's on your mind..."
+                          className="w-full min-h-[200px] rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 resize-y"
+                          rows={10}
+                          disabled={isSubmittingFeedback}
+                          required
+                        />
+                      </div>
+                      <div className="flex items-center justify-end gap-3">
+                        <Button
+                          type="submit"
+                          disabled={!feedbackMessage.trim() || isSubmittingFeedback}
+                        >
+                          {isSubmittingFeedback ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                              Submitting...
+                            </>
+                          ) : (
+                            "Submit Feedback"
+                          )}
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         );

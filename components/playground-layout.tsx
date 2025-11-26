@@ -7,17 +7,19 @@ import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard,
   BarChart3,
+  MessageSquare,
   Menu,
   X,
 } from "lucide-react";
 import { UserInfoCard } from "@/components/auth/user-info-card";
 import { UsageProgress } from "@/components/usage/usage-progress";
+import { PlanCard } from "@/components/usage/plan-card";
 
 interface PlaygroundLayoutProps {
   children: React.ReactNode;
 }
 
-type TabId = "dashboard" | "analytics";
+type TabId = "dashboard" | "analytics" | "feedback";
 
 const PlaygroundTabContext = createContext<{
   activeTab: TabId;
@@ -55,6 +57,7 @@ interface Tab {
 const tabs: Tab[] = [
   { id: "dashboard", label: "Discovery", icon: LayoutDashboard },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
+  { id: "feedback", label: "Feedback", icon: MessageSquare },
 ];
 
 export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
@@ -148,6 +151,7 @@ export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
                 );
               })}
             </nav>
+            <PlanCard />
             <UsageProgress />
             <UserInfoCard />
           </>
