@@ -74,11 +74,26 @@ export async function GET(request: NextRequest) {
     );
 
     // Store state in httpOnly cookie for verification
+    // For OAuth redirects from external domains (Reddit), we need sameSite: "none"
+    // This requires secure: true (HTTPS), which is standard in production
+    const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+    const useSecureCookies = isProduction; // HTTPS is required in production for sameSite: "none"
+    
     response.cookies.set("reddit_oauth_state", state, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: useSecureCookies, // Required for sameSite: "none"
+      sameSite: useSecureCookies ? "none" : "lax", // "none" for cross-site redirects, "lax" for localhost
       maxAge: 600, // 10 minutes
+      path: "/", // Ensure cookie is available at root path
+      // Don't set domain - let it default to current domain
+    });
+    
+    console.log("Reddit OAuth state cookie set:", {
+      state: state.substring(0, 20) + "...",
+      hasState: !!state,
+      isProduction,
+      useSecureCookies,
+      redirectUri,
     });
 
     return response;

@@ -35,13 +35,30 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Verify state
+    // Verify state - this is critical for CSRF protection
     const storedState = request.cookies.get("reddit_oauth_state")?.value;
+    const allCookies = Object.fromEntries(request.cookies.getAll().map(c => [c.name, c.value]));
+    
     if (!state || !storedState || state !== storedState) {
+      console.error("State validation failed:", {
+        stateFromUrl: state,
+        storedState: storedState,
+        hasState: !!state,
+        hasStoredState: !!storedState,
+        cookies: allCookies,
+        cookieNames: Object.keys(allCookies),
+        requestUrl: request.url,
+        userAgent: request.headers.get("user-agent"),
+      });
       return NextResponse.redirect(
         `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/playground?error=reddit_oauth_invalid_state`
       );
     }
+    
+    console.log("State validation passed:", {
+      state: state.substring(0, 20) + "...",
+      hasStoredState: !!storedState,
+    });
 
     // Verify user is authenticated
     if (!session?.user?.email) {
@@ -112,7 +129,16 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.redirect(
       `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/playground?reddit_connected=success`
     );
-    response.cookies.delete("reddit_oauth_state");
+    // Delete cookie with same settings as when it was set
+    const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+    const useSecureCookies = isProduction;
+    response.cookies.set("reddit_oauth_state", "", {
+      httpOnly: true,
+      secure: useSecureCookies,
+      sameSite: useSecureCookies ? "none" : "lax",
+      path: "/",
+      maxAge: 0,
+    });
 
     return response;
   } catch (error) {

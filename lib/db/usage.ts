@@ -82,7 +82,7 @@ export async function getUserUsage(userId: string): Promise<UserUsage> {
   return usage;
 }
 
-export async function incrementUsage(userId: string, count: number = 1, maxPerWeek: number = DEFAULT_MAX_POSTS_PER_WEEK): Promise<UserUsage> {
+export async function incrementUsage(userId: string, count: number = 1, maxPerWeek: number = DEFAULT_MAX_POSTS_PER_WEEK): Promise<{ usage: UserUsage; actualIncrement: number; limitReached: boolean }> {
   const db = await getDatabase();
   const usageCollection = db.collection<UserUsage>("usage");
 
@@ -91,21 +91,24 @@ export async function incrementUsage(userId: string, count: number = 1, maxPerWe
 
   // Check if user has reached the limit
   if (currentUsage.currentCount >= maxPerWeek) {
-    throw new Error(`Weekly limit reached. You have generated ${maxPerWeek} posts this week.`);
+    // Already at limit, don't increment but return current usage
+    return {
+      usage: currentUsage,
+      actualIncrement: 0,
+      limitReached: true,
+    };
   }
 
-  // Check if adding count would exceed limit
-  if (currentUsage.currentCount + count > maxPerWeek) {
-    throw new Error(
-      `This action would exceed your weekly limit. You have ${Math.max(maxPerWeek - currentUsage.currentCount, 0)} posts remaining.`
-    );
-  }
+  // Calculate how much we can actually increment (allow partial fulfillment)
+  const remaining = maxPerWeek - currentUsage.currentCount;
+  const actualIncrement = Math.min(count, remaining);
+  const limitReached = currentUsage.currentCount + actualIncrement >= maxPerWeek;
 
-  // Increment usage
+  // Increment usage (only up to the limit)
   const updatedUsage = await usageCollection.findOneAndUpdate(
     { userId },
     {
-      $inc: { currentCount: count },
+      $inc: { currentCount: actualIncrement },
       $set: { lastUpdated: new Date() },
     },
     { returnDocument: "after" }
@@ -115,7 +118,11 @@ export async function incrementUsage(userId: string, count: number = 1, maxPerWe
     throw new Error("Failed to increment usage");
   }
 
-  return updatedUsage as UserUsage;
+  return {
+    usage: updatedUsage as UserUsage,
+    actualIncrement,
+    limitReached,
+  };
 }
 
 export async function canGeneratePosts(userId: string, count: number = 1, maxPerWeek: number = DEFAULT_MAX_POSTS_PER_WEEK): Promise<boolean> {

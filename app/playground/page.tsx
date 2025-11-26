@@ -845,39 +845,53 @@ function PlaygroundContent() {
               body: JSON.stringify({ count: newCount }),
             });
 
+            const usageData = await usageResponse.json().catch(() => ({}));
+            
+            // Always refresh usage counter regardless of response
+            refreshUsage();
+
             if (!usageResponse.ok) {
-              const usageError = await usageResponse.json().catch(() => ({}));
               // If limit reached, show upgrade modal instead of throwing error
-              if (usageError.error && usageError.error.includes("limit")) {
+              if (usageData.error && usageData.error.includes("limit")) {
                 setUpgradeModalContext({ limitReached: true, remaining: 0 });
                 setTimeout(() => {
                   setShowUpgradeModal(true);
                 }, 500);
               } else {
-                throw new Error(usageError.error || "Weekly usage limit reached. Please try again later.");
+                throw new Error(usageData.error || "Weekly usage limit reached. Please try again later.");
               }
             } else {
               // Check if we're close to or at the limit after increment
-              const usageData = await usageResponse.json().catch(() => ({}));
-              if (usageData.currentCount && usageData.plan === "free") {
-                const remaining = 200 - usageData.currentCount;
-                if (remaining <= 10) {
+              if (usageData.currentCount !== undefined) {
+                const maxPerWeek = usageData.plan === "premium" ? 1000 : 200;
+                const remaining = Math.max(0, maxPerWeek - usageData.currentCount);
+                
+                // Show upgrade modal if limit reached or close to limit
+                if (usageData.limitReached || remaining <= 10) {
                   setUpgradeModalContext({ 
-                    limitReached: remaining === 0, 
+                    limitReached: usageData.limitReached || remaining === 0, 
                     remaining 
                   });
                   setTimeout(() => {
                     setShowUpgradeModal(true);
                   }, 500);
                 }
+                
+                // If partial fulfillment occurred, log it
+                if (usageData.actualIncrement !== undefined && usageData.actualIncrement < usageData.requestedCount) {
+                  console.log(`Partial fulfillment: requested ${usageData.requestedCount}, got ${usageData.actualIncrement} due to limit`);
+                }
               }
             }
-
-            refreshUsage();
           } catch (usageError) {
             console.error("Error updating usage after fetching posts:", usageError);
-            setError(usageError instanceof Error ? usageError.message : "Failed to update usage. Please try again later.");
-            return;
+            // Still refresh usage even if there was an error
+            refreshUsage();
+            // Only show error if it's not a limit error (limit errors are handled with modal)
+            if (!(usageError instanceof Error && usageError.message.includes("limit"))) {
+              setError(usageError instanceof Error ? usageError.message : "Failed to update usage. Please try again later.");
+              return;
+            }
           }
         }
 
@@ -1999,7 +2013,7 @@ function PlaygroundContent() {
                             )
                           }
                         >
-                          Post all comments
+                          Post  ents
                         </Button>
                         <Button
                           variant="outline"

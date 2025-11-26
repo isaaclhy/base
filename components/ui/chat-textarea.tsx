@@ -6,6 +6,70 @@ import { cn } from "@/lib/utils";
 import { Input } from "./input";
 import { Select } from "./select";
 
+// Separate component for post count input that allows free typing
+const PostCountInput = React.memo(({ value, onChange }: { value: number; onChange: (value: number) => void }) => {
+    const [inputValue, setInputValue] = React.useState<string>(value.toString());
+    const isFocusedRef = React.useRef<boolean>(false);
+
+    // Sync with external value changes (but not during typing)
+    React.useEffect(() => {
+        if (!isFocusedRef.current) {
+            setInputValue(value.toString());
+        }
+    }, [value]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newValue = e.target.value;
+        // Allow any input during typing - including empty strings, partial numbers, etc.
+        setInputValue(newValue);
+    };
+
+    const handleFocus = () => {
+        isFocusedRef.current = true;
+    };
+
+    const handleBlur = () => {
+        isFocusedRef.current = false;
+        const trimmed = inputValue.trim();
+        if (trimmed === "") {
+            // Empty input defaults to 10
+            setInputValue("10");
+            onChange(10);
+            return;
+        }
+        const numValue = parseInt(trimmed);
+        if (isNaN(numValue) || numValue < 10) {
+            // Invalid or too low, clamp to 10
+            setInputValue("10");
+            onChange(10);
+        } else if (numValue > 100) {
+            // Too high, clamp to 100
+            setInputValue("100");
+            onChange(100);
+        } else {
+            // Valid value
+            setInputValue(numValue.toString());
+            onChange(numValue);
+        }
+    };
+
+    return (
+        <Input
+            type="number"
+            placeholder="Posts"
+            value={inputValue}
+            onChange={handleChange}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            min={10}
+            max={100}
+            className="w-full sm:w-20 border-gray-400 dark:border-gray-500"
+        />
+    );
+});
+
+PostCountInput.displayName = "PostCountInput";
+
 export interface ChatTextareaProps
     extends Omit<
         React.TextareaHTMLAttributes<HTMLTextAreaElement>,
@@ -262,17 +326,9 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
                                     </div>
                                     {onPostCountChange && (
                                         <div className="w-auto">
-                                            <Input
-                                                type="number"
-                                                placeholder="Posts"
+                                            <PostCountInput
                                                 value={postCount || 10}
-                                                onChange={(e) => {
-                                                    const value = parseInt(e.target.value) || 10;
-                                                    onPostCountChange?.(Math.max(10, Math.min(100, value)));
-                                                }}
-                                                min={10}
-                                                max={100}
-                                                className="w-full sm:w-20 border-gray-400 dark:border-gray-500"
+                                                onChange={onPostCountChange}
                                             />
                                         </div>
                                     )}
