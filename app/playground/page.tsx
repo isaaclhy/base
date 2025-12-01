@@ -9,6 +9,7 @@ import { RedditPost } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { signIn } from "next-auth/react";
 
 const normalizeUrl = (url: string): string => {
   return url
@@ -657,12 +658,19 @@ function PlaygroundContent() {
     const checkout = searchParams?.get("checkout");
     if (checkout === "success") {
       setShowCheckoutSuccessModal(true);
+      // Refresh usage immediately to get updated plan from database
+      refreshUsage();
+      // Reload page after a short delay to refresh session with updated plan
+      // This ensures the session callback fetches the latest plan from MongoDB
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
       const params = new URLSearchParams(searchParams.toString());
       params.delete("checkout");
       const newQuery = params.toString();
       router.replace(`${pathname}${newQuery ? `?${newQuery}` : ""}`, { scroll: false });
     }
-  }, [searchParams, router, pathname]);
+  }, [searchParams, router, pathname, refreshUsage]);
 
   // Show loading state while checking authentication
   if (status === "loading") {
@@ -809,12 +817,36 @@ function PlaygroundContent() {
 
       if (!response.ok) {
         const errorData = await response.json();
+        // Check if this is a limit error - show upgrade modal instead of error
+        if (errorData.limitReached || (errorData.error && errorData.error.toLowerCase().includes("limit"))) {
+          setUpgradeModalContext({
+            limitReached: true,
+            remaining: errorData.remaining || 0
+          });
+          setTimeout(() => {
+            setShowUpgradeModal(true);
+          }, 500);
+          setIsLoading(false);
+          return; // Don't throw error, just show modal
+        }
         throw new Error(errorData.error || "Failed to generate queries");
       }
 
       const data = await response.json();
       
       if (data.error) {
+        // Check if this is a limit error - show upgrade modal instead of error
+        if (data.limitReached || data.error.toLowerCase().includes("limit")) {
+          setUpgradeModalContext({
+            limitReached: true,
+            remaining: data.remaining || 0
+          });
+          setTimeout(() => {
+            setShowUpgradeModal(true);
+          }, 500);
+          setIsLoading(false);
+          return; // Don't throw error, just show modal
+        }
         throw new Error(data.error);
       }
 
@@ -855,8 +887,20 @@ function PlaygroundContent() {
         throw new Error("Invalid response format");
       }
     } catch (err) {
-      console.error("Error in query generation:", err);
-      setError(err instanceof Error ? err.message : "Failed to generate queries");
+      const errorMessage = err instanceof Error ? err.message : "Failed to generate queries";
+      // Check if this is a limit error - show upgrade modal instead of error
+      if (errorMessage.toLowerCase().includes("limit") || errorMessage.toLowerCase().includes("weekly")) {
+        setUpgradeModalContext({
+          limitReached: true,
+          remaining: 0
+        });
+        setTimeout(() => {
+          setShowUpgradeModal(true);
+        }, 500);
+      } else {
+        console.error("Error in query generation:", err);
+        setError(errorMessage);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -919,7 +963,7 @@ function PlaygroundContent() {
             } else {
               // Check if we're close to or at the limit after increment
               if (usageData.currentCount !== undefined) {
-                const maxPerWeek = usageData.plan === "premium" ? 1000 : 200;
+                const maxPerWeek = usageData.plan === "premium" ? 2500 : 200;
                 const remaining = Math.max(0, maxPerWeek - usageData.currentCount);
                 
                 // Show upgrade modal if limit reached or close to limit
@@ -1845,10 +1889,10 @@ function PlaygroundContent() {
                   >
                     Failed
                   </Button>
-                </div>
-
+              </div>
+              
                 {isLoadingAnalytics ? (
-                  <div className="rounded-lg border border-border bg-card p-8 text-center">
+                <div className="rounded-lg border border-border bg-card p-8 text-center">
                     <div className="flex items-center justify-center gap-2">
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
                       <p className="text-muted-foreground">Loading analytics...</p>
@@ -1863,8 +1907,8 @@ function PlaygroundContent() {
                           ? "No skipped posts yet. Skip a post in the Discovery tab to review it here."
                           : "No failed posts yet. If a post fails to publish, it will appear here."}
                     </p>
-                  </div>
-                ) : (
+                </div>
+              ) : (
                   (() => {
                     const PAGE_SIZE = 30;
                     const isSkippedView = analyticsFilter === "skipped";
@@ -2061,14 +2105,14 @@ function PlaygroundContent() {
                 {results.length > 0 && (
                   <div className="space-y-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <h3 className="text-lg font-semibold">
-                        Reddit Posts
-                        {distinctLinksCount > 0 && (
-                          <span className="ml-2 text-sm font-normal text-muted-foreground">
-                            ({distinctLinksCount} found)
-                          </span>
-                        )}
-                      </h3>
+                    <h3 className="text-lg font-semibold">
+                      Reddit Posts
+                      {distinctLinksCount > 0 && (
+                        <span className="ml-2 text-sm font-normal text-muted-foreground">
+                          ({distinctLinksCount} found)
+                        </span>
+                      )}
+                    </h3>
                       <div className="flex gap-2 self-start sm:self-auto">
                         <Button
                           variant="outline"
@@ -2337,13 +2381,13 @@ function PlaygroundContent() {
             !sidebarOpen && "pl-14 pt-14"
           )}>
             <div className="mx-auto max-w-2xl">
-              <div className="space-y-6">
-                <div>
+          <div className="space-y-6">
+            <div>
                   <h2 className="text-2xl font-semibold text-foreground">Feedback</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Share your thoughts, suggestions, or report any issues. We'd love to hear from you!
-                  </p>
-                </div>
+              </p>
+            </div>
 
                 {feedbackSubmitted ? (
                   <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 p-6 text-center">
@@ -2361,9 +2405,9 @@ function PlaygroundContent() {
                     >
                       Submit Another Feedback
                     </Button>
-                  </div>
+            </div>
                 ) : (
-                  <div className="rounded-lg border border-border bg-card p-6">
+            <div className="rounded-lg border border-border bg-card p-6">
                     <form
                       onSubmit={async (e) => {
                         e.preventDefault();
@@ -2399,7 +2443,7 @@ function PlaygroundContent() {
                       }}
                       className="space-y-4"
                     >
-                      <div>
+            <div>
                         <label htmlFor="feedback-message" className="block text-sm font-medium text-foreground mb-2">
                           Your Message
                         </label>
@@ -2413,7 +2457,7 @@ function PlaygroundContent() {
                           disabled={isSubmittingFeedback}
                           required
                         />
-                      </div>
+            </div>
                       <div className="flex items-center justify-end gap-3">
                         <Button
                           type="submit"
@@ -2428,11 +2472,11 @@ function PlaygroundContent() {
                             "Submit Feedback"
                           )}
                         </Button>
-                      </div>
+            </div>
                     </form>
-                  </div>
+          </div>
                 )}
-              </div>
+            </div>
             </div>
           </div>
         );

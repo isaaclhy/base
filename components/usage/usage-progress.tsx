@@ -35,14 +35,14 @@ export function UsageProgress() {
     }
   }, [session?.user?.email]);
 
-  // Fetch usage only once when session is available (user first signs in)
+  // Fetch usage when session is available or when plan changes
   useEffect(() => {
     if (session?.user?.email) {
       fetchUsage();
     } else {
       setLoading(false);
     }
-  }, [session?.user?.email, fetchUsage]);
+  }, [session?.user?.email, session?.user?.plan, fetchUsage]);
 
   // Listen for usage refresh events (triggered when new posts are generated)
   useEffect(() => {

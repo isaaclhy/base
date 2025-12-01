@@ -36,8 +36,11 @@ export async function createOrUpdateUser(userData: {
 
   const now = new Date();
   
+  // Normalize email to lowercase for consistent storage and lookup
+  const normalizedEmail = userData.email.toLowerCase();
+  
   // Check if user already exists
-  const existingUser = await usersCollection.findOne({ email: userData.email });
+  const existingUser = await usersCollection.findOne({ email: normalizedEmail });
 
   if (existingUser) {
     // Update existing user
@@ -56,7 +59,7 @@ export async function createOrUpdateUser(userData: {
     }
 
     const updatedUser = await usersCollection.findOneAndUpdate(
-      { email: userData.email },
+      { email: normalizedEmail },
       { $set: updateData },
       { returnDocument: 'after' }
     );
@@ -75,7 +78,7 @@ export async function createOrUpdateUser(userData: {
   } else {
     // Create new user with free plan by default
     const newUser: User = {
-      email: userData.email,
+      email: normalizedEmail,
       name: userData.name || null,
       image: userData.image || null,
       plan: "free",
@@ -102,12 +105,15 @@ export async function getUserByEmail(email: string): Promise<User | null> {
   const db = await getDatabase();
   const usersCollection = db.collection<User>('usersv2');
   
-  const user = await usersCollection.findOne({ email });
+  // Normalize email to lowercase for lookup
+  const normalizedEmail = email.toLowerCase();
+  
+  const user = await usersCollection.findOne({ email: normalizedEmail });
   
   // If user exists but doesn't have a plan, set it to free and update
   if (user && !user.plan) {
     const updatedUser = await usersCollection.findOneAndUpdate(
-      { email },
+      { email: normalizedEmail },
       { $set: { plan: "free" } },
       { returnDocument: 'after' }
     );
@@ -200,11 +206,50 @@ export async function updateUserPlanByEmail(
     }
   }
 
-  const result = await usersCollection.findOneAndUpdate(
-    { email },
+  // Normalize email to lowercase for lookup
+  const normalizedEmail = email.toLowerCase();
+  
+  // Try case-sensitive lookup first (assuming emails are stored in lowercase)
+  let result = await usersCollection.findOneAndUpdate(
+    { email: normalizedEmail },
     { $set: update },
     { returnDocument: "after" }
   );
+
+  // If not found, try case-insensitive search as fallback (for old data)
+  if (!result) {
+    console.warn(`User with email ${normalizedEmail} not found with exact case. Trying case-insensitive search...`);
+    const regex = new RegExp(`^${normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const existingUser = await usersCollection.findOne({ email: { $regex: regex } });
+    
+    if (existingUser) {
+      // Found user with different case - update it and normalize the email
+      result = await usersCollection.findOneAndUpdate(
+        { _id: existingUser._id },
+        { 
+          $set: { 
+            ...update,
+            email: normalizedEmail // Normalize email to lowercase
+          } 
+        },
+        { returnDocument: "after" }
+      );
+      console.log(`Found user with different case, normalized email to ${normalizedEmail} and updated plan to ${plan}`);
+    }
+  }
+
+  if (!result) {
+    console.error(`Failed to update user plan: User with email ${normalizedEmail} not found in database`);
+    console.error(`Update data was:`, JSON.stringify(update, null, 2));
+  } else {
+    console.log(`✓ Successfully updated user plan for ${normalizedEmail} to ${plan}`);
+    console.log(`Updated user document:`, {
+      email: result.email,
+      plan: result.plan,
+      stripeCustomerId: result.stripeCustomerId,
+      stripeSubscriptionId: result.stripeSubscriptionId,
+    });
+  }
 
   return result as User | null;
 }

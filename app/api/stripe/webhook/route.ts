@@ -37,18 +37,53 @@ export async function POST(request: NextRequest) {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        const email = (session.metadata?.email || session.customer_details?.email)?.toLowerCase();
+        const email = (session.metadata?.email || session.customer_details?.email || session.customer_email)?.toLowerCase();
         const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
         const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
         const priceId = session.metadata?.price_id;
 
-        if (email) {
-          await updateUserPlanByEmail(email, "premium", {
+        console.log("Checkout session completed - Webhook received:", {
+          eventId: event.id,
+          sessionId: session.id,
+          email,
+          customerId,
+          subscriptionId,
+          priceId,
+          metadata: session.metadata,
+          customer_details: session.customer_details,
+          customer_email: session.customer_email,
+        });
+
+        if (!email) {
+          console.error("No email found in checkout session:", session.id);
+          break;
+        }
+
+        try {
+          const result = await updateUserPlanByEmail(email, "premium", {
             stripeCustomerId: customerId ?? null,
             stripeSubscriptionId: subscriptionId ?? null,
             stripePriceId: priceId,
             subscriptionStatus: "active",
           });
+
+          if (!result) {
+            console.error(`Failed to update user plan for email: ${email}`);
+            // Try to find user by customer ID as fallback
+            if (customerId) {
+              console.log(`Attempting to update by customer ID: ${customerId}`);
+              await updateUserPlanByCustomerId(customerId, "premium", {
+                stripeSubscriptionId: subscriptionId ?? null,
+                stripePriceId: priceId,
+                subscriptionStatus: "active",
+                emailFallback: email,
+              });
+            }
+          } else {
+            console.log(`Successfully updated user plan for ${email} to premium`);
+          }
+        } catch (error) {
+          console.error(`Error updating user plan for ${email}:`, error);
         }
         break;
       }
