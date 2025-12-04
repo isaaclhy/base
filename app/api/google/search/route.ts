@@ -29,7 +29,6 @@ async function fetchGoogleCustomSearch(
       q: query,
       num: num,
       start: startIndex,
-      dateRestrict: "d7",
     });
 
     const results = response.data;
