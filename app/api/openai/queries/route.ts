@@ -90,9 +90,10 @@ export async function POST(
     }
 
     // Calculate number of queries needed: more queries with fewer results per query
-    // Each query will fetch top 3-5 results, so we need more queries to reach the target count
-    const RESULTS_PER_QUERY = 3; // Fetch top 3 results per query for better diversity
-    const queriesNeeded = Math.ceil(adjustedCount / RESULTS_PER_QUERY);
+    // Each query will fetch top 7 results for better coverage (some may be filtered out)
+    const RESULTS_PER_QUERY = 7; // Fetch top 7 results per query to account for filtering
+    // Add 30% buffer to account for queries that don't return enough results or duplicates
+    const queriesNeeded = Math.ceil((adjustedCount / RESULTS_PER_QUERY) * 1.3);
     // Cap at reasonable maximum (e.g., 20 queries max)
     const queryCount = Math.min(queriesNeeded, 20);
 

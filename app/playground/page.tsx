@@ -866,8 +866,8 @@ function PlaygroundContent() {
         }
         
         // Fetch Reddit links for each query in parallel
-        // Each query will fetch top 3 results for better diversity
-        const RESULTS_PER_QUERY = 3;
+        // Each query will fetch top 7 results for better coverage (some may be filtered)
+        const RESULTS_PER_QUERY = 7;
         const linkPromises = data.result.map((query: string) => {
           return fetchRedditLinks(query, RESULTS_PER_QUERY);
         });
@@ -908,7 +908,7 @@ function PlaygroundContent() {
     }
   };
 
-  const fetchRedditLinks = async (query: string, resultsPerQuery: number = 3) => {
+  const fetchRedditLinks = async (query: string, resultsPerQuery: number = 7) => {
     setIsLoadingLinks((prev) => ({ ...prev, [query]: true }));
     
     try {

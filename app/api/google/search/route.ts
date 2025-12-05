@@ -12,10 +12,10 @@ function isRedditPostUrl(url: string) {
 
 async function fetchGoogleCustomSearch(
   query: string,
-  resultsPerQuery: number = 3
+  resultsPerQuery: number = 7
 ): Promise<customsearch_v1.Schema$Search[]> {
   // Google Custom Search API allows max 10 results per request
-  // We only fetch the top few results per query (default 3) for better diversity
+  // We fetch top results per query (default 7) for better coverage
   const num = Math.min(resultsPerQuery, 10); // Cap at 10 (Google's max per request)
   
   const response = await customsearch.cse.list({
@@ -52,8 +52,8 @@ export async function POST(
       return NextResponse.json({ error: "No query provided" }, { status: 400 });
     }
 
-    // Fetch only the top few results per query (default 3 for better diversity)
-    const resultsPerSearch = resultsPerQuery || 3;
+    // Fetch only the top few results per query (default 7 for better coverage)
+    const resultsPerSearch = resultsPerQuery || 7;
     const googleDataArray = await fetchGoogleCustomSearch(searchQuery, resultsPerSearch);
     console.log("GOOGLE DATA ", googleDataArray);
 
