@@ -35,7 +35,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<GenerateC
     const response = await (client as any).responses.create({
       prompt: {
         "id": "pmpt_6898a80a39208193b66057015ddb125d05c2b3824070c5a5",
-        "version": "13",
+        "version": "14",
         "variables": {
           "productidea": productIdea,
           "postcontent": postContent,
