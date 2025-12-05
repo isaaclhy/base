@@ -89,13 +89,20 @@ export async function POST(
       responseData.remaining = remaining;
     }
 
-    // Call OpenAI API twice with different prompts
+    // Calculate number of queries needed: more queries with fewer results per query
+    // Each query will fetch top 3-5 results, so we need more queries to reach the target count
+    const RESULTS_PER_QUERY = 3; // Fetch top 3 results per query for better diversity
+    const queriesNeeded = Math.ceil(adjustedCount / RESULTS_PER_QUERY);
+    // Cap at reasonable maximum (e.g., 20 queries max)
+    const queryCount = Math.min(queriesNeeded, 20);
+
+    // Call OpenAI API to generate more queries
     const response1 = await (client as any).responses.create({
       prompt: {
         id: "pmpt_69330a1b0d788197826b386ddc375be7015a3de39dafb3df",
-        version: "1",
+        version: "2",
         variables: {
-          gpt_query_completion_count: String(Math.min(2,Math.ceil(Math.sqrt(count)))),
+          gpt_query_completion_count: String(queryCount),
           productidea: productIdea,
         },
       },

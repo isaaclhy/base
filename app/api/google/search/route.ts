@@ -12,39 +12,26 @@ function isRedditPostUrl(url: string) {
 
 async function fetchGoogleCustomSearch(
   query: string,
-  postCount: number
+  resultsPerQuery: number = 3
 ): Promise<customsearch_v1.Schema$Search[]> {
   // Google Custom Search API allows max 10 results per request
-  // We need to make multiple requests if postCount > 10
-  const requestsNeeded = Math.ceil(postCount / 10);
-  const allResults: customsearch_v1.Schema$Search[] = [];
+  // We only fetch the top few results per query (default 3) for better diversity
+  const num = Math.min(resultsPerQuery, 10); // Cap at 10 (Google's max per request)
+  
+  const response = await customsearch.cse.list({
+    auth: process.env.GCS_KEY,
+    cx: "c691f007075074afc",
+    q: query,
+    num: num,
+    start: 1, // Always start from the first result (top results)
+  });
 
-  for (let i = 0; i < requestsNeeded; i++) {
-    const startIndex = i * 10 + 1; // Google API uses 1-based indexing
-    const num = Math.min(10, postCount - (i * 10)); // Number of results for this request
-    
-    const response = await customsearch.cse.list({
-      auth: process.env.GCS_KEY,
-      cx: "c691f007075074afc",
-      q: query,
-      num: num,
-      start: startIndex,
-    });
-
-    const results = response.data;
-    if (!results) {
-      throw new Error("No data returned from Google Custom Search");
-    }
-
-    allResults.push(results);
-    
-    // If we got fewer results than requested, we've reached the end
-    if (!results.items || results.items.length < num) {
-      break;
-    }
+  const results = response.data;
+  if (!results) {
+    throw new Error("No data returned from Google Custom Search");
   }
 
-  return allResults;
+  return [results]; // Return as array for consistency with previous implementation
 }
 
 type RedditSearchResult = {
@@ -59,22 +46,23 @@ export async function POST(
   request: NextRequest
 ): Promise<NextResponse<PostResponse>> {
   try {
-    const { searchQuery, postCount } = await request.json();
+    const { searchQuery, resultsPerQuery } = await request.json();
 
     if (!searchQuery) {
       return NextResponse.json({ error: "No query provided" }, { status: 400 });
     }
 
-    // Fetch Google search results (may return multiple pages)
-    const googleDataArray = await fetchGoogleCustomSearch(searchQuery, postCount || 10);
+    // Fetch only the top few results per query (default 3 for better diversity)
+    const resultsPerSearch = resultsPerQuery || 3;
+    const googleDataArray = await fetchGoogleCustomSearch(searchQuery, resultsPerSearch);
     console.log("GOOGLE DATA ", googleDataArray);
 
-    // Combine all results from multiple pages
+    // Combine all results
     const allItems = googleDataArray.flatMap((googleData) => googleData.items || []);
 
     const results = allItems
       .filter((data) => isRedditPostUrl(data.link ?? ""))
-      .slice(0, postCount || 10) // Limit to requested postCount
+      .slice(0, resultsPerSearch) // Limit to resultsPerQuery
       .map((item) => ({
         title: item.title,
         link: item.link,

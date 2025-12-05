@@ -811,7 +811,7 @@ function PlaygroundContent() {
         },
         body: JSON.stringify({
           productIdea: message.trim(),
-          postCount: 10, // You can make this configurable if needed
+          postCount: postCount, // Use the actual postCount from state
         }),
       });
 
@@ -866,8 +866,10 @@ function PlaygroundContent() {
         }
         
         // Fetch Reddit links for each query in parallel
+        // Each query will fetch top 3 results for better diversity
+        const RESULTS_PER_QUERY = 3;
         const linkPromises = data.result.map((query: string) => {
-          return fetchRedditLinks(query, postCount);
+          return fetchRedditLinks(query, RESULTS_PER_QUERY);
         });
         
         // Wait for all links to be fetched, then batch fetch all post content together
@@ -906,7 +908,7 @@ function PlaygroundContent() {
     }
   };
 
-  const fetchRedditLinks = async (query: string, postCount: number) => {
+  const fetchRedditLinks = async (query: string, resultsPerQuery: number = 3) => {
     setIsLoadingLinks((prev) => ({ ...prev, [query]: true }));
     
     try {
@@ -917,7 +919,7 @@ function PlaygroundContent() {
         },
         body: JSON.stringify({
           searchQuery: query,
-          postCount: postCount,
+          resultsPerQuery: resultsPerQuery, // Pass resultsPerQuery instead of full postCount
         }),
       });
 
