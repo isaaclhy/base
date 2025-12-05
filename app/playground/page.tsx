@@ -26,6 +26,102 @@ const extractThingIdFromLink = (link: string): string | null => {
   return null;
 };
 
+// Helper function to safely save to localStorage with quota error handling
+const safeSetLocalStorage = (key: string, value: any, onError?: () => void) => {
+  try {
+    // Only store minimal data in redditLinks - exclude postData and selftext to save space
+    let dataToStore = value;
+    if (key === "redditLinks" && typeof value === "object") {
+      dataToStore = Object.fromEntries(
+        Object.entries(value).map(([query, links]: [string, any]) => [
+          query,
+          Array.isArray(links)
+            ? links.map((link: any) => ({
+                title: link.title,
+                link: link.link,
+                snippet: link.snippet,
+                // Don't store postData or selftext here - they're stored separately in cache
+              }))
+            : links,
+        ])
+      );
+    }
+    
+    localStorage.setItem(key, JSON.stringify(dataToStore));
+  } catch (e: any) {
+    if (e.name === "QuotaExceededError" || e.code === 22 || e.code === 1014) {
+      console.warn(`localStorage quota exceeded for key: ${key}`);
+      
+      // If it's redditLinks, try to clear old queries to make space
+      if (key === "redditLinks" && onError) {
+        onError();
+      } else if (key === "redditLinks") {
+        // Clear old queries, keep only the most recent 5 queries, then retry
+        try {
+          const current = JSON.parse(localStorage.getItem(key) || "{}");
+          const queries = Object.keys(current);
+          if (queries.length > 5) {
+            const queriesToKeep = queries.slice(-5);
+            const trimmed = Object.fromEntries(
+              queriesToKeep.map((q) => [q, current[q]])
+            );
+            // Try to save the trimmed version
+            try {
+              localStorage.setItem(key, JSON.stringify(trimmed));
+              console.log(`Cleared old queries, kept only the most recent 5`);
+              // Now try to save the new data again (but it might still fail)
+              if (value && typeof value === "object") {
+                const minimalData = Object.fromEntries(
+                  Object.entries(value).map(([q, links]: [string, any]) => [
+                    q,
+                    Array.isArray(links)
+                      ? links.map((link: any) => ({
+                          title: link.title,
+                          link: link.link,
+                          snippet: link.snippet,
+                        }))
+                      : links,
+                  ])
+                );
+                // Merge with existing trimmed data (keep latest queries)
+                const merged = { ...trimmed, ...minimalData };
+                const mergedQueries = Object.keys(merged);
+                // Keep only the most recent 10 queries after merge
+                if (mergedQueries.length > 10) {
+                  const recentQueries = mergedQueries.slice(-10);
+                  const finalTrimmed = Object.fromEntries(
+                    recentQueries.map((q) => [q, merged[q]])
+                  );
+                  localStorage.setItem(key, JSON.stringify(finalTrimmed));
+                } else {
+                  localStorage.setItem(key, JSON.stringify(merged));
+                }
+              }
+            } catch (retryError) {
+              console.error("Error saving after clearing old data:", retryError);
+              // If still failing, clear everything
+              localStorage.removeItem(key);
+            }
+          } else {
+            // Not enough old data to clear, just remove the key
+            localStorage.removeItem(key);
+          }
+        } catch (clearError) {
+          console.error("Error clearing old data:", clearError);
+          // If clearing old data fails, clear everything
+          try {
+            localStorage.removeItem(key);
+          } catch (removeError) {
+            console.error("Error removing key:", removeError);
+          }
+        }
+      }
+    } else {
+      console.error(`Error saving to localStorage (key: ${key}):`, e);
+    }
+  }
+};
+
 function PlaygroundContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -233,7 +329,7 @@ function PlaygroundContent() {
               if (hasUpdates) {
                 setRedditLinks((prev) => {
                   const updated = { ...prev, [query]: updatedLinks };
-                  localStorage.setItem("redditLinks", JSON.stringify(updated));
+                  safeSetLocalStorage("redditLinks", updated);
                   return updated;
                 });
               }
@@ -1002,8 +1098,8 @@ function PlaygroundContent() {
             ...prev,
             [query]: data.results,
           };
-          // Save to localStorage
-          localStorage.setItem("redditLinks", JSON.stringify(updated));
+          // Save to localStorage (only minimal data)
+          safeSetLocalStorage("redditLinks", updated);
           return updated;
         });
         setError(null);
@@ -1087,7 +1183,7 @@ function PlaygroundContent() {
             };
           }
         });
-        localStorage.setItem("redditLinks", JSON.stringify(updated));
+        safeSetLocalStorage("redditLinks", updated);
         return updated;
       });
     }
@@ -1244,7 +1340,7 @@ function PlaygroundContent() {
               }
             });
             
-            localStorage.setItem("redditLinks", JSON.stringify(updated));
+            safeSetLocalStorage("redditLinks", updated);
             return updated;
           });
         } catch (err) {
@@ -1304,7 +1400,7 @@ function PlaygroundContent() {
                   selftext: cached.selftext || null,
                   postData: cached.postData || null,
                 };
-                localStorage.setItem("redditLinks", JSON.stringify(updated));
+                safeSetLocalStorage("redditLinks", updated);
               }
               return updated;
             });
@@ -1475,8 +1571,8 @@ function PlaygroundContent() {
               }
             });
             
-            // Save to localStorage
-            localStorage.setItem("redditLinks", JSON.stringify(updated));
+            // Save to localStorage (only minimal data)
+            safeSetLocalStorage("redditLinks", updated);
             return updated;
           });
         } catch (err) {
@@ -1604,7 +1700,7 @@ function PlaygroundContent() {
           return true;
         });
         // If the query has no more links, we could remove the query key, but let's keep it
-        localStorage.setItem("redditLinks", JSON.stringify(updated));
+        safeSetLocalStorage("redditLinks", updated);
       }
       return updated;
     });
@@ -1708,7 +1804,7 @@ function PlaygroundContent() {
       const updated = { ...prev };
       if (updated[linkItem.query]) {
         updated[linkItem.query] = updated[linkItem.query].filter((link) => link.link !== linkItem.link);
-        localStorage.setItem("redditLinks", JSON.stringify(updated));
+        safeSetLocalStorage("redditLinks", updated);
       }
       return updated;
     });
