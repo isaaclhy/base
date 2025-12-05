@@ -101,7 +101,7 @@ export async function POST(
     const response1 = await (client as any).responses.create({
       prompt: {
         id: "pmpt_69330a1b0d788197826b386ddc375be7015a3de39dafb3df",
-        version: "2",
+        version: "3",
         variables: {
           gpt_query_completion_count: String(queryCount),
           productidea: productIdea,
