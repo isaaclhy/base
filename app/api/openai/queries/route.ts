@@ -92,8 +92,8 @@ export async function POST(
     // Call OpenAI API twice with different prompts
     const response1 = await (client as any).responses.create({
       prompt: {
-        id: "pmpt_68ac40b0ef3481938b93b0880bd0f7140bf728d80740adbd",
-        version: "8",
+        id: "pmpt_69330a1b0d788197826b386ddc375be7015a3de39dafb3df",
+        version: "1",
         variables: {
           gpt_query_completion_count: String(Math.min(2,Math.ceil(Math.sqrt(count)))),
           productidea: productIdea,
@@ -101,29 +101,18 @@ export async function POST(
       },
     });
 
-    const response2 = await (client as any).responses.create({
-      prompt: {
-        id: "pmpt_68ac5dc5f3288194a0c30aa6ae7fdbfc0d4b07ecd77da901",
-        version: "2",
-        variables: {
-          gpt_query_completion_count: String(Math.min(2,Math.ceil(Math.sqrt(count)))),
-          productidea: productIdea,
-        },
-      },
-    });
 
-    if (response1.error || response2.error) {
-      console.error("OpenAI API error:", response1.error || response2.error);
+    if (response1.error) {
+      console.error("OpenAI API error:", response1.error);
       return NextResponse.json(
-        { error: response1.error?.message || response2.error?.message || "OpenAI error" },
+        { error: response1.error?.message || "OpenAI error" },
         { status: 500 }
       );
     }
 
     // Parse and combine responses
     const parsed1 = JSON.parse(response1.output_text || "[]");
-    const parsed2 = JSON.parse(response2.output_text || "[]");
-    const combinedResponse = [...parsed1, ...parsed2];
+    const combinedResponse = [...parsed1];
 
     return NextResponse.json({ 
       result: combinedResponse, 
