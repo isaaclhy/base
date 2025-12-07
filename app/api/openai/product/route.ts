@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     const response = await openai.responses.create({
       prompt: {
         id: "pmpt_6935f4a4a0a48193acb2a9e0e537f8b60c710ed2dd40ab84",
-        version: "1",
+        version: "2",
         variables: {
           website: website,
         },
