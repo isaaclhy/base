@@ -5,6 +5,7 @@ export interface UserUsage {
   _id?: ObjectId;
   userId: string; // User email
   currentCount: number;
+  cronUsage?: number; // Separate count for cron job usage
   weekStartDate: Date; // Start of the current week (Monday)
   lastUpdated: Date;
 }
@@ -48,6 +49,7 @@ export async function getUserUsage(userId: string): Promise<UserUsage> {
     const newUsage: UserUsage = {
       userId,
       currentCount: 0,
+      cronUsage: 0,
       weekStartDate: currentWeekStart,
       lastUpdated: new Date(),
     };
@@ -58,6 +60,23 @@ export async function getUserUsage(userId: string): Promise<UserUsage> {
     };
   }
 
+  // Ensure cronUsage exists (for existing records that might not have it)
+  if (usage.cronUsage === undefined) {
+    usage = await usageCollection.findOneAndUpdate(
+      { userId },
+      {
+        $set: {
+          cronUsage: 0,
+          lastUpdated: new Date(),
+        },
+      },
+      { returnDocument: "after" }
+    );
+    if (!usage) {
+      throw new Error("Failed to initialize cronUsage");
+    }
+  }
+
   // Check if we need to reset (new week)
   if (needsReset(usage.weekStartDate)) {
     usage = await usageCollection.findOneAndUpdate(
@@ -65,6 +84,7 @@ export async function getUserUsage(userId: string): Promise<UserUsage> {
       {
         $set: {
           currentCount: 0,
+          cronUsage: 0, // Reset cron usage as well
           weekStartDate: currentWeekStart,
           lastUpdated: new Date(),
         },
@@ -128,5 +148,33 @@ export async function incrementUsage(userId: string, count: number = 1, maxPerWe
 export async function canGeneratePosts(userId: string, count: number = 1, maxPerWeek: number = DEFAULT_MAX_POSTS_PER_WEEK): Promise<boolean> {
   const usage = await getUserUsage(userId);
   return usage.currentCount + count <= maxPerWeek;
+}
+
+/**
+ * Increment cron usage separately from regular usage
+ * This does not affect the regular currentCount or have any limits
+ */
+export async function incrementCronUsage(userId: string, count: number = 1): Promise<UserUsage> {
+  const db = await getDatabase();
+  const usageCollection = db.collection<UserUsage>("usage");
+
+  // First, get current usage (this will handle reset if needed and initialize cronUsage if missing)
+  const currentUsage = await getUserUsage(userId);
+
+  // Increment cron usage
+  const updatedUsage = await usageCollection.findOneAndUpdate(
+    { userId },
+    {
+      $inc: { cronUsage: count },
+      $set: { lastUpdated: new Date() },
+    },
+    { returnDocument: "after" }
+  );
+
+  if (!updatedUsage) {
+    throw new Error("Failed to increment cron usage");
+  }
+
+  return updatedUsage as UserUsage;
 }
 

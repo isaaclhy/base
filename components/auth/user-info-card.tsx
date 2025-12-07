@@ -5,7 +5,8 @@ import { LogOut, MoreVertical, Trash2, Loader2, X, AlertTriangle, CreditCard } f
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
+import { useSetPlaygroundTab } from "@/components/playground-layout";
 
 export function UserInfoCard() {
   const { data: session } = useSession();
@@ -17,6 +18,9 @@ export function UserInfoCard() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const pathname = usePathname();
+  const setActiveTab = useSetPlaygroundTab();
+  const isInPlayground = pathname === "/playground";
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -63,7 +67,11 @@ export function UserInfoCard() {
 
     // If user is not premium yet, send them to pricing
     if (session?.user?.plan !== "premium") {
-      router.push("/pricing");
+      if (isInPlayground) {
+        setActiveTab("pricing");
+      } else {
+        router.push("/pricing");
+      }
       return;
     }
 

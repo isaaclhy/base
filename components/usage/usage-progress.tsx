@@ -62,7 +62,7 @@ export function UsageProgress() {
   const activePlan = usage.plan || session.user?.plan || "free";
 
   return (
-    <div className="px-4 pb-4">
+    <div className="px-4 pb-2">
       <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <span className="inline-flex items-center rounded-full bg-black px-2.5 py-0.5 text-xs font-medium text-white capitalize">

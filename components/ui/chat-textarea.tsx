@@ -197,11 +197,12 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
             const trimmedWebsite = website?.trim() || "";
             
             // Validate required fields
+            // Only validate website if onWebsiteChange is provided (meaning the input is being used)
             const missingFields: string[] = [];
             if (!trimmedText) {
                 missingFields.push("Product idea");
             }
-            if (!trimmedWebsite) {
+            if (onWebsiteChange && !trimmedWebsite) {
                 missingFields.push("Website");
             }
             
@@ -236,13 +237,14 @@ const ChatTextarea = React.forwardRef<HTMLTextAreaElement, ChatTextareaProps>(
 
         const trimmedText = text.trim();
         const trimmedWebsite = website?.trim() || "";
-        const canSend = trimmedText.length > 0 && trimmedWebsite.length > 0 && !sendButtonDisabled;
+        // Only require website if onWebsiteChange is provided (meaning the input is being used)
+        const canSend = trimmedText.length > 0 && (!onWebsiteChange || trimmedWebsite.length > 0) && !sendButtonDisabled;
         
         // Get missing fields for tooltip
         const getMissingFields = () => {
             const missing: string[] = [];
             if (!trimmedText) missing.push("Product idea");
-            if (!trimmedWebsite) missing.push("Website");
+            if (onWebsiteChange && !trimmedWebsite) missing.push("Website");
             return missing;
         };
         

@@ -8,14 +8,14 @@ import { Button } from "@/components/ui/button";
 
 const features = {
   free: [
-    "Generate up to 200 posts per week",
+    "Unlimited reddit post search",
+    "200 generated comments",
     "Usage analytics",
   ],
   premium: [
-    "Includes everything in Free",
-    "Generate up to 10,000 comments per month",
-    "Priority access to new features",
-    "Access to daily automated posting",
+    "Unlimited reddit post search",
+    "10,000 generated comments",
+    "Usage analytics",
   ],
 };
 
@@ -124,7 +124,7 @@ export default function PricingPage() {
                   Popular
                 </span>
               </div>
-              <h2 className="text-3xl font-semibold text-[#2d1510]">$9.99</h2>
+              <h2 className="text-3xl font-semibold text-[#2d1510]">$13.99</h2>
               <p className="text-sm text-[#72341e]">per month, cancel anytime</p>
             </div>
             <ul className="space-y-3 text-sm text-muted-foreground">
@@ -160,10 +160,6 @@ export default function PricingPage() {
               </Button>
             )}
           </div>
-        </div>
-
-        <div className="rounded-lg border border-border bg-card px-6 py-4 text-sm text-muted-foreground">
-          Need a custom plan or have billing questions? <a href="mailto:support@example.com" className="font-medium text-primary underline">Contact us</a>.
         </div>
       </div>
     </div>

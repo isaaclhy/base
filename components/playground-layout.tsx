@@ -8,6 +8,8 @@ import {
   LayoutDashboard,
   BarChart3,
   MessageSquare,
+  CreditCard,
+  Package,
   Menu,
   X,
 } from "lucide-react";
@@ -19,7 +21,7 @@ interface PlaygroundLayoutProps {
   children: React.ReactNode;
 }
 
-type TabId = "dashboard" | "analytics" | "feedback";
+type TabId = "product" | "dashboard" | "analytics" | "feedback" | "pricing";
 
 const PlaygroundTabContext = createContext<{
   activeTab: TabId;
@@ -48,6 +50,11 @@ export function useRefreshUsage() {
   return context.refreshUsage;
 }
 
+export function useSetPlaygroundTab() {
+  const context = useContext(PlaygroundTabContext);
+  return context.setActiveTab;
+}
+
 interface Tab {
   id: TabId;
   label: string;
@@ -55,9 +62,11 @@ interface Tab {
 }
 
 const tabs: Tab[] = [
+  { id: "product", label: "Product", icon: Package },
   { id: "dashboard", label: "Discovery", icon: LayoutDashboard },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "feedback", label: "Feedback", icon: MessageSquare },
+  { id: "pricing", label: "Pricing", icon: CreditCard },
 ];
 
 export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
@@ -131,6 +140,9 @@ export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
         {/* Sidebar Navigation */}
         {isSidebarVisible && (
           <>
+            <div className="pt-4">
+              <UsageProgress />
+            </div>
             <nav className="flex-1 space-y-1 overflow-y-auto p-4">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
@@ -152,7 +164,6 @@ export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
               })}
             </nav>
             <PlanCard />
-            <UsageProgress />
             <UserInfoCard />
           </>
         )}

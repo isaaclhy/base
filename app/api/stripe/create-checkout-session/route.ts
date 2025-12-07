@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
       customer_email: dbUser?.stripeCustomerId ? undefined : session.user.email,
       allow_promotion_codes: true,
       success_url: `${origin}/playground?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/pricing`,
+      cancel_url: `${origin}/playground?tab=pricing`,
       subscription_data: {
         metadata: {
           email: session.user.email,

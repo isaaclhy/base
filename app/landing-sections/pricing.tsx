@@ -3,17 +3,18 @@
 import { useState } from "react";
 import { useSession, signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 const features = {
   free: [
-    "Generate up to 200 posts per week",
+    "Unlimited reddit post search",
+    "200 generated comments",
     "Usage analytics",
   ],
   premium: [
-    "Includes everything in Free",
-    "Generate up to 10,000 comments per month",
-    "Priority access to new features",
-    "Access to daily automated posting",
+    "Unlimited reddit post search",
+    "10,000 generated comments",
+    "Usage analytics",
   ],
 };
 
@@ -77,27 +78,38 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
   };
 
   return (
-    <section id="pricing" className="bg-background py-16 sm:py-24">
+    <section id="pricing" className={cn(
+      "bg-background",
+      showCTAButtons ? "py-6" : "py-16 sm:py-24"
+    )}>
       <div className="mx-auto flex w-full max-w-5xl flex-col items-center px-4 text-center">
-        <div className="space-y-3 mb-12">
-          <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+        <div className={cn("space-y-2 mb-6", showCTAButtons && "mb-4")}>
+          <h2 className={cn(
+            "font-bold tracking-tight text-foreground",
+            showCTAButtons ? "text-2xl" : "text-3xl sm:text-4xl"
+          )}>
             Simple pricing for growing teams
           </h2>
-          <p className="max-w-2xl text-muted-foreground">
-            Start free and upgrade when you need more scale. Premium unlocks higher usage limits and priority access to new tools.
-          </p>
+          {!showCTAButtons && (
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Start free and upgrade when you need more scale. Premium unlocks higher usage limits and priority access to new tools.
+            </p>
+          )}
         </div>
 
-        <div className="grid w-full gap-6 md:grid-cols-2">
-          <div className="flex h-full flex-col gap-6 rounded-2xl border border-border bg-card p-8 text-left shadow-sm">
+        <div className="grid w-full gap-4 md:grid-cols-2">
+          <div className={cn(
+            "flex h-full flex-col rounded-2xl border border-border bg-card text-left shadow-sm",
+            showCTAButtons ? "gap-4 p-6" : "gap-6 p-8"
+          )}>
             <div>
               <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Free
               </span>
-              <h3 className="mt-4 text-3xl font-semibold text-foreground">$0</h3>
-              <p className="text-muted-foreground">No credit card required</p>
+              <h3 className={cn("font-semibold text-foreground", showCTAButtons ? "mt-2 text-2xl" : "mt-4 text-3xl")}>$0</h3>
+              <p className={cn("text-muted-foreground", showCTAButtons && "text-xs")}>No credit card required</p>
             </div>
-            <ul className="space-y-3 text-sm text-muted-foreground">
+            <ul className={cn("text-sm text-muted-foreground", showCTAButtons ? "space-y-2" : "space-y-3")}>
               {features.free.map((feature) => (
                 <li key={feature} className="flex items-start gap-2">
                   <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
@@ -106,14 +118,17 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
               ))}
             </ul>
             {showCTAButtons && (
-              <Button variant="outline" size="lg" disabled className="mt-auto cursor-default">
+              <Button variant="outline" size={showCTAButtons ? "default" : "lg"} disabled className="mt-auto cursor-default">
                 Included in your account
               </Button>
             )}
           </div>
 
-          <div className="flex h-full flex-col gap-6 rounded-2xl border border-[#ff4500]/60 bg-white p-8 text-left shadow-[0_0_35px_-12px_rgba(255,69,0,0.65)]">
-            <div className="space-y-3">
+          <div className={cn(
+            "flex h-full flex-col rounded-2xl border border-[#ff4500]/60 bg-white text-left shadow-[0_0_35px_-12px_rgba(255,69,0,0.65)]",
+            showCTAButtons ? "gap-4 p-6" : "gap-6 p-8"
+          )}>
+            <div className={showCTAButtons ? "space-y-2" : "space-y-3"}>
               <div className="flex items-center gap-2">
                 <span className="rounded-full bg-[#ff4500] px-3 py-1 text-xs font-medium uppercase tracking-wide text-white">
                   Premium
@@ -122,10 +137,10 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
                   Popular
                 </span>
               </div>
-              <h3 className="text-3xl font-semibold text-[#2d1510]">$9.99</h3>
-              <p className="text-sm text-[#72341e]">per month, cancel anytime</p>
+              <h3 className={cn("font-semibold text-[#2d1510]", showCTAButtons ? "text-2xl" : "text-3xl")}>$13.99</h3>
+              <p className={cn("text-[#72341e]", showCTAButtons ? "text-xs" : "text-sm")}>per month, cancel anytime</p>
             </div>
-            <ul className="space-y-3 text-sm text-muted-foreground">
+            <ul className={cn("text-sm text-muted-foreground", showCTAButtons ? "space-y-2" : "space-y-3")}>
               {features.premium.map((feature) => (
                 <li key={feature} className="flex items-start gap-2">
                   <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
@@ -135,12 +150,12 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
             </ul>
             {showCTAButtons && (
               status === "loading" ? (
-                <Button disabled size="lg" className="mt-auto opacity-70">
+                <Button disabled size="default" className="mt-auto opacity-70">
                   Checking your plan...
                 </Button>
               ) : isPremium ? (
                 <Button
-                  size="lg"
+                  size="default"
                   variant="default"
                   onClick={handleManageBilling}
                   disabled={isPortalLoading}
@@ -150,7 +165,7 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
                 </Button>
               ) : (
                 <Button
-                  size="lg"
+                  size="default"
                   onClick={handleCheckout}
                   disabled={isCheckoutLoading}
                   className="mt-auto"
@@ -161,12 +176,6 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
             )}
           </div>
         </div>
-
-        {showCTAButtons && (
-          <div className="rounded-lg border border-border bg-card px-6 py-4 text-sm text-muted-foreground">
-            Need a custom plan or have billing questions? <a href="mailto:support@example.com" className="font-medium text-primary underline">Contact us</a>.
-          </div>
-        )}
       </div>
     </section>
   );

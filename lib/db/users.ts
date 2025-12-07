@@ -22,6 +22,11 @@ export interface User {
   stripeSubscriptionId?: string | null;
   stripePriceId?: string | null;
   subscriptionStatus?: string | null;
+  // Product details
+  productDetails?: {
+    link?: string;
+    productDescription?: string;
+  };
 }
 
 export async function createOrUpdateUser(userData: {
@@ -317,5 +322,37 @@ export async function deleteUserByEmail(email: string): Promise<boolean> {
   const result = await usersCollection.deleteOne({ email: normalizedEmail });
   
   return result.deletedCount > 0;
+}
+
+export async function updateUserProductDetails(
+  email: string,
+  productDetails: {
+    link?: string;
+    productDescription?: string;
+  }
+): Promise<User | null> {
+  const db = await getDatabase();
+  const usersCollection = db.collection<User>('usersv2');
+  
+  // Normalize email to lowercase for lookup
+  const normalizedEmail = email.toLowerCase();
+  
+  const result = await usersCollection.findOneAndUpdate(
+    { email: normalizedEmail },
+    {
+      $set: {
+        productDetails,
+        updatedAt: new Date(),
+      },
+    },
+    { returnDocument: 'after' }
+  );
+  
+  if (!result) {
+    console.error(`Failed to update product details: User with email ${normalizedEmail} not found in database`);
+    return null;
+  }
+  
+  return result as User;
 }
 

@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback, Suspense } from "react";
-import { ExternalLink, X, Loader2, CheckCircle2 } from "lucide-react";
+import { useState, useEffect, useMemo, useRef, useCallback, Suspense, useTransition } from "react";
+import { ExternalLink, X, Loader2, CheckCircle2, Send, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatTextarea } from "@/components/ui/chat-textarea";
-import PlaygroundLayout, { usePlaygroundTab, usePlaygroundSidebar, useRefreshUsage } from "@/components/playground-layout";
+import PlaygroundLayout, { usePlaygroundTab, usePlaygroundSidebar, useRefreshUsage, useSetPlaygroundTab } from "@/components/playground-layout";
+import PricingSection from "@/app/landing-sections/pricing";
 import { RedditPost } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { signIn } from "next-auth/react";
@@ -128,9 +130,11 @@ function PlaygroundContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeTab = usePlaygroundTab();
+  const setActiveTab = useSetPlaygroundTab();
   const sidebarOpen = usePlaygroundSidebar();
   const refreshUsage = useRefreshUsage();
   const [website, setWebsite] = useState("");
+  const [productDescription, setProductDescription] = useState("");
   const [callToAction, setCallToAction] = useState("");
   const [persona, setPersona] = useState("");
   const [postCount, setPostCount] = useState<number>(10);
@@ -146,6 +150,7 @@ function PlaygroundContent() {
   const [expandedPosts, setExpandedPosts] = useState<Set<string>>(new Set());
   const [postTextareas, setPostTextareas] = useState<Record<string, string>>({});
   const postTextareasRef = useRef<Record<string, string>>({});
+  const [isPending, startTransition] = useTransition();
   const [currentProductIdea, setCurrentProductIdea] = useState<string>("");
   const [submittedProductIdea, setSubmittedProductIdea] = useState<string>("");
   const [isGeneratingComment, setIsGeneratingComment] = useState<Record<string, boolean>>({});
@@ -160,6 +165,8 @@ function PlaygroundContent() {
   const [upgradeModalContext, setUpgradeModalContext] = useState<{ limitReached?: boolean; remaining?: number } | null>(null);
   const generatedCommentUrlsRef = useRef<Set<string>>(new Set());
   const generatingCommentUrlsRef = useRef<Set<string>>(new Set());
+  const restoredCommentsRef = useRef<Set<string>>(new Set());
+  const previousLinksKeyRef = useRef<string>("");
 
   // Analytics state: track posted/skipped posts from MongoDB
   interface AnalyticsPost {
@@ -189,6 +196,14 @@ function PlaygroundContent() {
   const [feedbackMessage, setFeedbackMessage] = useState<string>("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [selectedDiscoveryPost, setSelectedDiscoveryPost] = useState<typeof distinctLinks[0] | null>(null);
+  const [isDiscoveryDrawerVisible, setIsDiscoveryDrawerVisible] = useState(false);
+  const [discoveryPage, setDiscoveryPage] = useState(1);
+  const DISCOVERY_ITEMS_PER_PAGE = 20;
+  const [isSavingProductDetails, setIsSavingProductDetails] = useState(false);
+  const [isLoadingProductDetails, setIsLoadingProductDetails] = useState(false);
+  const [isGeneratingProductDescription, setIsGeneratingProductDescription] = useState(false);
+  const [productDetailsFromDb, setProductDetailsFromDb] = useState<{ link?: string; productDescription?: string } | null>(null);
 
   const analyticsUrlSet = useMemo(() => {
     const set = new Set<string>();
@@ -276,6 +291,67 @@ function PlaygroundContent() {
       setIsRedditConnected(null);
     }
   }, [status, session]);
+
+  // Load product details when authenticated (for use in Discovery page)
+  useEffect(() => {
+    if (status === "authenticated" && session?.user?.email) {
+      const loadProductDetails = async () => {
+        try {
+          const response = await fetch("/api/user/product-details");
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.productDetails) {
+              setProductDetailsFromDb(data.productDetails);
+              // Also set website and productDescription for Product tab
+              if (data.productDetails.link) {
+                setWebsite(data.productDetails.link);
+              }
+              if (data.productDetails.productDescription) {
+                setProductDescription(data.productDetails.productDescription);
+              }
+            } else {
+              setProductDetailsFromDb(null);
+            }
+          }
+        } catch (error) {
+          console.error("Error loading product details:", error);
+          setProductDetailsFromDb(null);
+        }
+      };
+      
+      loadProductDetails();
+    }
+  }, [status, session]);
+
+  // Load product details when Product tab is active (to refresh)
+  useEffect(() => {
+    if (status === "authenticated" && session?.user?.email && activeTab === "product") {
+      setIsLoadingProductDetails(true);
+      const loadProductDetails = async () => {
+        try {
+          const response = await fetch("/api/user/product-details");
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.productDetails) {
+              setProductDetailsFromDb(data.productDetails);
+              if (data.productDetails.link) {
+                setWebsite(data.productDetails.link);
+              }
+              if (data.productDetails.productDescription) {
+                setProductDescription(data.productDetails.productDescription);
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error loading product details:", error);
+        } finally {
+          setIsLoadingProductDetails(false);
+        }
+      };
+      
+      loadProductDetails();
+    }
+  }, [status, session, activeTab]);
 
   useEffect(() => {
     setAnalyticsPage(1);
@@ -433,9 +509,20 @@ function PlaygroundContent() {
       const linkKey = linkItem.uniqueKey;
       const ideaToUse = submittedProductIdea || currentProductIdea;
 
-      if (!ideaToUse || !website) {
+      // Use database values instead of input values
+      const dbLink = productDetailsFromDb?.link || website;
+      const dbProductDescription = productDetailsFromDb?.productDescription;
+      const productIdeaToUse = dbProductDescription || ideaToUse;
+      
+      if (!productIdeaToUse || !dbLink) {
         if (showAlerts) {
-          alert("Please enter a product idea and website URL first.");
+          setToast({
+            visible: true,
+            message: "Please enter your product details in the Product tab first.",
+            variant: "error",
+          });
+          // Redirect to Product tab
+          setActiveTab("product");
         }
         return;
       }
@@ -476,8 +563,8 @@ function PlaygroundContent() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            productIdea: ideaToUse,
-            productLink: website,
+            productIdea: productIdeaToUse, // Use database productDescription
+            productLink: dbLink, // Use database link
             postContent: postContent,
           }),
         });
@@ -522,7 +609,7 @@ function PlaygroundContent() {
         }
       }
     },
-    [currentProductIdea, submittedProductIdea, website]
+    [currentProductIdea, submittedProductIdea, website, productDetailsFromDb]
   );
 
   const distinctLinks = useMemo(() => {
@@ -588,6 +675,26 @@ function PlaygroundContent() {
     return results;
   }, [redditLinks, analyticsUrlSet]);
 
+  // Reset to page 1 when distinctLinks changes significantly (new search results)
+  useEffect(() => {
+    if (distinctLinks.length > 0) {
+      // Only reset if we're on a page that no longer exists
+      const maxPage = Math.ceil(distinctLinks.length / DISCOVERY_ITEMS_PER_PAGE);
+      if (discoveryPage > maxPage && maxPage > 0) {
+        setDiscoveryPage(1);
+      }
+    }
+  }, [distinctLinks.length, discoveryPage]);
+
+  // Paginated links for discovery table
+  const paginatedLinks = useMemo(() => {
+    const startIndex = (discoveryPage - 1) * DISCOVERY_ITEMS_PER_PAGE;
+    const endIndex = startIndex + DISCOVERY_ITEMS_PER_PAGE;
+    return distinctLinks.slice(startIndex, endIndex);
+  }, [distinctLinks, discoveryPage]);
+
+  const totalDiscoveryPages = Math.ceil(distinctLinks.length / DISCOVERY_ITEMS_PER_PAGE);
+
   const openAnalyticsDrawer = useCallback((post: AnalyticsPost) => {
     setSelectedAnalyticsPost(post);
     setDrawerComment(post.comment || post.notes || "");
@@ -635,6 +742,18 @@ function PlaygroundContent() {
       return;
     }
 
+    // Create a stable key from all link URLs to track if we've already processed this set
+    const linksKey = distinctLinks
+      .map((link) => link.link || "")
+      .filter(Boolean)
+      .sort()
+      .join("|");
+
+    // Skip if this is the same set of links we've already processed
+    if (previousLinksKeyRef.current === linksKey) {
+      return;
+    }
+
     const cachedEntries: Record<string, string> = {};
 
     for (const link of distinctLinks) {
@@ -661,7 +780,11 @@ function PlaygroundContent() {
         return updated;
       });
     }
-  }, [distinctLinks]);
+
+    // Mark this set of links as processed
+    previousLinksKeyRef.current = linksKey;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [distinctLinks.length]);
 
   // Memoize loading states to create stable dependencies
   const hasLoadingLinks = useMemo(() => {
@@ -679,7 +802,12 @@ function PlaygroundContent() {
       return;
     }
 
-    if (!submittedProductIdea || !website) {
+    // Use database values if available
+    const dbLink = productDetailsFromDb?.link || website;
+    const dbProductDescription = productDetailsFromDb?.productDescription;
+    const productIdeaToCheck = dbProductDescription || submittedProductIdea;
+    
+    if (!productIdeaToCheck || !dbLink) {
       return;
     }
 
@@ -742,7 +870,7 @@ function PlaygroundContent() {
     return () => {
       cancelled = true;
     };
-  }, [distinctLinks.length, submittedProductIdea, website, generateCommentForLink, autoGenerateComments, hasLoadingLinks, hasLoadingPostContent]);
+  }, [distinctLinks.length, submittedProductIdea, website, productDetailsFromDb, generateCommentForLink, autoGenerateComments, hasLoadingLinks, hasLoadingPostContent]);
 
   useEffect(() => {
     if (selectedAnalyticsPost) {
@@ -750,6 +878,7 @@ function PlaygroundContent() {
     }
   }, [selectedAnalyticsPost]);
 
+  // Handle checkout success
   useEffect(() => {
     const checkout = searchParams?.get("checkout");
     if (checkout === "success") {
@@ -767,6 +896,19 @@ function PlaygroundContent() {
       router.replace(`${pathname}${newQuery ? `?${newQuery}` : ""}`, { scroll: false });
     }
   }, [searchParams, router, pathname, refreshUsage]);
+
+  // Handle tab query parameter to set active tab
+  useEffect(() => {
+    const tabParam = searchParams?.get("tab");
+    if (tabParam && ["product", "dashboard", "analytics", "feedback", "pricing"].includes(tabParam)) {
+      setActiveTab(tabParam as "product" | "dashboard" | "analytics" | "feedback" | "pricing");
+      // Clean up the tab parameter from URL after setting it
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("tab");
+      const newQuery = params.toString();
+      router.replace(`${pathname}${newQuery ? `?${newQuery}` : ""}`, { scroll: false });
+    }
+  }, [searchParams, router, pathname, setActiveTab]);
 
   // Show loading state while checking authentication
   if (status === "loading") {
@@ -867,13 +1009,58 @@ function PlaygroundContent() {
       return;
     }
 
-    // Store the current product idea
-    setCurrentProductIdea(message.trim());
-    setSubmittedProductIdea(message.trim());
+    // Check if user has product details saved before proceeding and use database values
+    let dbLink: string | undefined;
+    let dbProductDescription: string | undefined;
+    
+    if (status === "authenticated" && session?.user?.email) {
+      try {
+        // Use cached product details if available, otherwise fetch
+        if (productDetailsFromDb) {
+          dbLink = productDetailsFromDb.link;
+          dbProductDescription = productDetailsFromDb.productDescription;
+        } else {
+          const productDetailsResponse = await fetch("/api/user/product-details");
+          if (productDetailsResponse.ok) {
+            const productData = await productDetailsResponse.json();
+            if (productData.success && productData.productDetails) {
+              dbLink = productData.productDetails.link;
+              dbProductDescription = productData.productDetails.productDescription;
+              setProductDetailsFromDb(productData.productDetails);
+            }
+          } else if (productDetailsResponse.status === 401) {
+            router.push("/");
+            return;
+          }
+        }
+        
+        // Check if both link and productDescription are missing or empty
+        if ((!dbLink || !dbLink.trim()) || (!dbProductDescription || !dbProductDescription.trim())) {
+          setActiveTab("product");
+          setToast({
+            visible: true,
+            message: "Please enter your product website and description before searching for Reddit posts.",
+            variant: "error",
+          });
+          return;
+        }
+      } catch (error) {
+        console.error("Error checking product details:", error);
+        // On error, still allow submission (don't block user)
+      }
+    }
+
+    // Use productDescription from database instead of message input
+    const productIdeaToUse = dbProductDescription || message.trim();
+    
+    // Store the current product idea (use database description if available)
+    setCurrentProductIdea(productIdeaToUse);
+    setSubmittedProductIdea(productIdeaToUse);
 
     setIsLoading(true);
     setError(null);
     setResults([]);
+    setDiscoveryPage(1); // Reset to first page when new search starts
 
     // Save product idea to localStorage
     const saved = localStorage.getItem("productIdeas");
@@ -906,7 +1093,7 @@ function PlaygroundContent() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          productIdea: message.trim(),
+          productIdea: productIdeaToUse, // Use database productDescription
           postCount: postCount, // Use the actual postCount from state
         }),
       });
@@ -996,7 +1183,7 @@ function PlaygroundContent() {
           setShowUpgradeModal(true);
         }, 500);
       } else {
-        console.error("Error in query generation:", err);
+      console.error("Error in query generation:", err);
         setError(errorMessage);
       }
     } finally {
@@ -1958,6 +2145,148 @@ function PlaygroundContent() {
 
   const renderContent = () => {
     switch (activeTab) {
+      case "product":
+        return (
+          <div className={cn(
+            "flex-1 overflow-y-auto p-6",
+            !sidebarOpen && "pl-14 pt-14"
+          )}>
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-2xl font-semibold text-foreground">Product</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Enter your product information to get started.
+                </p>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="product-website" className="block text-sm font-medium text-foreground mb-1">
+                    Product Website
+                  </label>
+                  <Input
+                    id="product-website"
+                    type="url"
+                    value={website}
+                    onChange={(e) => setWebsite(e.target.value)}
+                    placeholder="https://example.com"
+                    className="w-full max-w-md"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="product-description" className="block text-sm font-medium text-foreground mb-1">
+                    Product Description
+                  </label>
+                  <div className="relative w-full max-w-md rounded-md border border-input focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2">
+                    <textarea
+                      id="product-description"
+                      value={productDescription}
+                      onChange={(e) => setProductDescription(e.target.value)}
+                      placeholder={isGeneratingProductDescription ? "Generating product description..." : "Describe your product and what it does..."}
+                      disabled={isGeneratingProductDescription}
+                      className="w-full min-h-[150px] rounded-md border-0 bg-background px-3 py-2 pb-12 text-sm placeholder:text-muted-foreground focus:outline-none resize-y disabled:opacity-50 disabled:cursor-not-allowed"
+                      rows={6}
+                    />
+                    {isGeneratingProductDescription && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-background/50 rounded-md">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          <span>Generating...</span>
+                        </div>
+                      </div>
+                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="absolute bottom-2 right-2 bg-black text-white hover:bg-black/90 text-xs h-7 disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={isGeneratingProductDescription || !website || !website.trim()}
+                      onClick={async () => {
+                        if (!website || !website.trim()) {
+                          showToast("Please enter a website first", { variant: "error" });
+                          return;
+                        }
+                        
+                        setIsGeneratingProductDescription(true);
+                        try {
+                          const response = await fetch("/api/openai/product", {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                              website: website,
+                            }),
+                          });
+
+                          if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.error || "Failed to generate product description");
+                          }
+
+                          const data = await response.json();
+                          if (data.success && data.description) {
+                            setProductDescription(data.description);
+                            showToast("Product description generated successfully!", { variant: "success" });
+                          } else {
+                            throw new Error("No description received from API");
+                          }
+                        } catch (error) {
+                          console.error("Error generating product description:", error);
+                          showToast(error instanceof Error ? error.message : "Failed to generate product description", { variant: "error" });
+                        } finally {
+                          setIsGeneratingProductDescription(false);
+                        }
+                      }}
+                    >
+                      {isGeneratingProductDescription ? "Generating..." : "AI generate"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <Button
+                  onClick={async () => {
+                    setIsSavingProductDetails(true);
+                    try {
+                      const response = await fetch("/api/user/product-details", {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                          link: website || undefined,
+                          productDescription: productDescription || undefined,
+                        }),
+                      });
+
+                      if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || "Failed to save product details");
+                      }
+
+                      const data = await response.json();
+                      if (data.success) {
+                        // Show success toast (auto-dismisses after 5 seconds)
+                        showToast("Product details saved successfully!", { variant: "success" });
+                      }
+                    } catch (error) {
+                      console.error("Error saving product details:", error);
+                      showToast(error instanceof Error ? error.message : "Failed to save product details", { variant: "error" });
+                    } finally {
+                      setIsSavingProductDetails(false);
+                    }
+                  }}
+                  disabled={isSavingProductDetails || isLoadingProductDetails}
+                  className="bg-black text-white hover:bg-black/90 disabled:opacity-50"
+                >
+                  {isSavingProductDetails ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
       case "analytics":
         return (
           <div className={cn(
@@ -2161,10 +2490,73 @@ function PlaygroundContent() {
           <div className="flex h-full flex-col">
             {/* Main content area - scrollable */}
             <div className={cn(
-              "flex-1 overflow-y-auto p-6",
-              !sidebarOpen && "pl-14 pt-14"
+              "flex h-full flex-col",
+              !sidebarOpen && "pl-14"
             )}>
-              <div className="space-y-6">
+              {/* Fixed header with title and buttons */}
+              {!isLoading && (
+                <div className={cn(
+                  "sticky top-0 z-10 bg-background px-6 pt-6 pb-2",
+                  !sidebarOpen && "pl-14"
+                )}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <h3 className="text-lg font-semibold">
+                      Reddit Posts
+                    </h3>
+                    <div className="flex gap-2 self-start sm:self-auto">
+                      {results.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsBulkPostModalOpen(true)}
+                          disabled={
+                            distinctLinksCount === 0 ||
+                            distinctLinks.every(
+                              (item) =>
+                                !postTextareas[item.uniqueKey] ||
+                                !postTextareas[item.uniqueKey].trim()
+                            )
+                          }
+                        >
+                          Post all comments
+                        </Button>
+                      )}
+                      <Button
+                        onClick={() => {
+                          // Use database productDescription as the message
+                          if (productDetailsFromDb?.productDescription) {
+                            handleSubmit(productDetailsFromDb.productDescription);
+                          }
+                        }}
+                        disabled={!productDetailsFromDb?.productDescription || isLoading}
+                        size="sm"
+                        variant={results.length > 0 ? "outline" : "default"}
+                      >
+                        {isLoading ? "Searching..." : "Search for Reddit Posts"}
+                      </Button>
+                      {results.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRemoveAllPosts}
+                          disabled={
+                            distinctLinksCount === 0 &&
+                            !Object.values(isLoadingLinks).some(Boolean)
+                          }
+                        >
+                          Remove all posts
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* Scrollable content area */}
+              <div className={cn(
+                "flex-1 overflow-hidden px-6 pt-2 pb-6 flex flex-col min-h-0",
+                !sidebarOpen && "pl-14"
+              )}>
+                <div className="flex-1 flex flex-col min-h-0 space-y-6">
                 {/* Results */}
                 {isLoading && (
                   <div className="flex flex-col items-center justify-center py-12">
@@ -2201,45 +2593,7 @@ function PlaygroundContent() {
                 )}
 
                 {results.length > 0 && (
-                  <div className="space-y-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <h3 className="text-lg font-semibold">
-                      Reddit Posts
-                      {distinctLinksCount > 0 && (
-                        <span className="ml-2 text-sm font-normal text-muted-foreground">
-                          ({distinctLinksCount} found)
-                        </span>
-                      )}
-                    </h3>
-                      <div className="flex gap-2 self-start sm:self-auto">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setIsBulkPostModalOpen(true)}
-                          disabled={
-                            distinctLinksCount === 0 ||
-                            distinctLinks.every(
-                              (item) =>
-                                !postTextareas[item.uniqueKey] ||
-                                !postTextareas[item.uniqueKey].trim()
-                            )
-                          }
-                        >
-                          Post all comments
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleRemoveAllPosts}
-                          disabled={
-                            distinctLinksCount === 0 &&
-                            !Object.values(isLoadingLinks).some(Boolean)
-                          }
-                        >
-                          Remove all posts
-                        </Button>
-                      </div>
-                    </div>
+                  <div className="flex-1 flex flex-col min-h-0 space-y-4">
                     
                     {/* Show loading state if any query is still loading */}
                     {Object.values(isLoadingLinks).some(Boolean) && (
@@ -2249,11 +2603,22 @@ function PlaygroundContent() {
                       </div>
                     )}
                     
-                    {/* Flatten all Reddit links and display in grid - newest first */}
+                    {/* Display Reddit links in table view */}
                     {distinctLinks.length > 0 ? (
-                        <div className="grid gap-4 md:grid-cols-2">
-                        {distinctLinks.map((linkItem) => {
-                          const link = linkItem;
+                      <div className="rounded-lg border border-border overflow-hidden flex-1 flex flex-col min-h-0">
+                        <div className="overflow-x-auto flex-1 overflow-y-auto min-h-0">
+                          <table className="w-full border-collapse table-fixed">
+                            <thead className="sticky top-0 z-20">
+                              <tr className="border-b border-border bg-muted/50">
+                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[250px]">Title</th>
+                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[280px]">Content</th>
+                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[290px]">Comment</th>
+                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[80px]">Actions</th>
+                              </tr>
+                            </thead>
+                          <tbody>
+                            {paginatedLinks.map((linkItem) => {
+                              const link = linkItem;
                             // Extract subreddit from URL
                             const subredditMatch = linkItem.link?.match(/reddit\.com\/r\/([^/]+)/);
                             const subreddit = subredditMatch ? subredditMatch[1] : null;
@@ -2271,170 +2636,168 @@ function PlaygroundContent() {
                           cleanSnippet = cleanSnippet.replace(/^\.{1,}/g, '');
                           cleanSnippet = cleanSnippet.trim();
                           
-                          // Helper function to estimate if content would exceed 3 lines
-                          // With text-xs (12px) and typical card width (~300-400px), roughly 60-80 chars per line
-                          // For 3 lines, that's approximately 180-240 characters
-                          // We'll use a conservative estimate of 200 characters for 3 lines
-                          const estimateLines = (text: string): number => {
-                            if (!text) return 0;
-                            // Count actual line breaks first
-                            const lineBreaks = (text.match(/\n/g) || []).length;
-                            if (lineBreaks >= 3) return lineBreaks + 1; // Already has 3+ line breaks
-                            
-                            // Estimate based on character count
-                            // Assuming ~65 characters per line for text-xs in card width
-                            const charsPerLine = 65;
-                            const estimatedLines = Math.ceil(text.length / charsPerLine);
-                            return estimatedLines;
-                          };
-                          
-                          // Get the actual content to check
-                          const contentToCheck = link.selftext || cleanSnippet || '';
-                          const estimatedLines = estimateLines(contentToCheck);
-                          const maxLines = 3;
-                          const shouldShowSeeMore = estimatedLines > maxLines;
-                          
                           return (
-                            <div
+                                <tr 
                               key={linkKey}
-                              className="relative flex h-full flex-col rounded-lg border-2 border-gray-400 dark:border-gray-500 bg-card p-4"
-                            >
-                              {/* Close button - top right */}
-                              <button
-                                onClick={() => handleCloseClick(linkItem)}
-                                className="absolute top-2 right-2 rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                                title="Close this post"
-                                aria-label="Close post"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                              
-                              {/* Top section - Content area */}
-                              <div className="flex-1">
-                                {/* Subreddit name */}
-                                {subreddit && (
-                                  <div className="mb-2 flex items-center gap-1 pr-6">
-                                    <span className="text-xs font-medium text-muted-foreground">
-                                      r/{subreddit}
-                                    </span>
+                                  className="border-b border-border hover:bg-muted/50 cursor-pointer"
+                                  onClick={() => {
+                                    setSelectedDiscoveryPost(linkItem);
+                                    setIsDiscoveryDrawerVisible(true);
+                                  }}
+                                >
+                                  {/* Title column */}
+                                  <td className="py-3 px-2 align-top w-[250px]">
+                                    <div className="space-y-1">
+                                      <div className="text-sm font-semibold text-foreground">
+                                        {link.title}
+                                      </div>
+                                      {link.postData?.created_utc && (
+                                        <div className="text-xs text-muted-foreground">
+                                          {formatTimeAgo(link.postData.created_utc)}
                                   </div>
                                 )}
-                                
-                                {/* Title */}
-                                <h3 className="mb-2 pr-6 text-sm font-semibold leading-tight text-foreground line-clamp-2">
-                                  {link.title}
-                                </h3>
-                                
-                                {/* Post Content - Show selftext if available, otherwise show snippet */}
+                                    </div>
+                                  </td>
+                                  
+                                  {/* Content column */}
+                                  <td className="py-3 px-2 align-top w-[280px]">
                                 {isLoadingPostContent[link.link || ''] ? (
-                                  <div className="mb-3 flex items-center gap-2">
+                                      <div className="flex items-center gap-2">
                                     <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-                                    <span className="text-xs text-muted-foreground">Loading post content...</span>
+                                        <span className="text-xs text-muted-foreground">Loading...</span>
                                   </div>
                                 ) : (
                                   (link.selftext || cleanSnippet) && (
-                                    <div className="mb-3">
-                                      <p className={cn(
-                                        "text-xs leading-relaxed text-muted-foreground",
-                                        !isExpanded ? "line-clamp-3" : ""
-                                      )}>
+                                        <div>
+                                      <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
                                         {link.selftext || cleanSnippet}
                                       </p>
-                                      {shouldShowSeeMore && (
-                                        <button
-                                          onClick={() => {
-                                            const newExpanded = new Set(expandedPosts);
-                                            if (isExpanded) {
-                                              newExpanded.delete(linkKey);
-                                            } else {
-                                              newExpanded.add(linkKey);
-                                            }
-                                            setExpandedPosts(newExpanded);
-                                          }}
-                                          className="mt-1 text-xs font-medium text-primary hover:underline"
-                                        >
-                                          {isExpanded ? "See less" : "See more"}
-                                        </button>
-                                      )}
                                     </div>
                                   )
                                 )}
-                              </div>
-                              
-                              {/* Bottom section - Textarea and Footer */}
-                              <div className={postTextareas[linkKey]?.trim() ? "mt-auto" : "mt-4"}>
-                                {/* Textarea */}
-                                {isGeneratingComment[linkKey] ? (
-                                  <div className="mb-2 flex min-h-[100px] items-center justify-center rounded-md border border-border bg-background px-3 py-2">
-                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                      <span>Generating comment...</span>
-                                    </div>
-                                  </div>
-                                ) : (
+                                  </td>
+                                  
+                                  {/* Comment column */}
+                                  <td className="py-3 px-2 align-top w-[290px]">
+                                    {isGeneratingComment[linkKey] ? (
+                                      <div className="flex min-h-[60px] items-center justify-center rounded-md border border-border bg-background px-2 py-1">
+                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                          <span>Generating...</span>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="relative" onClick={(e) => e.stopPropagation()}>
                                 <textarea
                                   value={postTextareas[linkKey] || ""}
                                   onChange={(e) => {
+                                    e.stopPropagation();
+                                    const newValue = e.target.value;
+                                    // Update ref immediately for instant feedback
+                                    postTextareasRef.current = {
+                                      ...postTextareasRef.current,
+                                      [linkKey]: newValue,
+                                    };
+                                    // Use startTransition to mark state update as non-urgent
+                                    // This prevents blocking the UI during typing
+                                    startTransition(() => {
                                     setPostTextareas((prev) => ({
                                       ...prev,
-                                      [linkKey]: e.target.value,
-                                    }));
+                                        [linkKey]: newValue,
+                                      }));
+                                    });
                                   }}
-                                  placeholder="Add your notes or comments here..."
-                                  className="mb-2 w-full min-h-[100px] rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none resize-y"
-                                  rows={4}
-                                />
-                                )}
-                                
-                                {/* Generate Comment button */}
-                                {!postTextareas[linkKey]?.trim() && (
-                                <div className="mb-3 flex justify-start">
+                                          placeholder="Add comment..."
+                                          className="w-full min-h-[60px] rounded-md border border-border bg-background px-2 py-1 pr-20 text-sm placeholder:text-muted-foreground focus:outline-none resize-y"
+                                          rows={2}
+                                        />
+                                        {!postTextareas[linkKey]?.trim() && (
                                   <Button
                                     size="sm"
                                     variant="secondary"
-                                    className="text-xs px-2 py-0.5 h-6"
-                                    onClick={() => handleGenerateComment(linkItem)}
+                                            className="absolute top-2 right-2 text-xs h-7"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleGenerateComment(linkItem);
+                                            }}
                                     disabled={isGeneratingComment[linkKey]}
                                   >
-                                    {isGeneratingComment[linkKey] ? "Generating..." : "Generate Comment"}
+                                            {isGeneratingComment[linkKey] ? "Generating..." : "Generate"}
                                   </Button>
+                                        )}
                                 </div>
-                                )}
-                                
-                                {/* Footer with timestamp, link, and post button */}
-                                {link.link && (
-                                  <div className="flex items-center justify-between border-t border-border pt-2">
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-xs text-muted-foreground">
-                                        {link.postData?.created_utc 
-                                          ? formatTimeAgo(link.postData.created_utc)
-                                          : "Unknown"}
-                                      </span>
-                                      <a
-                                        href={link.link}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-                                      >
-                                        <span>Post link</span>
-                                        <ExternalLink className="h-3 w-3" />
-                                      </a>
-                                    </div>
+                                    )}
+                                  </td>
+                                  
+                                  {/* Actions column */}
+                                  <td className="py-3 px-2 align-top w-[80px]">
+                                    <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                                     <Button
                                       size="sm"
                                       variant="default"
-                                      className="text-xs"
+                                        className="text-xs p-2"
                                       onClick={() => handlePostClick(linkItem)}
-                                      disabled={isPosting[linkKey]}
-                                    >
-                                      {isPosting[linkKey] ? "Posting..." : "Post"}
+                                        disabled={isPosting[linkKey]}
+                                        title={isPosting[linkKey] ? "Posting..." : "Post comment"}
+                                      >
+                                        {isPosting[linkKey] ? (
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <Send className="h-4 w-4" />
+                                        )}
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-xs p-2"
+                                        onClick={() => handleCloseClick(linkItem)}
+                                        title="Close"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
                                     </Button>
                                   </div>
-                                )}
-                              </div>
-                            </div>
+                                  </td>
+                                </tr>
                           );
                         })}
+                          </tbody>
+                        </table>
+                        </div>
+                        {/* Pagination controls */}
+                        {totalDiscoveryPages > 1 && (
+                          <div className="flex items-center justify-between border-t border-border px-3 py-1.5 bg-card">
+                            <div className="text-xs text-muted-foreground">
+                              Showing {(discoveryPage - 1) * DISCOVERY_ITEMS_PER_PAGE + 1} to{" "}
+                              {Math.min(discoveryPage * DISCOVERY_ITEMS_PER_PAGE, distinctLinks.length)} of{" "}
+                              {distinctLinks.length} posts
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setDiscoveryPage((prev) => Math.max(1, prev - 1))}
+                                disabled={discoveryPage === 1}
+                                className="text-xs h-7 px-2"
+                              >
+                                <ChevronLeft className="h-3 w-3" />
+                                <span className="hidden sm:inline">Previous</span>
+                              </Button>
+                              <div className="text-xs text-foreground px-1">
+                                Page {discoveryPage} of {totalDiscoveryPages}
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setDiscoveryPage((prev) => Math.min(totalDiscoveryPages, prev + 1))}
+                                disabled={discoveryPage === totalDiscoveryPages}
+                                className="text-xs h-7 px-2"
+                              >
+                                <span className="hidden sm:inline">Next</span>
+                                <ChevronRight className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                         </div>
                       ) : (
                         !Object.values(isLoadingLinks).some(Boolean) && (
@@ -2447,28 +2810,6 @@ function PlaygroundContent() {
                 )}
               </div>
             </div>
-            
-            {/* Fixed input at bottom */}
-            <div className="bg-background">
-              <ChatTextarea
-                website={website}
-                onWebsiteChange={setWebsite}
-                callToAction={callToAction}
-                onCallToActionChange={setCallToAction}
-                persona={persona}
-                onPersonaChange={setPersona}
-                postCount={postCount}
-                onPostCountChange={setPostCount}
-                autoGenerateComments={autoGenerateComments}
-                onAutoGenerateCommentsChange={setAutoGenerateComments}
-                onSend={handleSubmit}
-                onChange={(value) => setCurrentProductIdea(value)}
-                placeholder="Tell us about your product and what it does..."
-                className="h-auto"
-                previousIdeas={previousIdeas}
-                onIdeaSelect={setSelectedIdea}
-                selectedIdea={selectedIdea}
-              />
             </div>
           </div>
         );
@@ -2570,11 +2911,22 @@ function PlaygroundContent() {
                             "Submit Feedback"
                           )}
                         </Button>
-            </div>
-                    </form>
           </div>
+                    </form>
+            </div>
                 )}
             </div>
+            </div>
+          </div>
+        );
+      case "pricing":
+        return (
+          <div className={cn(
+            "flex-1 overflow-y-auto flex items-center justify-center",
+            !sidebarOpen && "pl-14 pt-14"
+          )}>
+            <div className="w-full max-w-5xl px-4 py-6">
+              <PricingSection showCTAButtons={true} />
             </div>
           </div>
         );
@@ -2802,6 +3154,133 @@ function PlaygroundContent() {
           </div>
         </>
       )}
+      {selectedDiscoveryPost && (
+        <>
+          <div
+            className={cn(
+              "fixed inset-0 z-40 bg-background/40 backdrop-blur-sm transition-opacity duration-300",
+              isDiscoveryDrawerVisible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+            )}
+            onClick={() => setIsDiscoveryDrawerVisible(false)}
+          />
+          <div
+            className={cn(
+              "fixed inset-y-0 right-0 z-50 w-full max-w-md border-l border-border bg-card shadow-2xl transition-transform duration-500 ease-out",
+              isDiscoveryDrawerVisible ? "translate-x-0" : "translate-x-full opacity-0"
+            )}
+          >
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <div className="flex flex-col gap-2">
+                <div>
+                  <h3 className="text-lg font-semibold text-foreground">
+                    {selectedDiscoveryPost.title || "No title"}
+                  </h3>
+                  {selectedDiscoveryPost.postData?.created_utc && (
+                    <p className="text-xs text-muted-foreground">
+                      {formatTimeAgo(selectedDiscoveryPost.postData.created_utc)}
+                    </p>
+                  )}
+                </div>
+                {selectedDiscoveryPost.link && (
+                  <button
+                    className="inline-flex items-center gap-2 text-xs font-medium text-primary hover:underline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (selectedDiscoveryPost.link) {
+                        window.open(selectedDiscoveryPost.link, "_blank", "noopener,noreferrer");
+                      }
+                    }}
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    View Reddit Post
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => setIsDiscoveryDrawerVisible(false)}
+                className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                aria-label="Close drawer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex h-full flex-col px-4 py-4">
+              <div className="flex-1 space-y-4 overflow-y-auto pr-4 pb-12">
+                {(selectedDiscoveryPost.selftext || selectedDiscoveryPost.snippet) && (
+                  <div>
+                    <h4 className="text-sm font-medium text-foreground mb-2">Post Content</h4>
+                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                      {selectedDiscoveryPost.selftext || selectedDiscoveryPost.snippet}
+                    </p>
+                  </div>
+                )}
+                <div>
+                  <h4 className="text-sm font-medium text-foreground mb-2">Generated Comment</h4>
+                  <textarea
+                    value={postTextareas[selectedDiscoveryPost.uniqueKey] || ""}
+                    onChange={(e) => {
+                      setPostTextareas((prev) => ({
+                        ...prev,
+                        [selectedDiscoveryPost.uniqueKey]: e.target.value,
+                      }));
+                    }}
+                    placeholder="Add comment..."
+                    className="w-full min-h-[160px] rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none resize-y"
+                  />
+                  {!postTextareas[selectedDiscoveryPost.uniqueKey]?.trim() && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="mt-2"
+                      onClick={() => handleGenerateComment(selectedDiscoveryPost)}
+                      disabled={isGeneratingComment[selectedDiscoveryPost.uniqueKey]}
+                    >
+                      {isGeneratingComment[selectedDiscoveryPost.uniqueKey] ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Generating...
+                        </>
+                      ) : (
+                        "Generate Comment"
+                      )}
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="border-t border-border pt-4 mt-4 flex items-center justify-between gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIsDiscoveryDrawerVisible(false);
+                    handleCloseClick(selectedDiscoveryPost);
+                  }}
+                  className="flex-1"
+                >
+                  Skip
+                </Button>
+                <Button
+                  onClick={() => {
+                    handlePostClick(selectedDiscoveryPost);
+                    setIsDiscoveryDrawerVisible(false);
+                  }}
+                  disabled={isPosting[selectedDiscoveryPost.uniqueKey] || !postTextareas[selectedDiscoveryPost.uniqueKey]?.trim()}
+                  className="flex-1"
+                >
+                  {isPosting[selectedDiscoveryPost.uniqueKey] ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Posting...
+                    </>
+                  ) : (
+                    "Post Comment"
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
       {isBulkPostModalOpen && (
         <>
           <div
@@ -2904,7 +3383,11 @@ function PlaygroundContent() {
                     <ul className="space-y-2 text-sm text-muted-foreground">
                       <li className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                        <span>Generate up to 200 posts per week</span>
+                        <span>Unlimited reddit post search</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                        <span>200 generated comments</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
@@ -2926,47 +3409,29 @@ function PlaygroundContent() {
                           Popular
                         </span>
                       </div>
-                      <h4 className="text-2xl font-semibold text-[#2d1510]">$9.99</h4>
+                      <h4 className="text-2xl font-semibold text-[#2d1510]">$13.99</h4>
                       <p className="text-sm text-[#72341e]">per month, cancel anytime</p>
                     </div>
                     <ul className="space-y-2 text-sm text-muted-foreground">
                       <li className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                        <span>Includes everything in Free</span>
+                        <span>Unlimited reddit post search</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                        <span>Generate up to 10,000 comments per month</span>
+                        <span>10,000 generated comments</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                        <span>Priority access to new features</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                        <span>Access to daily automated posting</span>
+                        <span>Usage analytics</span>
                       </li>
                     </ul>
                     <Button
                       size="sm"
                       onClick={async () => {
-                        try {
-                          const response = await fetch("/api/stripe/create-checkout-session", {
-                            method: "POST",
-                          });
-                          if (!response.ok) {
-                            const errorData = await response.json().catch(() => ({}));
-                            throw new Error(errorData.error || "Unable to start checkout.");
-                          }
-                          const data = await response.json();
-                          window.location.href = data.url;
-                        } catch (error) {
-                          console.error("Error starting Stripe checkout:", error);
-                          showToast(
-                            error instanceof Error ? error.message : "Unable to start checkout.",
-                            { variant: "error" }
-                          );
-                        }
+                        // Close modal and switch to pricing tab
+                        setShowUpgradeModal(false);
+                        setActiveTab("pricing");
                       }}
                       className="mt-auto"
                     >
