@@ -54,98 +54,113 @@ async function fetchGoogleCustomSearch(
   return [results];
 }
 
-async function fetchRedditPostContent(postUrl: string, accessToken?: string): Promise<any> {
+// Batch fetch multiple Reddit posts using OAuth endpoint
+async function fetchRedditPostsBatch(
+  postUrls: string[],
+  accessToken: string
+): Promise<Map<string, any>> {
+  const postDataMap = new Map<string, any>();
+  
+  if (postUrls.length === 0 || !accessToken) {
+    return postDataMap;
+  }
+
   try {
-    // Extract subreddit and post ID from URL (same as regular Reddit route)
-    // Reddit URL format: https://www.reddit.com/r/{subreddit}/comments/{post_id}/...
+    // Extract post IDs from URLs and format as t3_postId
+    const postIds: string[] = [];
+    const urlToPostIdMap = new Map<string, string>();
+    
+    for (const postUrl of postUrls) {
+      const urlMatch = postUrl.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
+      if (urlMatch) {
+        const postId = urlMatch[2];
+        const redditPostId = `t3_${postId}`;
+        postIds.push(redditPostId);
+        urlToPostIdMap.set(postUrl, redditPostId);
+      }
+    }
+
+    if (postIds.length === 0) {
+      return postDataMap;
+    }
+
+    // Batch fetch (Reddit API accepts comma-separated post IDs)
+    const postIdsString = postIds.join(",");
+    console.log(`[Cron] Batch fetching ${postIds.length} Reddit posts using OAuth endpoint`);
+
+    const response = await fetch(
+      `https://oauth.reddit.com/api/info.json?id=${postIdsString}`,
+      {
+        headers: {
+          "User-Agent": "comment-tool/0.1 by isaaclhy13",
+          "Accept": "application/json",
+          "Authorization": `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.error(`[Cron] OAuth endpoint returned HTTP ${response.status}`);
+      return postDataMap;
+    }
+
+    const data = await response.json();
+    
+    // Parse response: { data: { children: [{ data: {...} }] } }
+    if (data && data.data && data.data.children) {
+      const posts = data.data.children.map((child: any) => child.data);
+      
+      // Map posts back to URLs using the post ID
+      for (const post of posts) {
+        const redditPostId = post.name; // e.g., "t3_abc123"
+        // Find the URL that matches this post ID
+        for (const [url, id] of urlToPostIdMap.entries()) {
+          if (id === redditPostId) {
+            postDataMap.set(url, post);
+            break;
+          }
+        }
+      }
+    }
+
+    console.log(`[Cron] Successfully fetched ${postDataMap.size} posts from OAuth endpoint`);
+    return postDataMap;
+  } catch (error) {
+    console.error(`[Cron] Error batch fetching Reddit posts:`, error);
+    return postDataMap;
+  }
+}
+
+// Fallback: Fetch single post using old method (if no OAuth token)
+async function fetchRedditPostContentFallback(postUrl: string): Promise<any> {
+  try {
     const urlMatch = postUrl.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
     if (!urlMatch) {
-      console.error(`[Cron] Invalid Reddit URL format: ${postUrl}`);
       return null;
     }
 
     const [, subreddit, postId] = urlMatch;
+    const apiUrl = `https://www.reddit.com/r/${subreddit}/comments/${postId}.json`;
 
-    // Fetch from Reddit API with timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
-    try {
-      // Use the correct endpoint with subreddit (same as regular Reddit route)
-      const apiUrl = `https://www.reddit.com/r/${subreddit}/comments/${postId}.json`;
-      
-      // Try approach 1: Use OAuth token if available, otherwise minimal headers
-      let response: Response;
-      const headers: HeadersInit = {
+    const response = await fetch(apiUrl, {
+      headers: {
         'User-Agent': 'reddit-comment-tool/0.1 by isaaclhy13',
         'Accept': '*/*',
-      };
-      
-      // Add OAuth token if available (this should prevent 403 errors)
-      if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
-      }
-      
-      try {
-        response = await fetch(apiUrl, {
-          headers,
-          cache: 'no-store',
-          signal: controller.signal,
-        });
+      },
+      cache: 'no-store',
+    });
 
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-          console.error(`[Cron] Timeout fetching Reddit post content for ${postUrl}`);
-          return null;
-        }
-        
-        // Try approach 2: No custom headers (same as regular Reddit route)
-        const controller2 = new AbortController();
-        const timeoutId2 = setTimeout(() => controller2.abort(), 10000);
-        try {
-          response = await fetch(apiUrl, {
-            cache: 'no-store',
-            signal: controller2.signal,
-          });
-          clearTimeout(timeoutId2);
-          
-          if (!response.ok) {
-            if (response.status === 403) {
-              console.error(`[Cron] Reddit blocked request (403 Forbidden) for ${postUrl} - likely rate limiting or IP blocking from Vercel`);
-            } else {
-              console.error(`[Cron] Failed to fetch Reddit post: HTTP ${response.status} for ${postUrl}`);
-            }
-            return null;
-          }
-        } catch (error2) {
-          clearTimeout(timeoutId2);
-          console.error(`[Cron] Error fetching Reddit post content for ${postUrl}:`, error2);
-          return null;
-        }
-      }
-
-      const data = await response.json();
-      if (data && data[0] && data[0].data && data[0].data.children && data[0].data.children[0]) {
-        return data[0].data.children[0].data;
-      }
-      console.error(`[Cron] Unexpected Reddit API response structure for ${postUrl}`);
-      return null;
-    } catch (fetchError) {
-      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        console.error(`[Cron] Timeout fetching Reddit post content for ${postUrl}`);
-      } else {
-        console.error(`[Cron] Error fetching Reddit post content for ${postUrl}:`, fetchError);
-      }
+    if (!response.ok) {
       return null;
     }
+
+    const data = await response.json();
+    if (data && data[0] && data[0].data && data[0].data.children && data[0].data.children[0]) {
+      return data[0].data.children[0].data;
+    }
+    return null;
   } catch (error) {
-    console.error(`[Cron] Error fetching Reddit post content for ${postUrl}:`, error);
+    console.error(`[Cron] Error in fallback fetch for ${postUrl}:`, error);
     return null;
   }
 }
@@ -348,39 +363,75 @@ async function handleCronRequest(
 
         // Step 3: Fetch full post content for each Reddit post
         console.log(`[Cron] Found ${redditPosts.length} Reddit posts from query "${query}", fetching content...`);
-        for (let j = 0; j < redditPosts.length; j++) {
-          const post = redditPosts[j];
-          if (post.link) {
-            console.log(`[Cron] Fetching content for post ${j + 1}/${redditPosts.length}: ${post.link}`);
-            
-            // Extract postId from URL
-            const urlMatch = post.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
-            const postId = urlMatch ? urlMatch[2] : null;
-            
-            // Add delay between requests to avoid rate limiting (1 second delay)
-            if (j > 0) {
-              await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Collect all post URLs for batch fetching
+        const postLinks = redditPosts.filter(p => p.link).map(p => p.link!);
+        
+        if (redditAccessToken && postLinks.length > 0) {
+          // Use OAuth endpoint for batch fetching (more efficient and avoids 403)
+          console.log(`[Cron] Batch fetching ${postLinks.length} posts using OAuth endpoint`);
+          const postDataMap = await fetchRedditPostsBatch(postLinks, redditAccessToken);
+          
+          // Map fetched data back to posts
+          for (const post of redditPosts) {
+            if (post.link) {
+              const urlMatch = post.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
+              const postId = urlMatch ? urlMatch[2] : null;
+              const postContent = postDataMap.get(post.link);
+              
+              if (postContent) {
+                allRedditPosts.push({
+                  ...post,
+                  selftext: postContent.selftext || null,
+                  postData: {
+                    id: postId || postContent.id || null,
+                    created_utc: postContent.created_utc,
+                    subreddit: postContent.subreddit,
+                    author: postContent.author,
+                  },
+                });
+              } else {
+                // Post not found in batch, store without content
+                console.log(`[Cron] Post not found in batch response: ${post.link}`);
+                allRedditPosts.push({
+                  ...post,
+                  postData: postId ? { id: postId } : undefined,
+                });
+              }
             }
-            
-            const postContent = await fetchRedditPostContent(post.link, redditAccessToken);
-            if (postContent) {
-              allRedditPosts.push({
-                ...post,
-                selftext: postContent.selftext || null,
-                postData: {
-                  id: postId || postContent.id || null,
-                  created_utc: postContent.created_utc,
-                  subreddit: postContent.subreddit,
-                  author: postContent.author,
-                },
-              });
-            } else {
-              // Even if postContent fetch fails, we can still store the postId we extracted from URL
-              console.log(`[Cron] Failed to fetch content for ${post.link}, storing post without content`);
-              allRedditPosts.push({
-                ...post,
-                postData: postId ? { id: postId } : undefined,
-              });
+          }
+        } else {
+          // Fallback: Fetch posts individually (if no OAuth token)
+          console.log(`[Cron] Using fallback method (no OAuth token)`);
+          for (let j = 0; j < redditPosts.length; j++) {
+            const post = redditPosts[j];
+            if (post.link) {
+              // Add delay between requests to avoid rate limiting
+              if (j > 0) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+              
+              const urlMatch = post.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
+              const postId = urlMatch ? urlMatch[2] : null;
+              
+              const postContent = await fetchRedditPostContentFallback(post.link);
+              if (postContent) {
+                allRedditPosts.push({
+                  ...post,
+                  selftext: postContent.selftext || null,
+                  postData: {
+                    id: postId || postContent.id || null,
+                    created_utc: postContent.created_utc,
+                    subreddit: postContent.subreddit,
+                    author: postContent.author,
+                  },
+                });
+              } else {
+                allRedditPosts.push({
+                  ...post,
+                  postData: postId ? { id: postId } : undefined,
+                });
+              }
             }
           }
         }
