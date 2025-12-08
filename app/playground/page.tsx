@@ -187,6 +187,7 @@ function PlaygroundContent() {
   const [analyticsFilter, setAnalyticsFilter] = useState<"posted" | "skipped" | "failed">("posted");
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(true);
   const [analyticsPage, setAnalyticsPage] = useState(1);
+  const ANALYTICS_ITEMS_PER_PAGE = 20;
   const [selectedAnalyticsPost, setSelectedAnalyticsPost] = useState<AnalyticsPost | null>(null);
   const [isAnalyticsDrawerVisible, setIsAnalyticsDrawerVisible] = useState(false);
   const [drawerComment, setDrawerComment] = useState<string>("");
@@ -195,6 +196,7 @@ function PlaygroundContent() {
   const [isRedditConnected, setIsRedditConnected] = useState<boolean | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string>("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const analyticsFetchedRef = useRef<boolean>(false);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [selectedDiscoveryPost, setSelectedDiscoveryPost] = useState<typeof distinctLinks[0] | null>(null);
   const [isDiscoveryDrawerVisible, setIsDiscoveryDrawerVisible] = useState(false);
@@ -436,9 +438,11 @@ function PlaygroundContent() {
   // We no longer auto-check Reddit connection on focus/tab changes.
   // Connection is now explicitly (re)established via the sidebar "Reconnect Reddit" button.
 
-  // Load analytics posts from MongoDB
+  // Load analytics posts from MongoDB (only on initial load)
   useEffect(() => {
     if (!session?.user) return;
+    // Only fetch once on initial load (prevent refresh when re-entering page)
+    if (analyticsFetchedRef.current) return;
 
     const fetchAnalyticsPosts = async () => {
       setIsLoadingAnalytics(true);
@@ -447,6 +451,7 @@ function PlaygroundContent() {
         if (response.status === 401) {
           setAnalyticsPosts([]);
           setIsLoadingAnalytics(false);
+          analyticsFetchedRef.current = true;
           return;
         }
         if (response.ok) {
@@ -485,6 +490,7 @@ function PlaygroundContent() {
         console.error("Error fetching analytics posts:", error);
       } finally {
         setIsLoadingAnalytics(false);
+        analyticsFetchedRef.current = true;
       }
     };
 
@@ -2147,186 +2153,218 @@ function PlaygroundContent() {
     switch (activeTab) {
       case "product":
         return (
-          <div className={cn(
-            "flex-1 overflow-y-auto p-6",
-            !sidebarOpen && "pl-14 pt-14"
-          )}>
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-2xl font-semibold text-foreground">Product</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Enter your product information to get started.
-                </p>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="product-website" className="block text-sm font-medium text-foreground mb-1">
-                    Product Website
-                  </label>
-                  <Input
-                    id="product-website"
-                    type="url"
-                    value={website}
-                    onChange={(e) => setWebsite(e.target.value)}
-                    placeholder="https://example.com"
-                    className="w-full max-w-md"
-                  />
+          <div className="flex h-full flex-col">
+            {/* Main content area - scrollable */}
+            <div className={cn(
+              "flex h-full flex-col",
+              !sidebarOpen && "pl-2"
+            )}>
+              {/* Fixed header with title */}
+              <div className={cn(
+                "sticky top-0 z-10 bg-background pb-2",
+                !sidebarOpen && "pl-14"
+              )}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="text-lg font-semibold">
+                    Product
+                  </h3>
                 </div>
-                <div>
-                  <label htmlFor="product-description" className="block text-sm font-medium text-foreground mb-1">
-                    Product Description
-                  </label>
-                  <div className="relative w-full max-w-md rounded-md border border-input focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2">
-                    <textarea
-                      id="product-description"
-                      value={productDescription}
-                      onChange={(e) => setProductDescription(e.target.value)}
-                      placeholder={isGeneratingProductDescription ? "Generating product description..." : "Describe your product and what it does..."}
-                      disabled={isGeneratingProductDescription}
-                      className="w-full min-h-[150px] rounded-md border-0 bg-background px-3 py-2 pb-12 text-sm placeholder:text-muted-foreground focus:outline-none resize-y disabled:opacity-50 disabled:cursor-not-allowed"
-                      rows={6}
-                    />
-                    {isGeneratingProductDescription && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-background/50 rounded-md">
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          <span>Generating...</span>
-                        </div>
+              </div>
+              
+              {/* Content area that spans remaining space */}
+              <div className={cn(
+                "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
+                !sidebarOpen && "pl-14"
+              )}>
+                <div className="space-y-6">
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="product-website" className="block text-sm font-medium text-foreground mb-1">
+                        Product Website
+                      </label>
+                      <Input
+                        id="product-website"
+                        type="url"
+                        value={website}
+                        onChange={(e) => setWebsite(e.target.value)}
+                        placeholder="https://example.com"
+                        className="w-full max-w-md"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="product-description" className="block text-sm font-medium text-foreground mb-1">
+                        Product Description
+                      </label>
+                      <div className="relative w-full max-w-md rounded-md border border-input focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2">
+                        <textarea
+                          id="product-description"
+                          value={productDescription}
+                          onChange={(e) => setProductDescription(e.target.value)}
+                          placeholder={isGeneratingProductDescription ? "Generating product description..." : "Describe your product and what it does..."}
+                          disabled={isGeneratingProductDescription}
+                          className="w-full min-h-[150px] rounded-md border-0 bg-background px-3 py-2 pb-12 text-sm placeholder:text-muted-foreground focus:outline-none resize-y disabled:opacity-50 disabled:cursor-not-allowed"
+                          rows={6}
+                        />
+                        {isGeneratingProductDescription && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-background/50 rounded-md">
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              <span>Generating...</span>
+                            </div>
+                          </div>
+                        )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="absolute bottom-2 right-2 bg-black text-white hover:bg-black/90 text-xs h-7 disabled:opacity-50 disabled:cursor-not-allowed"
+                          disabled={isGeneratingProductDescription || !website || !website.trim()}
+                          onClick={async () => {
+                            if (!website || !website.trim()) {
+                              showToast("Please enter a website first", { variant: "error" });
+                              return;
+                            }
+                            
+                            setIsGeneratingProductDescription(true);
+                            try {
+                              const response = await fetch("/api/openai/product", {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({
+                                  website: website,
+                                }),
+                              });
+
+                              if (!response.ok) {
+                                const errorData = await response.json();
+                                throw new Error(errorData.error || "Failed to generate product description");
+                              }
+
+                              const data = await response.json();
+                              if (data.success && data.description) {
+                                setProductDescription(data.description);
+                                showToast("Product description generated successfully!", { variant: "success" });
+                              } else {
+                                throw new Error("No description received from API");
+                              }
+                            } catch (error) {
+                              console.error("Error generating product description:", error);
+                              showToast(error instanceof Error ? error.message : "Failed to generate product description", { variant: "error" });
+                            } finally {
+                              setIsGeneratingProductDescription(false);
+                            }
+                          }}
+                        >
+                          {isGeneratingProductDescription ? "Generating..." : "AI generate"}
+                        </Button>
                       </div>
-                    )}
+                    </div>
+                  </div>
+                  <div>
                     <Button
-                      type="button"
-                      size="sm"
-                      className="absolute bottom-2 right-2 bg-black text-white hover:bg-black/90 text-xs h-7 disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={isGeneratingProductDescription || !website || !website.trim()}
                       onClick={async () => {
-                        if (!website || !website.trim()) {
-                          showToast("Please enter a website first", { variant: "error" });
-                          return;
-                        }
-                        
-                        setIsGeneratingProductDescription(true);
+                        setIsSavingProductDetails(true);
                         try {
-                          const response = await fetch("/api/openai/product", {
+                          const response = await fetch("/api/user/product-details", {
                             method: "POST",
                             headers: {
                               "Content-Type": "application/json",
                             },
                             body: JSON.stringify({
-                              website: website,
+                              link: website || undefined,
+                              productDescription: productDescription || undefined,
                             }),
                           });
 
                           if (!response.ok) {
                             const errorData = await response.json();
-                            throw new Error(errorData.error || "Failed to generate product description");
+                            throw new Error(errorData.error || "Failed to save product details");
                           }
 
                           const data = await response.json();
-                          if (data.success && data.description) {
-                            setProductDescription(data.description);
-                            showToast("Product description generated successfully!", { variant: "success" });
-                          } else {
-                            throw new Error("No description received from API");
+                          if (data.success) {
+                            // Show success toast (auto-dismisses after 5 seconds)
+                            showToast("Product details saved successfully!", { variant: "success" });
                           }
                         } catch (error) {
-                          console.error("Error generating product description:", error);
-                          showToast(error instanceof Error ? error.message : "Failed to generate product description", { variant: "error" });
+                          console.error("Error saving product details:", error);
+                          showToast(error instanceof Error ? error.message : "Failed to save product details", { variant: "error" });
                         } finally {
-                          setIsGeneratingProductDescription(false);
+                          setIsSavingProductDetails(false);
                         }
                       }}
+                      disabled={isSavingProductDetails || isLoadingProductDetails}
+                      className="bg-black text-white hover:bg-black/90 disabled:opacity-50"
                     >
-                      {isGeneratingProductDescription ? "Generating..." : "AI generate"}
+                      {isSavingProductDetails ? "Saving..." : "Save"}
                     </Button>
                   </div>
                 </div>
-              </div>
-              <div>
-                <Button
-                  onClick={async () => {
-                    setIsSavingProductDetails(true);
-                    try {
-                      const response = await fetch("/api/user/product-details", {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                          link: website || undefined,
-                          productDescription: productDescription || undefined,
-                        }),
-                      });
-
-                      if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.error || "Failed to save product details");
-                      }
-
-                      const data = await response.json();
-                      if (data.success) {
-                        // Show success toast (auto-dismisses after 5 seconds)
-                        showToast("Product details saved successfully!", { variant: "success" });
-                      }
-                    } catch (error) {
-                      console.error("Error saving product details:", error);
-                      showToast(error instanceof Error ? error.message : "Failed to save product details", { variant: "error" });
-                    } finally {
-                      setIsSavingProductDetails(false);
-                    }
-                  }}
-                  disabled={isSavingProductDetails || isLoadingProductDetails}
-                  className="bg-black text-white hover:bg-black/90 disabled:opacity-50"
-                >
-                  {isSavingProductDetails ? "Saving..." : "Save"}
-                </Button>
               </div>
             </div>
           </div>
         );
       case "analytics":
         return (
-          <div className={cn(
-            "flex-1 overflow-y-auto px-2 py-4 sm:px-3",
-            !sidebarOpen && "pl-14 pt-14"
-          )}>
-            <div className="flex h-full flex-col gap-2">
-                <div className="flex gap-1.5">
-                  <Button
-                    variant={analyticsFilter === "posted" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setAnalyticsFilter("posted")}
-                  >
-                    Active
-                  </Button>
-                  <Button
-                    variant={analyticsFilter === "skipped" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setAnalyticsFilter("skipped")}
-                  >
-                    Skipped
-                  </Button>
-                  <Button
-                    variant={analyticsFilter === "failed" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setAnalyticsFilter("failed")}
-                  >
-                    Failed
-                  </Button>
+          <div className="flex h-full flex-col">
+            {/* Main content area - scrollable */}
+            <div className={cn(
+              "flex h-full flex-col",
+              !sidebarOpen && "pl-2"
+            )}>
+              {/* Fixed header with title and filter buttons */}
+              <div className={cn(
+                "sticky top-0 z-10 bg-background pb-2",
+                !sidebarOpen && "pl-14"
+              )}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="text-lg font-semibold">
+                    Analytics
+                  </h3>
+                  <div className="flex gap-2 self-start sm:self-auto">
+                    <Button
+                      variant={analyticsFilter === "posted" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setAnalyticsFilter("posted")}
+                    >
+                      Active
+                    </Button>
+                    <Button
+                      variant={analyticsFilter === "skipped" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setAnalyticsFilter("skipped")}
+                    >
+                      Skipped
+                    </Button>
+                    <Button
+                      variant={analyticsFilter === "failed" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setAnalyticsFilter("failed")}
+                    >
+                      Failed
+                    </Button>
+                  </div>
+                </div>
               </div>
               
+              {/* Content area that spans remaining space */}
+              <div className={cn(
+                "flex-1 overflow-hidden pt-2 flex flex-col min-h-0",
+                !sidebarOpen && "pl-14"
+              )}>
                 {isLoadingAnalytics ? (
-                <div className="rounded-lg border border-border bg-card p-8 text-center">
-                    <div className="flex items-center justify-center gap-2">
+                  <div className="flex items-center justify-center flex-1">
+                    <div className="flex items-center gap-2">
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
                       <p className="text-muted-foreground">Loading analytics...</p>
                     </div>
                   </div>
                 ) : filteredAnalyticsPosts.length === 0 ? (
-                  <div className="rounded-lg border border-border bg-card p-8 text-center">
+                  <div className="flex items-center justify-center flex-1">
                     <p className="text-muted-foreground">
                       {analyticsFilter === "posted"
                         ? "No active posts yet. Generate comments and post them to see activity here."
@@ -2334,30 +2372,28 @@ function PlaygroundContent() {
                           ? "No skipped posts yet. Skip a post in the Discovery tab to review it here."
                           : "No failed posts yet. If a post fails to publish, it will appear here."}
                     </p>
-                </div>
+                  </div>
               ) : (
                   (() => {
-                    const PAGE_SIZE = 30;
-                    const isSkippedView = analyticsFilter === "skipped";
                     const totalItems = filteredAnalyticsPosts.length;
-                    const totalPages = isSkippedView ? Math.max(1, Math.ceil(totalItems / PAGE_SIZE)) : 1;
-                    const currentPage = isSkippedView ? Math.min(analyticsPage, totalPages) : 1;
-                    const startIdx = isSkippedView ? (currentPage - 1) * PAGE_SIZE : 0;
-                    const endIdx = isSkippedView ? startIdx + PAGE_SIZE : filteredAnalyticsPosts.length;
+                    const totalPages = Math.max(1, Math.ceil(totalItems / ANALYTICS_ITEMS_PER_PAGE));
+                    const currentPage = Math.min(analyticsPage, totalPages);
+                    const startIdx = (currentPage - 1) * ANALYTICS_ITEMS_PER_PAGE;
+                    const endIdx = startIdx + ANALYTICS_ITEMS_PER_PAGE;
                     const pageItems = filteredAnalyticsPosts.slice(startIdx, endIdx);
 
                     return (
-                      <div className="flex-1 min-h-0">
-                        <div className="flex h-full flex-col rounded-lg border border-border bg-card overflow-hidden">
-                          <div className="max-h-[65vh] flex-1 overflow-x-auto overflow-y-auto">
-                            <table className="min-w-full">
-                      <thead className="bg-muted/50">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Title</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Query</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Updated</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Post</th>
+                      <div className="flex-1 min-h-0 flex flex-col">
+                        <div className="flex-1 flex flex-col rounded-lg border border-border overflow-hidden">
+                          <div className="flex-1 overflow-x-auto overflow-y-auto min-h-0">
+                            <table className="w-full border-collapse">
+                      <thead className="sticky top-0 z-20">
+                        <tr className="border-b border-border bg-muted/50">
+                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Status</th>
+                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Title</th>
+                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Query</th>
+                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Last Updated</th>
+                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Post</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
@@ -2367,7 +2403,7 @@ function PlaygroundContent() {
                                   className="cursor-pointer transition hover:bg-muted/40"
                                   onClick={() => openAnalyticsDrawer(post)}
                                 >
-                                  <td className="px-4 py-3">
+                                  <td className="py-3 px-2">
                               <span
                                       className={cn(
                                         "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize",
@@ -2379,18 +2415,18 @@ function PlaygroundContent() {
                                       {post.status}
                               </span>
                             </td>
-                                  <td className="max-w-sm px-4 py-3 text-sm font-medium text-foreground">
+                                  <td className="max-w-sm py-3 px-2 text-sm font-medium text-foreground">
                                     <div className="truncate" title={post.title || "Untitled post"}>
                                       {post.title || "Untitled post"}
                               </div>
                             </td>
-                                  <td className="max-w-xs px-4 py-3 text-sm text-muted-foreground">
+                                  <td className="max-w-xs py-3 px-2 text-sm text-muted-foreground">
                                     <div className="line-clamp-2">{post.query}</div>
                             </td>
-                                  <td className="px-4 py-3 text-sm text-muted-foreground">
+                                  <td className="py-3 px-2 text-sm text-muted-foreground">
                                     {new Date(post.postedAt).toLocaleDateString()}
                                   </td>
-                                  <td className="px-4 py-3">
+                                  <td className="py-3 px-2">
                               {post.link ? (
                                 <a
                                   href={post.link}
@@ -2409,39 +2445,44 @@ function PlaygroundContent() {
                       </tbody>
                     </table>
                         </div>
-                        {isSkippedView && totalItems > PAGE_SIZE && (
-                          <div className="flex flex-col gap-3 border-t border-border bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                            <span className="text-xs text-muted-foreground">
-                              Showing {startIdx + 1}-{Math.min(endIdx, totalItems)} of {totalItems}
-                            </span>
-                            <div className="flex items-center gap-2">
+                        {totalPages > 1 && (
+                          <div className="flex items-center justify-between border-t border-border px-3 py-1.5 bg-card">
+                            <div className="text-xs text-muted-foreground">
+                              Showing {startIdx + 1} to {Math.min(endIdx, totalItems)} of {totalItems} posts
+                            </div>
+                            <div className="flex items-center gap-1.5">
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => setAnalyticsPage((prev) => Math.max(1, prev - 1))}
                                 disabled={currentPage === 1}
+                                className="text-xs h-7 px-2"
                               >
-                                Previous
+                                <ChevronLeft className="h-3 w-3" />
+                                <span className="hidden sm:inline">Previous</span>
                               </Button>
-                              <span className="text-xs text-muted-foreground">
+                              <div className="text-xs text-foreground px-1">
                                 Page {currentPage} of {totalPages}
-                              </span>
+                              </div>
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => setAnalyticsPage((prev) => Math.min(totalPages, prev + 1))}
                                 disabled={currentPage === totalPages}
+                                className="text-xs h-7 px-2"
                               >
-                                Next
+                                <span className="hidden sm:inline">Next</span>
+                                <ChevronRight className="h-3 w-3" />
                               </Button>
-                  </div>
-                </div>
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>
                   );
                 })()
               )}
+              </div>
             </div>
           </div>
         );
@@ -2817,107 +2858,119 @@ function PlaygroundContent() {
         );
       case "feedback":
         return (
-          <div className={cn(
-            "flex-1 overflow-y-auto p-6",
-            !sidebarOpen && "pl-14 pt-14"
-          )}>
-            <div className="mx-auto max-w-2xl">
-          <div className="space-y-6">
-            <div>
-                  <h2 className="text-2xl font-semibold text-foreground">Feedback</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Share your thoughts, suggestions, or report any issues. We'd love to hear from you!
-              </p>
-            </div>
-
-                {feedbackSubmitted ? (
-                  <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 p-6 text-center">
-                    <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500 mb-4" />
-                    <h3 className="text-lg font-semibold text-emerald-500 mb-2">Thank you for your feedback!</h3>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      We appreciate you taking the time to share your thoughts with us.
-                    </p>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setFeedbackSubmitted(false);
-                        setFeedbackMessage("");
-                      }}
-                    >
-                      Submit Another Feedback
-                    </Button>
-            </div>
-                ) : (
-            <div className="rounded-lg border border-border bg-card p-6">
-                    <form
-                      onSubmit={async (e) => {
-                        e.preventDefault();
-                        if (!feedbackMessage.trim() || isSubmittingFeedback) {
-                          return;
-                        }
-
-                        setIsSubmittingFeedback(true);
-                        try {
-                          const response = await fetch("/api/feedback", {
-                            method: "POST",
-                            headers: {
-                              "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({
-                              message: feedbackMessage.trim(),
-                            }),
-                          });
-
-                          if (!response.ok) {
-                            const errorData = await response.json();
-                            throw new Error(errorData.error || "Failed to submit feedback");
+          <div className="flex h-full flex-col">
+            {/* Main content area - scrollable */}
+            <div className={cn(
+              "flex h-full flex-col",
+              !sidebarOpen && "pl-2"
+            )}>
+              {/* Fixed header with title */}
+              <div className={cn(
+                "sticky top-0 z-10 bg-background pb-2",
+                !sidebarOpen && "pl-14"
+              )}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="text-lg font-semibold">
+                    Feedback
+                  </h3>
+                </div>
+              </div>
+              
+              {/* Content area that spans remaining space */}
+              <div className={cn(
+                "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
+                !sidebarOpen && "pl-14"
+              )}>
+                <div className="space-y-6">
+                  {feedbackSubmitted ? (
+                    <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 p-6">
+                      <CheckCircle2 className="h-12 w-12 text-emerald-500 mb-4" />
+                      <h3 className="text-lg font-semibold text-emerald-500 mb-2">Thank you for your feedback!</h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        We appreciate you taking the time to share your thoughts with us.
+                      </p>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setFeedbackSubmitted(false);
+                          setFeedbackMessage("");
+                        }}
+                      >
+                        Submit Another Feedback
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (!feedbackMessage.trim() || isSubmittingFeedback) {
+                            return;
                           }
 
-                          setFeedbackSubmitted(true);
-                          setFeedbackMessage("");
-                        } catch (error) {
-                          console.error("Error submitting feedback:", error);
-                          alert(error instanceof Error ? error.message : "Failed to submit feedback. Please try again.");
-                        } finally {
-                          setIsSubmittingFeedback(false);
-                        }
-                      }}
-                      className="space-y-4"
-                    >
-            <div>
-                        <label htmlFor="feedback-message" className="block text-sm font-medium text-foreground mb-2">
-                          Your Message
-                        </label>
-                        <textarea
-                          id="feedback-message"
-                          value={feedbackMessage}
-                          onChange={(e) => setFeedbackMessage(e.target.value)}
-                          placeholder="Tell us what's on your mind..."
-                          className="w-full min-h-[200px] rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 resize-y"
-                          rows={10}
-                          disabled={isSubmittingFeedback}
-                          required
-                        />
-            </div>
-                      <div className="flex items-center justify-end gap-3">
-                        <Button
-                          type="submit"
-                          disabled={!feedbackMessage.trim() || isSubmittingFeedback}
-                        >
-                          {isSubmittingFeedback ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                              Submitting...
-                            </>
-                          ) : (
-                            "Submit Feedback"
-                          )}
-                        </Button>
-          </div>
-                    </form>
-            </div>
-                )}
-            </div>
+                          setIsSubmittingFeedback(true);
+                          try {
+                            const response = await fetch("/api/feedback", {
+                              method: "POST",
+                              headers: {
+                                "Content-Type": "application/json",
+                              },
+                              body: JSON.stringify({
+                                message: feedbackMessage.trim(),
+                              }),
+                            });
+
+                            if (!response.ok) {
+                              const errorData = await response.json();
+                              throw new Error(errorData.error || "Failed to submit feedback");
+                            }
+
+                            setFeedbackSubmitted(true);
+                            setFeedbackMessage("");
+                          } catch (error) {
+                            console.error("Error submitting feedback:", error);
+                            alert(error instanceof Error ? error.message : "Failed to submit feedback. Please try again.");
+                          } finally {
+                            setIsSubmittingFeedback(false);
+                          }
+                        }}
+                        className="space-y-4"
+                      >
+                        <div>
+                          <label htmlFor="feedback-message" className="block text-sm font-medium text-foreground mb-2">
+                            Your Message
+                          </label>
+                          <textarea
+                            id="feedback-message"
+                            value={feedbackMessage}
+                            onChange={(e) => setFeedbackMessage(e.target.value)}
+                            placeholder="Tell us what's on your mind..."
+                            className="w-full min-h-[200px] rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 resize-y"
+                            rows={10}
+                            disabled={isSubmittingFeedback}
+                            required
+                          />
+                        </div>
+                        <div className="flex items-center justify-start gap-3">
+                          <Button
+                            type="submit"
+                            disabled={!feedbackMessage.trim() || isSubmittingFeedback}
+                          >
+                            {isSubmittingFeedback ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                Submitting...
+                              </>
+                            ) : (
+                              "Submit Feedback"
+                            )}
+                          </Button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         );
