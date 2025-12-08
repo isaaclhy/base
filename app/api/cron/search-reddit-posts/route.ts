@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db/users";
 import { incrementCronUsage } from "@/lib/db/usage";
 import { createCronRedditPost, getCronRedditPostByLinkAndUserEmail } from "@/lib/db/cron-reddit-posts";
+import { getValidAccessToken } from "@/lib/reddit/auth";
 import OpenAI from "openai";
 import { google, customsearch_v1 } from "googleapis";
 
@@ -53,7 +54,7 @@ async function fetchGoogleCustomSearch(
   return [results];
 }
 
-async function fetchRedditPostContent(postUrl: string): Promise<any> {
+async function fetchRedditPostContent(postUrl: string, accessToken?: string): Promise<any> {
   try {
     // Extract subreddit and post ID from URL (same as regular Reddit route)
     // Reddit URL format: https://www.reddit.com/r/{subreddit}/comments/{post_id}/...
@@ -73,14 +74,21 @@ async function fetchRedditPostContent(postUrl: string): Promise<any> {
       // Use the correct endpoint with subreddit (same as regular Reddit route)
       const apiUrl = `https://www.reddit.com/r/${subreddit}/comments/${postId}.json`;
       
-      // Try approach 1: Minimal headers (same as regular Reddit route)
+      // Try approach 1: Use OAuth token if available, otherwise minimal headers
       let response: Response;
+      const headers: HeadersInit = {
+        'User-Agent': 'reddit-comment-tool/0.1 by isaaclhy13',
+        'Accept': '*/*',
+      };
+      
+      // Add OAuth token if available (this should prevent 403 errors)
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+      
       try {
         response = await fetch(apiUrl, {
-          headers: {
-            'User-Agent': 'reddit-comment-tool/0.1 by isaaclhy13',
-            'Accept': '*/*',
-          },
+          headers,
           cache: 'no-store',
           signal: controller.signal,
         });
@@ -108,7 +116,11 @@ async function fetchRedditPostContent(postUrl: string): Promise<any> {
           clearTimeout(timeoutId2);
           
           if (!response.ok) {
-            console.error(`[Cron] Failed to fetch Reddit post: HTTP ${response.status}`);
+            if (response.status === 403) {
+              console.error(`[Cron] Reddit blocked request (403 Forbidden) for ${postUrl} - likely rate limiting or IP blocking from Vercel`);
+            } else {
+              console.error(`[Cron] Failed to fetch Reddit post: HTTP ${response.status} for ${postUrl}`);
+            }
             return null;
           }
         } catch (error2) {
@@ -249,6 +261,20 @@ async function handleCronRequest(
       );
     }
 
+    // Get Reddit OAuth access token if available
+    let redditAccessToken: string | undefined;
+    try {
+      if (dbUser.redditAccessToken) {
+        redditAccessToken = await getValidAccessToken(email);
+        console.log(`[Cron] Using Reddit OAuth token for authenticated requests`);
+      } else {
+        console.log(`[Cron] No Reddit OAuth token found - using unauthenticated requests (may get 403 errors)`);
+      }
+    } catch (tokenError) {
+      console.error(`[Cron] Error getting Reddit access token:`, tokenError);
+      // Continue without token - will try unauthenticated requests
+    }
+
     // Determine product idea to use
     let productIdeaToUse: string;
     if (productIdea) {
@@ -331,7 +357,12 @@ async function handleCronRequest(
             const urlMatch = post.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
             const postId = urlMatch ? urlMatch[2] : null;
             
-            const postContent = await fetchRedditPostContent(post.link);
+            // Add delay between requests to avoid rate limiting (1 second delay)
+            if (j > 0) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            
+            const postContent = await fetchRedditPostContent(post.link, redditAccessToken);
             if (postContent) {
               allRedditPosts.push({
                 ...post,
@@ -345,6 +376,7 @@ async function handleCronRequest(
               });
             } else {
               // Even if postContent fetch fails, we can still store the postId we extracted from URL
+              console.log(`[Cron] Failed to fetch content for ${post.link}, storing post without content`);
               allRedditPosts.push({
                 ...post,
                 postData: postId ? { id: postId } : undefined,
