@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/cron/search-reddit-posts?userEmail=YOUR_EMAIL_HERE",
+      "path": "/api/cron/search-reddit-posts",
       "schedule": "0 20 * * *"
     }
   ]
