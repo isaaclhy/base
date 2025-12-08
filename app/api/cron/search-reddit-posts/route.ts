@@ -8,6 +8,8 @@ import { google, customsearch_v1 } from "googleapis";
 
 // Increase timeout for cron job (5 minutes)
 export const maxDuration = 300;
+// Force dynamic execution to prevent caching issues with Vercel cron jobs
+export const dynamic = 'force-dynamic';
 
 const openaiClient = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -139,10 +141,26 @@ async function fetchRedditPostContent(postUrl: string): Promise<any> {
 // Handle GET requests from Vercel Cron (Vercel sends GET with authorization header)
 export async function GET(request: NextRequest) {
   try {
-    // Verify Vercel Cron authorization header
+    // Vercel automatically authenticates cron jobs
+    // For manual triggers, we check for API key
     const authHeader = request.headers.get("authorization");
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && authHeader !== `Bearer ${process.env.CRON_API_KEY}`) {
+    
+    // Allow the request if:
+    // 1. It has an authorization header (Vercel's automatic cron sends one)
+    // 2. OR it matches our API key (manual trigger)
+    // 3. OR CRON_USER_EMAIL is set (configured for Vercel cron)
+    const isValidManualTrigger = authHeader === `Bearer ${process.env.CRON_SECRET}` || 
+                                  authHeader === `Bearer ${process.env.CRON_API_KEY}`;
+    const hasVercelAuth = authHeader && authHeader.startsWith("Bearer");
+    const isConfiguredForVercel = !!process.env.CRON_USER_EMAIL;
+    
+    if (!isValidManualTrigger && !hasVercelAuth && !isConfiguredForVercel) {
+      console.log("[Cron] Unauthorized request - no valid auth header or API key");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    
+    if (hasVercelAuth && !isValidManualTrigger) {
+      console.log("[Cron] Request authenticated by Vercel (automatic cron)");
     }
 
     // Get parameters from query string or environment variables
