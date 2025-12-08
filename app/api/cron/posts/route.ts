@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getCronRedditPostsByUserId, getCronRedditPostsByCronRunId } from "@/lib/db/cron-reddit-posts";
+import { getCronRedditPostsByUserEmail, getCronRedditPostsByCronRunId } from "@/lib/db/cron-reddit-posts";
 
-// GET /api/cron/posts?userId=email@example.com
+// GET /api/cron/posts?userEmail=email@example.com
 // GET /api/cron/posts?cronRunId=cron_xxx
 // GET /api/cron/posts (uses current user's session)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
+    const userEmail = searchParams.get("userEmail");
     const cronRunId = searchParams.get("cronRunId");
 
     let posts;
@@ -16,19 +16,19 @@ export async function GET(request: NextRequest) {
     if (cronRunId) {
       // Get posts by cron run ID
       posts = await getCronRedditPostsByCronRunId(cronRunId);
-    } else if (userId) {
+    } else if (userEmail) {
       // Get all posts for a specific user
-      posts = await getCronRedditPostsByUserId(userId);
+      posts = await getCronRedditPostsByUserEmail(userEmail);
     } else {
       // Use current session user
       const session = await auth();
       if (!session?.user?.email) {
         return NextResponse.json(
-          { error: "Unauthorized. Please provide userId or cronRunId query parameter, or log in." },
+          { error: "Unauthorized. Please provide userEmail or cronRunId query parameter, or log in." },
           { status: 401 }
         );
       }
-      posts = await getCronRedditPostsByUserId(session.user.email);
+      posts = await getCronRedditPostsByUserEmail(session.user.email);
     }
 
     return NextResponse.json({

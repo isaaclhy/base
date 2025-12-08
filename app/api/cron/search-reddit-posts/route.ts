@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db/users";
 import { incrementCronUsage } from "@/lib/db/usage";
-import { createCronRedditPost } from "@/lib/db/cron-reddit-posts";
+import { createCronRedditPost, getCronRedditPostByLinkAndUserEmail } from "@/lib/db/cron-reddit-posts";
 import OpenAI from "openai";
 import { google, customsearch_v1 } from "googleapis";
 
@@ -53,47 +53,85 @@ async function fetchGoogleCustomSearch(
 
 async function fetchRedditPostContent(postUrl: string): Promise<any> {
   try {
-    // Extract post ID from URL
-    const match = postUrl.match(/\/comments\/([a-z0-9]+)/i);
-    if (!match) {
+    // Extract subreddit and post ID from URL (same as regular Reddit route)
+    // Reddit URL format: https://www.reddit.com/r/{subreddit}/comments/{post_id}/...
+    const urlMatch = postUrl.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
+    if (!urlMatch) {
+      console.error(`[Cron] Invalid Reddit URL format: ${postUrl}`);
       return null;
     }
-    const postId = match[1];
+
+    const [, subreddit, postId] = urlMatch;
 
     // Fetch from Reddit API with timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
     try {
-      const response = await fetch(`https://www.reddit.com/r/all/comments/${postId}.json`, {
-        headers: {
-          'User-Agent': 'GetUsersFromReddit/1.0',
-        },
-        signal: controller.signal,
-      });
+      // Use the correct endpoint with subreddit (same as regular Reddit route)
+      const apiUrl = `https://www.reddit.com/r/${subreddit}/comments/${postId}.json`;
+      
+      // Try approach 1: Minimal headers (same as regular Reddit route)
+      let response: Response;
+      try {
+        response = await fetch(apiUrl, {
+          headers: {
+            'User-Agent': 'reddit-comment-tool/0.1 by isaaclhy13',
+            'Accept': '*/*',
+          },
+          cache: 'no-store',
+          signal: controller.signal,
+        });
 
-      clearTimeout(timeoutId);
+        clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        return null;
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          console.error(`[Cron] Timeout fetching Reddit post content for ${postUrl}`);
+          return null;
+        }
+        
+        // Try approach 2: No custom headers (same as regular Reddit route)
+        const controller2 = new AbortController();
+        const timeoutId2 = setTimeout(() => controller2.abort(), 10000);
+        try {
+          response = await fetch(apiUrl, {
+            cache: 'no-store',
+            signal: controller2.signal,
+          });
+          clearTimeout(timeoutId2);
+          
+          if (!response.ok) {
+            console.error(`[Cron] Failed to fetch Reddit post: HTTP ${response.status}`);
+            return null;
+          }
+        } catch (error2) {
+          clearTimeout(timeoutId2);
+          console.error(`[Cron] Error fetching Reddit post content for ${postUrl}:`, error2);
+          return null;
+        }
       }
 
       const data = await response.json();
       if (data && data[0] && data[0].data && data[0].data.children && data[0].data.children[0]) {
         return data[0].data.children[0].data;
       }
+      console.error(`[Cron] Unexpected Reddit API response structure for ${postUrl}`);
       return null;
     } catch (fetchError) {
-      clearTimeout(timeoutId);
       if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        console.error(`Timeout fetching Reddit post content for ${postUrl}`);
+        console.error(`[Cron] Timeout fetching Reddit post content for ${postUrl}`);
       } else {
-        throw fetchError;
+        console.error(`[Cron] Error fetching Reddit post content for ${postUrl}:`, fetchError);
       }
       return null;
     }
   } catch (error) {
-    console.error(`Error fetching Reddit post content for ${postUrl}:`, error);
+    console.error(`[Cron] Error fetching Reddit post content for ${postUrl}:`, error);
     return null;
   }
 }
@@ -270,19 +308,29 @@ async function handleCronRequest(
           const post = redditPosts[j];
           if (post.link) {
             console.log(`[Cron] Fetching content for post ${j + 1}/${redditPosts.length}: ${post.link}`);
+            
+            // Extract postId from URL
+            const urlMatch = post.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
+            const postId = urlMatch ? urlMatch[2] : null;
+            
             const postContent = await fetchRedditPostContent(post.link);
             if (postContent) {
               allRedditPosts.push({
                 ...post,
                 selftext: postContent.selftext || null,
                 postData: {
+                  id: postId || postContent.id || null,
                   created_utc: postContent.created_utc,
                   subreddit: postContent.subreddit,
                   author: postContent.author,
                 },
               });
             } else {
-              allRedditPosts.push(post);
+              // Even if postContent fetch fails, we can still store the postId we extracted from URL
+              allRedditPosts.push({
+                ...post,
+                postData: postId ? { id: postId } : undefined,
+              });
             }
           }
         }
@@ -304,17 +352,33 @@ async function handleCronRequest(
 
     // Save all found posts to the cronRedditPost collection
     const savedPosts: string[] = [];
+    const skippedPosts: string[] = [];
     for (let i = 0; i < uniquePosts.length; i++) {
       const post = uniquePosts[i];
-      console.log(`[Cron] Saving post ${i + 1}/${uniquePosts.length} to database...`);
+      console.log(`[Cron] Checking post ${i + 1}/${uniquePosts.length} for duplicates...`);
+      
+      if (!post.link) {
+        console.log(`[Cron] Skipping post ${i + 1} - no link`);
+        continue;
+      }
+
       try {
+        // Check if post already exists for this user
+        const existingPost = await getCronRedditPostByLinkAndUserEmail(post.link, email);
+        if (existingPost) {
+          console.log(`[Cron] Post already exists for user ${email}: ${post.link} - skipping`);
+          skippedPosts.push(post.link);
+          continue;
+        }
+
         // Find which query was used to find this post
         // Since we process queries sequentially, we'll use the query that generated results
         // For simplicity, we'll use the first query, but you could track this more precisely
         const matchingQuery = queries[0] || "unknown";
 
+        console.log(`[Cron] Saving post ${i + 1}/${uniquePosts.length} to database...`);
         await createCronRedditPost({
-          userId: email,
+          userEmail: email,
           query: matchingQuery,
           title: post.title || null,
           link: post.link || null,
@@ -323,9 +387,9 @@ async function handleCronRequest(
           postData: post.postData || null,
           cronRunId,
         });
-        savedPosts.push(post.link || "");
+        savedPosts.push(post.link);
       } catch (saveError) {
-        console.error(`Error saving post ${post.link} to cronRedditPost collection:`, saveError);
+        console.error(`[Cron] Error saving post ${post.link} to cronRedditPost collection:`, saveError);
         // Continue saving other posts even if one fails
       }
     }
@@ -342,11 +406,12 @@ async function handleCronRequest(
     console.log(`[Cron] Cron job completed successfully for user ${email}`);
     return NextResponse.json({
       success: true,
-      message: `Found ${uniquePosts.length} Reddit posts and saved ${savedPosts.length} to database`,
+      message: `Found ${uniquePosts.length} Reddit posts, saved ${savedPosts.length} new posts, skipped ${skippedPosts.length} duplicates`,
       posts: uniquePosts,
       queriesUsed: queries.length,
       postsFound: uniquePosts.length,
       postsSaved: savedPosts.length,
+      postsSkipped: skippedPosts.length,
       cronRunId,
     });
   } catch (err: unknown) {

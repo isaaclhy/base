@@ -4,7 +4,7 @@ import { RedditPost } from "@/lib/types";
 
 export interface CronRedditPost {
   _id?: ObjectId;
-  userId: string; // User email
+  userEmail: string; // User email
   query: string; // Search query used to find this post
   title?: string | null;
   link?: string | null;
@@ -16,7 +16,7 @@ export interface CronRedditPost {
 }
 
 export async function createCronRedditPost(postData: {
-  userId: string;
+  userEmail: string;
   query: string;
   title?: string | null;
   link?: string | null;
@@ -31,7 +31,7 @@ export async function createCronRedditPost(postData: {
   const now = new Date();
 
   const newPost: CronRedditPost = {
-    userId: postData.userId,
+    userEmail: postData.userEmail,
     query: postData.query,
     title: postData.title || null,
     link: postData.link || null,
@@ -54,12 +54,12 @@ export async function createCronRedditPost(postData: {
   };
 }
 
-export async function getCronRedditPostsByUserId(userId: string): Promise<CronRedditPost[]> {
+export async function getCronRedditPostsByUserEmail(userEmail: string): Promise<CronRedditPost[]> {
   const db = await getDatabase();
   const cronPostsCollection = db.collection<CronRedditPost>("cronRedditPost");
 
   return await cronPostsCollection
-    .find({ userId })
+    .find({ userEmail })
     .sort({ createdAt: -1 })
     .toArray();
 }
@@ -72,5 +72,18 @@ export async function getCronRedditPostsByCronRunId(cronRunId: string): Promise<
     .find({ cronRunId })
     .sort({ createdAt: -1 })
     .toArray();
+}
+
+export async function getCronRedditPostByLinkAndUserEmail(
+  link: string,
+  userEmail: string
+): Promise<CronRedditPost | null> {
+  const db = await getDatabase();
+  const cronPostsCollection = db.collection<CronRedditPost>("cronRedditPost");
+
+  return await cronPostsCollection.findOne({
+    link: link,
+    userEmail: userEmail,
+  });
 }
 
