@@ -137,7 +137,7 @@ function PlaygroundContent() {
   const [productDescription, setProductDescription] = useState("");
   const [callToAction, setCallToAction] = useState("");
   const [persona, setPersona] = useState("");
-  const [postCount, setPostCount] = useState<number>(10);
+  const [postCount, setPostCount] = useState<number>(100);
   const [autoGenerateComments, setAutoGenerateComments] = useState<boolean>(false);
   const [previousIdeas, setPreviousIdeas] = useState<string[]>([]);
   const [selectedIdea, setSelectedIdea] = useState("");
@@ -2801,9 +2801,11 @@ function PlaygroundContent() {
                         </div>
                       ) : (
                         !Object.values(isLoadingLinks).some(Boolean) && (
-                          <p className="text-sm text-muted-foreground">
-                            No Reddit posts found yet. Searching...
-                          </p>
+                          <div className="flex items-center justify-center min-h-[400px]">
+                            <p className="text-sm text-muted-foreground">
+                              No Reddit posts found. Click "Search for Reddit Posts" to get started.
+                            </p>
+                          </div>
                         )
                     )}
                   </div>

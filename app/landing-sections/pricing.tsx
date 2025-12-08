@@ -14,6 +14,7 @@ const features = {
   premium: [
     "Unlimited reddit post search",
     "10,000 generated comments",
+    "24/7 automated comment posting on relevant posts",
     "Usage analytics",
   ],
 };
