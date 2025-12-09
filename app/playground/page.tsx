@@ -1017,11 +1017,11 @@ function PlaygroundContent() {
   };
 
   // Filter posts using the filter API
-  // Returns true if filtering completed successfully, false otherwise
-  const filterPosts = async (productIdea: string): Promise<boolean> => {
+  // Returns { success: boolean, finalPostCount: number } - finalPostCount is the number of posts that will be displayed after filtering
+  const filterPosts = async (productIdea: string): Promise<{ success: boolean; finalPostCount: number }> => {
     if (!productIdea || !productIdea.trim()) {
       console.log("No product idea provided, skipping filter");
-      return false;
+      return { success: false, finalPostCount: 0 };
     }
 
     try {
@@ -1055,7 +1055,7 @@ function PlaygroundContent() {
 
       if (selftexts.length === 0) {
         console.log("No posts to filter");
-        return false;
+        return { success: false, finalPostCount: 0 };
       }
 
       console.log("Filter API - Calling filter API with", selftexts.length, "posts");
@@ -1075,7 +1075,7 @@ function PlaygroundContent() {
       if (!filterResponse.ok) {
         const errorData = await filterResponse.json();
         console.error("Filter API error:", errorData.error || "Failed to filter posts");
-        return false;
+        return { success: false, finalPostCount: 0 };
       }
 
       const filterData = await filterResponse.json();
@@ -1096,7 +1096,7 @@ function PlaygroundContent() {
               filterResults = parsed.map((val: any) => val === true || val === "true" || val === 1);
             } else {
               console.error("Filter response is not an array:", parsed);
-              return false;
+              return { success: false, finalPostCount: 0 };
             }
           } catch {
             // If not JSON, try splitting by newlines
@@ -1110,16 +1110,16 @@ function PlaygroundContent() {
           filterResults = outputText.map((val: any) => val === true || val === "true" || val === 1);
         } else {
           console.error("Unexpected filter response format:", filterData);
-          return false;
+          return { success: false, finalPostCount: 0 };
         }
       } else {
         console.error("Invalid filter response:", filterData);
-        return false;
+        return { success: false, finalPostCount: 0 };
       }
 
       if (filterResults.length !== postsToFilter.length) {
         console.error(`Filter results length (${filterResults.length}) doesn't match posts length (${postsToFilter.length})`);
-        return false;
+        return { success: false, finalPostCount: 0 };
       }
 
       // Filter posts - keep only those where filterResults[index] is true
@@ -1158,35 +1158,17 @@ function PlaygroundContent() {
           }
         });
 
-        console.log(`Filtered ${removedCount} posts, kept ${keptFromFirst50} from first 50, ${postsBeyondFirst50} posts beyond first 50, total final count: ${finalPostCount}`);
+        // Count the actual final number of posts that will be displayed
+        const actualFinalCount = Object.values(updated).reduce((total, links) => total + links.length, 0);
+        console.log(`Filtered ${removedCount} posts, kept ${keptFromFirst50} from first 50, ${postsBeyondFirst50} posts beyond first 50, calculated final count: ${finalPostCount}, actual final count: ${actualFinalCount}`);
         safeSetLocalStorage("redditLinks", updated);
         return updated;
       });
-
-      // Increment usage only for posts that passed the filter
-      // This ensures usage matches the number of posts displayed in the table
-      if (finalPostCount > 0) {
-        try {
-          const usageResponse = await fetch("/api/usage/increment", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ count: finalPostCount }),
-          });
-          
-          if (usageResponse.ok) {
-            refreshUsage();
-          }
-        } catch (usageError) {
-          console.error("Error updating usage after filtering:", usageError);
-        }
-      }
       
-      return true; // Filtering completed successfully
+      return { success: true, finalPostCount }; // Filtering completed successfully
     } catch (error) {
       console.error("Error filtering posts:", error);
-      return false;
+      return { success: false, finalPostCount: 0 };
     }
   };
 
@@ -1353,23 +1335,42 @@ function PlaygroundContent() {
             // Filter posts after content is loaded
             const filterResult = await filterPosts(dbProductDescription || productIdeaToUse);
             
-            // If filtering didn't run or failed, increment usage for all posts as fallback
-            if (!filterResult && postsBeforeFilter > 0) {
+            // Calculate the exact number of posts that will be in the table after filtering
+            let postsToIncrement = 0;
+            
+            if (filterResult.success) {
+              // Filtering completed successfully - use the final post count from filtering
+              postsToIncrement = filterResult.finalPostCount;
+              console.log("Filter completed successfully, will increment usage for", postsToIncrement, "posts");
+            } else {
+              // Filtering didn't run or failed - use all posts as fallback
+              postsToIncrement = postsBeforeFilter;
+              console.log("Filter didn't run or failed, will increment usage for all", postsToIncrement, "posts");
+            }
+            
+            // Increment usage with the exact number of posts that will be displayed
+            if (postsToIncrement > 0) {
               try {
                 const usageResponse = await fetch("/api/usage/increment", {
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
                   },
-                  body: JSON.stringify({ count: postsBeforeFilter }),
+                  body: JSON.stringify({ count: postsToIncrement }),
                 });
                 
                 if (usageResponse.ok) {
+                  console.log("Usage incremented successfully by", postsToIncrement);
                   refreshUsage();
+                } else {
+                  const errorData = await usageResponse.json();
+                  console.error("Error response from usage increment API:", errorData);
                 }
               } catch (usageError) {
-                console.error("Error updating usage (fallback):", usageError);
+                console.error("Error updating usage:", usageError);
               }
+            } else {
+              console.log("No posts to increment usage for");
             }
             
             // Show upgrade modal after posts are fetched if we hit the limit or are close
