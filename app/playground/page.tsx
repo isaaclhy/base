@@ -137,7 +137,7 @@ function PlaygroundContent() {
   const [productDescription, setProductDescription] = useState("");
   const [callToAction, setCallToAction] = useState("");
   const [persona, setPersona] = useState("");
-  const [postCount, setPostCount] = useState<number>(100);
+  const [postCount, setPostCount] = useState<number>(50);
   const [autoGenerateComments, setAutoGenerateComments] = useState<boolean>(false);
   const [previousIdeas, setPreviousIdeas] = useState<string[]>([]);
   const [selectedIdea, setSelectedIdea] = useState("");
@@ -701,6 +701,12 @@ function PlaygroundContent() {
 
   const totalDiscoveryPages = Math.ceil(distinctLinks.length / DISCOVERY_ITEMS_PER_PAGE);
 
+  // Log selfText of first 50 posts
+  useEffect(() => {
+    const first50SelfTexts = distinctLinks.slice(0, 50).map(link => link.selftext || null);
+    console.log("First 50 posts selfText array:", first50SelfTexts);
+  }, [distinctLinks]);
+
   const openAnalyticsDrawer = useCallback((post: AnalyticsPost) => {
     setSelectedAnalyticsPost(post);
     setDrawerComment(post.comment || post.notes || "");
@@ -1010,6 +1016,180 @@ function PlaygroundContent() {
     }
   };
 
+  // Filter posts using the filter API
+  // Returns true if filtering completed successfully, false otherwise
+  const filterPosts = async (productIdea: string): Promise<boolean> => {
+    if (!productIdea || !productIdea.trim()) {
+      console.log("No product idea provided, skipping filter");
+      return false;
+    }
+
+    try {
+      // Get current posts from state
+      const currentLinks = redditLinks;
+      const allPosts: Array<{ query: string; linkIndex: number; selftext: string | null; title: string | null }> = [];
+      
+      // Collect all posts with their selftext and title
+      Object.entries(currentLinks).forEach(([query, links]) => {
+        links.forEach((link, index) => {
+          allPosts.push({
+            query,
+            linkIndex: index,
+            selftext: link.selftext || null,
+            title: link.title || link.postData?.title || null,
+          });
+        });
+      });
+
+      // Take first 50 posts (or all if less than 50)
+      const postsToFilter = allPosts.slice(0, 50);
+      // Extract content: use selftext if available and not "[deleted]", otherwise use title
+      const selftexts = postsToFilter.map(post => {
+        const selftext = post.selftext || "";
+        // If selftext is empty or "[deleted]", use title instead
+        if (!selftext.trim() || selftext.trim().toLowerCase() === "[deleted]") {
+          return post.title || "";
+        }
+        return selftext;
+      });
+
+      if (selftexts.length === 0) {
+        console.log("No posts to filter");
+        return false;
+      }
+
+      console.log("Filter API - Calling filter API with", selftexts.length, "posts");
+      
+      // Call filter API - pass only the selftext strings array
+      const filterResponse = await fetch("/api/reddit/filter", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          productidea: productIdea,
+          content: selftexts, // Array of selftext strings only
+        }),
+      });
+
+      if (!filterResponse.ok) {
+        const errorData = await filterResponse.json();
+        console.error("Filter API error:", errorData.error || "Failed to filter posts");
+        return false;
+      }
+
+      const filterData = await filterResponse.json();
+      
+      console.log("Filter API - filterData response:", JSON.stringify(filterData, null, 2));
+      
+      // Extract the boolean array from the response
+      let filterResults: boolean[] = [];
+      
+      if (filterData.success && filterData.output_text) {
+        const outputText = filterData.output_text;
+        
+        if (typeof outputText === 'string') {
+          // Parse the string response - might be JSON or newline-separated
+          try {
+            const parsed = JSON.parse(outputText);
+            if (Array.isArray(parsed)) {
+              filterResults = parsed.map((val: any) => val === true || val === "true" || val === 1);
+            } else {
+              console.error("Filter response is not an array:", parsed);
+              return false;
+            }
+          } catch {
+            // If not JSON, try splitting by newlines
+            const lines = outputText.split('\n').filter(line => line.trim());
+            filterResults = lines.map(line => {
+              const trimmed = line.trim().toLowerCase();
+              return trimmed === 'true' || trimmed === '1' || trimmed === 'yes';
+            });
+          }
+        } else if (Array.isArray(outputText)) {
+          filterResults = outputText.map((val: any) => val === true || val === "true" || val === 1);
+        } else {
+          console.error("Unexpected filter response format:", filterData);
+          return false;
+        }
+      } else {
+        console.error("Invalid filter response:", filterData);
+        return false;
+      }
+
+      if (filterResults.length !== postsToFilter.length) {
+        console.error(`Filter results length (${filterResults.length}) doesn't match posts length (${postsToFilter.length})`);
+        return false;
+      }
+
+      // Filter posts - keep only those where filterResults[index] is true
+      // Count posts that passed the filter from the first 50
+      const keptFromFirst50 = filterResults.filter(result => result === true).length;
+      
+      // Count total posts before filtering
+      const totalPostsBeforeFilter = allPosts.length;
+      
+      // Posts beyond first 50 are not filtered, so they all remain
+      const postsBeyondFirst50 = Math.max(0, totalPostsBeforeFilter - 50);
+      
+      // Final count = posts that passed filter from first 50 + posts beyond first 50 (not filtered)
+      const finalPostCount = keptFromFirst50 + postsBeyondFirst50;
+
+      setRedditLinks((prev) => {
+        const updated = { ...prev };
+        let removedCount = 0;
+
+        // Process in reverse order to maintain correct indices
+        for (let i = postsToFilter.length - 1; i >= 0; i--) {
+          const post = postsToFilter[i];
+          if (!filterResults[i]) {
+            // Remove this post
+            if (updated[post.query] && updated[post.query][post.linkIndex]) {
+              updated[post.query].splice(post.linkIndex, 1);
+              removedCount++;
+            }
+          }
+        }
+
+        // Remove empty query arrays
+        Object.keys(updated).forEach(query => {
+          if (updated[query].length === 0) {
+            delete updated[query];
+          }
+        });
+
+        console.log(`Filtered ${removedCount} posts, kept ${keptFromFirst50} from first 50, ${postsBeyondFirst50} posts beyond first 50, total final count: ${finalPostCount}`);
+        safeSetLocalStorage("redditLinks", updated);
+        return updated;
+      });
+
+      // Increment usage only for posts that passed the filter
+      // This ensures usage matches the number of posts displayed in the table
+      if (finalPostCount > 0) {
+        try {
+          const usageResponse = await fetch("/api/usage/increment", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ count: finalPostCount }),
+          });
+          
+          if (usageResponse.ok) {
+            refreshUsage();
+          }
+        } catch (usageError) {
+          console.error("Error updating usage after filtering:", usageError);
+        }
+      }
+      
+      return true; // Filtering completed successfully
+    } catch (error) {
+      console.error("Error filtering posts:", error);
+      return false;
+    }
+  };
+
   const handleSubmit = async (message: string) => {
     if (!message.trim()) {
       return;
@@ -1162,13 +1342,39 @@ function PlaygroundContent() {
         });
         
         // Wait for all links to be fetched, then batch fetch all post content together
-        Promise.all(linkPromises).then(() => {
+        Promise.all(linkPromises).then(async () => {
           // Small delay to ensure all links are saved to localStorage and state is updated
-          setTimeout(() => {
-            batchFetchAllPostContent();
+          setTimeout(async () => {
+            await batchFetchAllPostContent();
+            
+            // Get current post count before filtering
+            const postsBeforeFilter = Object.values(redditLinks).reduce((total, links) => total + links.length, 0);
+            
+            // Filter posts after content is loaded
+            const filterResult = await filterPosts(dbProductDescription || productIdeaToUse);
+            
+            // If filtering didn't run or failed, increment usage for all posts as fallback
+            if (!filterResult && postsBeforeFilter > 0) {
+              try {
+                const usageResponse = await fetch("/api/usage/increment", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ count: postsBeforeFilter }),
+                });
+                
+                if (usageResponse.ok) {
+                  refreshUsage();
+                }
+              } catch (usageError) {
+                console.error("Error updating usage (fallback):", usageError);
+              }
+            }
+            
             // Show upgrade modal after posts are fetched if we hit the limit or are close
             if (upgradeModalContext) {
-              setTimeout(() => {
+          setTimeout(() => {
                 setShowUpgradeModal(true);
               }, 500);
             }
@@ -1224,67 +1430,8 @@ function PlaygroundContent() {
       }
 
       if (data.results && Array.isArray(data.results)) {
-        const newCount = data.results.length;
-
-        if (newCount > 0) {
-          try {
-            const usageResponse = await fetch("/api/usage/increment", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ count: newCount }),
-            });
-
-            const usageData = await usageResponse.json().catch(() => ({}));
-            
-            // Always refresh usage counter regardless of response
-            refreshUsage();
-
-            if (!usageResponse.ok) {
-              // If limit reached, show upgrade modal instead of throwing error
-              if (usageData.error && usageData.error.includes("limit")) {
-                setUpgradeModalContext({ limitReached: true, remaining: 0 });
-                setTimeout(() => {
-                  setShowUpgradeModal(true);
-                }, 500);
-              } else {
-                throw new Error(usageData.error || "Weekly usage limit reached. Please try again later.");
-              }
-            } else {
-              // Check if we're close to or at the limit after increment
-              if (usageData.currentCount !== undefined) {
-                const maxPerWeek = usageData.plan === "premium" ? 2500 : 200;
-                const remaining = Math.max(0, maxPerWeek - usageData.currentCount);
-                
-                // Show upgrade modal if limit reached or close to limit
-                if (usageData.limitReached || remaining <= 10) {
-                  setUpgradeModalContext({ 
-                    limitReached: usageData.limitReached || remaining === 0, 
-                    remaining 
-                  });
-                  setTimeout(() => {
-                    setShowUpgradeModal(true);
-                  }, 500);
-                }
-                
-                // If partial fulfillment occurred, log it
-                if (usageData.actualIncrement !== undefined && usageData.actualIncrement < usageData.requestedCount) {
-                  console.log(`Partial fulfillment: requested ${usageData.requestedCount}, got ${usageData.actualIncrement} due to limit`);
-                }
-              }
-            }
-          } catch (usageError) {
-            console.error("Error updating usage after fetching posts:", usageError);
-            // Still refresh usage even if there was an error
-            refreshUsage();
-            // Only show error if it's not a limit error (limit errors are handled with modal)
-            if (!(usageError instanceof Error && usageError.message.includes("limit"))) {
-              setError(usageError instanceof Error ? usageError.message : "Failed to update usage. Please try again later.");
-              return;
-            }
-          }
-        }
+        // Don't increment usage here - will be incremented after filtering
+        // This ensures usage count matches the number of posts displayed in the table
 
         setRedditLinks((prev) => {
           const updated = {
@@ -2155,7 +2302,7 @@ function PlaygroundContent() {
         return (
           <div className="flex h-full flex-col">
             {/* Main content area - scrollable */}
-            <div className={cn(
+          <div className={cn(
               "flex h-full flex-col",
               !sidebarOpen && "pl-2"
             )}>
@@ -2175,10 +2322,10 @@ function PlaygroundContent() {
               <div className={cn(
                 "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
                 !sidebarOpen && "pl-14"
-              )}>
-                <div className="space-y-6">
+          )}>
+            <div className="space-y-6">
                   <div className="space-y-4">
-                    <div>
+              <div>
                       <label htmlFor="product-website" className="block text-sm font-medium text-foreground mb-1">
                         Product Website
                       </label>
@@ -2190,7 +2337,7 @@ function PlaygroundContent() {
                         placeholder="https://example.com"
                         className="w-full max-w-md"
                       />
-                    </div>
+              </div>
                     <div>
                       <label htmlFor="product-description" className="block text-sm font-medium text-foreground mb-1">
                         Product Description
@@ -2372,7 +2519,7 @@ function PlaygroundContent() {
                           ? "No skipped posts yet. Skip a post in the Discovery tab to review it here."
                           : "No failed posts yet. If a post fails to publish, it will appear here."}
                     </p>
-                  </div>
+                </div>
               ) : (
                   (() => {
                     const totalItems = filteredAnalyticsPosts.length;
@@ -2474,9 +2621,9 @@ function PlaygroundContent() {
                                 <span className="hidden sm:inline">Next</span>
                                 <ChevronRight className="h-3 w-3" />
                               </Button>
-                            </div>
-                          </div>
-                        )}
+                  </div>
+                </div>
+              )}
                       </div>
                     </div>
                   );
@@ -2688,16 +2835,9 @@ function PlaygroundContent() {
                                 >
                                   {/* Title column */}
                                   <td className="py-3 px-2 align-top w-[250px]">
-                                    <div className="space-y-1">
-                                      <div className="text-sm font-semibold text-foreground">
-                                        {link.title}
-                                      </div>
-                                      {link.postData?.created_utc && (
-                                        <div className="text-xs text-muted-foreground">
-                                          {formatTimeAgo(link.postData.created_utc)}
+                                    <div className="text-sm font-semibold text-foreground">
+                                      {link.title}
                                   </div>
-                                )}
-                                    </div>
                                   </td>
                                   
                                   {/* Content column */}
@@ -2843,9 +2983,9 @@ function PlaygroundContent() {
                       ) : (
                         !Object.values(isLoadingLinks).some(Boolean) && (
                           <div className="flex items-center justify-center min-h-[400px]">
-                            <p className="text-sm text-muted-foreground">
+                          <p className="text-sm text-muted-foreground">
                               No Reddit posts found. Click "Search for Reddit Posts" to get started.
-                            </p>
+                          </p>
                           </div>
                         )
                     )}
@@ -2873,15 +3013,15 @@ function PlaygroundContent() {
                   <h3 className="text-lg font-semibold">
                     Feedback
                   </h3>
-                </div>
-              </div>
+            </div>
+            </div>
               
               {/* Content area that spans remaining space */}
               <div className={cn(
                 "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
                 !sidebarOpen && "pl-14"
               )}>
-                <div className="space-y-6">
+          <div className="space-y-6">
                   {feedbackSubmitted ? (
                     <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 p-6">
                       <CheckCircle2 className="h-12 w-12 text-emerald-500 mb-4" />
@@ -2898,7 +3038,7 @@ function PlaygroundContent() {
                       >
                         Submit Another Feedback
                       </Button>
-                    </div>
+            </div>
                   ) : (
                     <div className="space-y-4">
                       <form
@@ -2950,7 +3090,7 @@ function PlaygroundContent() {
                             disabled={isSubmittingFeedback}
                             required
                           />
-                        </div>
+            </div>
                         <div className="flex items-center justify-start gap-3">
                           <Button
                             type="submit"
@@ -2965,9 +3105,9 @@ function PlaygroundContent() {
                               "Submit Feedback"
                             )}
                           </Button>
-                        </div>
+          </div>
                       </form>
-                    </div>
+            </div>
                   )}
                 </div>
               </div>
