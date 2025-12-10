@@ -144,6 +144,7 @@ function PlaygroundContent() {
   const [results, setResults] = useState<string[]>([]);
   const [redditLinks, setRedditLinks] = useState<Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [isSearching, setIsSearching] = useState(false); // Flag to prevent showing posts during search
   const [isLoadingLinks, setIsLoadingLinks] = useState<Record<string, boolean>>({});
   const [isLoadingPostContent, setIsLoadingPostContent] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
@@ -619,6 +620,11 @@ function PlaygroundContent() {
   );
 
   const distinctLinks = useMemo(() => {
+    // If currently searching, return empty array to prevent showing pre-filtered posts
+    if (isSearching) {
+      return [];
+    }
+    
     let globalIndex = 0;
     const allLinksWithQuery = Object.entries(redditLinks)
       .reverse()
@@ -679,7 +685,7 @@ function PlaygroundContent() {
     }
 
     return results;
-  }, [redditLinks, analyticsUrlSet]);
+  }, [redditLinks, analyticsUrlSet, isSearching]);
 
   // Reset to page 1 when distinctLinks changes significantly (new search results)
   useEffect(() => {
@@ -1019,14 +1025,35 @@ function PlaygroundContent() {
   // Filter posts using the filter API
   // Returns { success: boolean, finalPostCount: number } - finalPostCount is the number of posts that will be displayed after filtering
   const filterPosts = async (productIdea: string): Promise<{ success: boolean; finalPostCount: number }> => {
+    console.log("INSIDEFILTER POST")
+    console.log("productIdea:", productIdea);
     if (!productIdea || !productIdea.trim()) {
       console.log("No product idea provided, skipping filter");
       return { success: false, finalPostCount: 0 };
     }
 
     try {
-      // Get current posts from state
-      const currentLinks = redditLinks;
+      // Read from localStorage to get the latest data (even when deferring, we save to localStorage temporarily)
+      // This ensures we have the most up-to-date data after batchFetchAllPostContent
+      let currentLinks: Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>> = {};
+      
+      try {
+        const saved = localStorage.getItem("redditLinks");
+        if (saved) {
+          currentLinks = JSON.parse(saved);
+        } else {
+          // Fallback to state if localStorage is empty
+          currentLinks = redditLinks;
+        }
+      } catch (e) {
+        console.error("Error reading redditLinks from localStorage for filtering:", e);
+        // Fallback to state
+        currentLinks = redditLinks;
+      }
+      
+      const postCount = Object.values(currentLinks).reduce((total, links) => total + links.length, 0);
+      console.log("filterPosts: Found", postCount, "posts in", Object.keys(currentLinks).length, "queries");
+      
       const allPosts: Array<{ query: string; linkIndex: number; selftext: string | null; title: string | null }> = [];
       
       // Collect all posts with their selftext and title
@@ -1041,129 +1068,168 @@ function PlaygroundContent() {
         });
       });
 
-      // Take first 50 posts (or all if less than 50)
-      const postsToFilter = allPosts.slice(0, 50);
-      // Extract content: use selftext if available and not "[deleted]", otherwise use title
-      const selftexts = postsToFilter.map(post => {
-        const selftext = post.selftext || "";
-        // If selftext is empty or "[deleted]", use title instead
-        if (!selftext.trim() || selftext.trim().toLowerCase() === "[deleted]") {
-          return post.title || "";
-        }
-        return selftext;
-      });
+      console.log("filterPosts: Collected", allPosts.length, "total posts from", Object.keys(currentLinks).length, "queries");
 
-      if (selftexts.length === 0) {
+      // Filter ALL posts in batches of 50
+      const postsToFilter = allPosts;
+      const BATCH_SIZE = 50;
+      const batches: Array<Array<typeof allPosts[0]>> = [];
+      
+      // Split posts into batches of 50
+      for (let i = 0; i < postsToFilter.length; i += BATCH_SIZE) {
+        batches.push(postsToFilter.slice(i, i + BATCH_SIZE));
+      }
+      
+      console.log(`filterPosts: Split ${postsToFilter.length} posts into ${batches.length} batches of up to ${BATCH_SIZE} posts`);
+
+      if (postsToFilter.length === 0) {
         console.log("No posts to filter");
         return { success: false, finalPostCount: 0 };
       }
 
-      console.log("Filter API - Calling filter API with", selftexts.length, "posts");
+      // Process each batch and collect all filter results
+      const allFilterResults: boolean[] = [];
       
-      // Call filter API - pass only the selftext strings array
-      const filterResponse = await fetch("/api/reddit/filter", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          productidea: productIdea,
-          content: selftexts, // Array of selftext strings only
-        }),
-      });
-
-      if (!filterResponse.ok) {
-        const errorData = await filterResponse.json();
-        console.error("Filter API error:", errorData.error || "Failed to filter posts");
-        return { success: false, finalPostCount: 0 };
-      }
-
-      const filterData = await filterResponse.json();
-      
-      console.log("Filter API - filterData response:", JSON.stringify(filterData, null, 2));
-      
-      // Extract the boolean array from the response
-      let filterResults: boolean[] = [];
-      
-      if (filterData.success && filterData.output_text) {
-        const outputText = filterData.output_text;
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex];
         
-        if (typeof outputText === 'string') {
-          // Parse the string response - might be JSON or newline-separated
-          try {
-            const parsed = JSON.parse(outputText);
-            if (Array.isArray(parsed)) {
-              filterResults = parsed.map((val: any) => val === true || val === "true" || val === 1);
-            } else {
-              console.error("Filter response is not an array:", parsed);
-              return { success: false, finalPostCount: 0 };
-            }
-          } catch {
-            // If not JSON, try splitting by newlines
-            const lines = outputText.split('\n').filter(line => line.trim());
-            filterResults = lines.map(line => {
-              const trimmed = line.trim().toLowerCase();
-              return trimmed === 'true' || trimmed === '1' || trimmed === 'yes';
-            });
+        // Extract content for this batch
+        const selftexts = batch.map(post => {
+          const selftext = post.selftext || "";
+          // If selftext is empty or "[deleted]", use title instead
+          if (!selftext.trim() || selftext.trim().toLowerCase() === "[deleted]") {
+            return post.title || "";
           }
-        } else if (Array.isArray(outputText)) {
-          filterResults = outputText.map((val: any) => val === true || val === "true" || val === 1);
-        } else {
-          console.error("Unexpected filter response format:", filterData);
-          return { success: false, finalPostCount: 0 };
+          return selftext;
+        });
+
+        if (selftexts.length === 0) {
+          console.log(`Batch ${batchIndex + 1} has no content to filter, skipping`);
+          continue;
         }
-      } else {
-        console.error("Invalid filter response:", filterData);
-        return { success: false, finalPostCount: 0 };
+
+        console.log(`Filter API - Calling filter API for batch ${batchIndex + 1}/${batches.length} with ${selftexts.length} posts`);
+        
+        // Call filter API for this batch
+        const filterResponse = await fetch("/api/reddit/filter", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            productidea: productIdea,
+            content: selftexts, // Array of selftext strings only
+          }),
+        });
+
+        if (!filterResponse.ok) {
+          const errorData = await filterResponse.json();
+          console.error(`Filter API error for batch ${batchIndex + 1}:`, errorData.error || "Failed to filter posts");
+          // If a batch fails, treat all posts in that batch as filtered out (false)
+          allFilterResults.push(...new Array(batch.length).fill(false));
+          continue;
+        }
+
+        const filterData = await filterResponse.json();
+        
+        // Extract the boolean array from the response
+        let batchFilterResults: boolean[] = [];
+        
+        if (filterData.success && filterData.output_text) {
+          const outputText = filterData.output_text;
+          if (typeof outputText === 'string') {
+            // Parse the string response - might be JSON or newline-separated
+            try {
+              const parsed = JSON.parse(outputText);
+              if (Array.isArray(parsed)) {
+                batchFilterResults = parsed.map((val: any) => val === true || val === "true" || val === 1);
+              } else {
+                console.error(`Filter response for batch ${batchIndex + 1} is not an array:`, parsed);
+                batchFilterResults = new Array(batch.length).fill(false);
+              }
+            } catch {
+              // If not JSON, try splitting by newlines
+              const lines = outputText.split('\n').filter(line => line.trim());
+              batchFilterResults = lines.map(line => {
+                const trimmed = line.trim().toLowerCase();
+                return trimmed === 'true' || trimmed === '1' || trimmed === 'yes';
+              });
+            }
+          } else if (Array.isArray(outputText)) {
+            batchFilterResults = outputText.map((val: any) => val === true || val === "true" || val === 1);
+          } else {
+            console.error(`Unexpected filter response format for batch ${batchIndex + 1}:`, filterData);
+            batchFilterResults = new Array(batch.length).fill(false);
+          }
+        } else {
+          console.error(`Invalid filter response for batch ${batchIndex + 1}:`, filterData);
+          batchFilterResults = new Array(batch.length).fill(false);
+        }
+
+        if (batchFilterResults.length !== batch.length) {
+          console.error(`Filter results length (${batchFilterResults.length}) doesn't match batch length (${batch.length}) for batch ${batchIndex + 1}`);
+          batchFilterResults = new Array(batch.length).fill(false);
+        }
+
+        // Add this batch's results to the combined results
+        allFilterResults.push(...batchFilterResults);
+        
+        console.log(`Batch ${batchIndex + 1}/${batches.length} completed: ${batchFilterResults.filter(r => r === true).length}/${batch.length} posts passed filter`);
       }
+
+      // Now we have all filter results combined
+      const filterResults = allFilterResults;
 
       if (filterResults.length !== postsToFilter.length) {
-        console.error(`Filter results length (${filterResults.length}) doesn't match posts length (${postsToFilter.length})`);
+        console.error(`Combined filter results length (${filterResults.length}) doesn't match total posts length (${postsToFilter.length})`);
         return { success: false, finalPostCount: 0 };
       }
 
+      console.log("Filter API - Combined filterResults summary:", {
+        total: filterResults.length,
+        true: filterResults.filter(r => r === true).length,
+        false: filterResults.filter(r => r === false).length,
+        batches: batches.length
+      });
+
       // Filter posts - keep only those where filterResults[index] is true
-      // Count posts that passed the filter from the first 50
-      const keptFromFirst50 = filterResults.filter(result => result === true).length;
+      // Count posts that passed the filter
+      const keptPosts = filterResults.filter(result => result === true).length;
       
-      // Count total posts before filtering
-      const totalPostsBeforeFilter = allPosts.length;
-      
-      // Posts beyond first 50 are not filtered, so they all remain
-      const postsBeyondFirst50 = Math.max(0, totalPostsBeforeFilter - 50);
-      
-      // Final count = posts that passed filter from first 50 + posts beyond first 50 (not filtered)
-      const finalPostCount = keptFromFirst50 + postsBeyondFirst50;
+      // Final count = posts that passed the filter (all posts are now filtered)
+      const finalPostCount = keptPosts;
 
-      setRedditLinks((prev) => {
-        const updated = { ...prev };
-        let removedCount = 0;
+      // Start with the current links we read (not from prev state which might be stale)
+      const updated = { ...currentLinks };
+      let removedCount = 0;
 
-        // Process in reverse order to maintain correct indices
-        for (let i = postsToFilter.length - 1; i >= 0; i--) {
-          const post = postsToFilter[i];
-          if (!filterResults[i]) {
-            // Remove this post
-            if (updated[post.query] && updated[post.query][post.linkIndex]) {
-              updated[post.query].splice(post.linkIndex, 1);
-              removedCount++;
-            }
+      // Process in reverse order to maintain correct indices
+      for (let i = postsToFilter.length - 1; i >= 0; i--) {
+        const post = postsToFilter[i];
+        if (!filterResults[i]) {
+          // Remove this post
+          if (updated[post.query] && updated[post.query][post.linkIndex]) {
+            updated[post.query].splice(post.linkIndex, 1);
+            removedCount++;
           }
         }
+      }
 
-        // Remove empty query arrays
-        Object.keys(updated).forEach(query => {
-          if (updated[query].length === 0) {
-            delete updated[query];
-          }
-        });
+      // Remove empty query arrays
+      Object.keys(updated).forEach(query => {
+        if (updated[query].length === 0) {
+          delete updated[query];
+        }
+      });
 
         // Count the actual final number of posts that will be displayed
         const actualFinalCount = Object.values(updated).reduce((total, links) => total + links.length, 0);
-        console.log(`Filtered ${removedCount} posts, kept ${keptFromFirst50} from first 50, ${postsBeyondFirst50} posts beyond first 50, calculated final count: ${finalPostCount}, actual final count: ${actualFinalCount}`);
-        safeSetLocalStorage("redditLinks", updated);
-        return updated;
-      });
+        console.log(`Filtered ${removedCount} posts, kept ${keptPosts} out of ${allPosts.length} total posts, calculated final count: ${finalPostCount}, actual final count: ${actualFinalCount}`);
+      
+      // Update localStorage with filtered results (but NOT state yet - will update after usage)
+      // This ensures posts only appear after all batches complete and usage is updated
+      safeSetLocalStorage("redditLinks", updated);
+      // DO NOT update state here - will be updated after usage update completes
       
       return { success: true, finalPostCount }; // Filtering completed successfully
     } catch (error) {
@@ -1316,23 +1382,40 @@ function PlaygroundContent() {
           });
         }
         
+        // Clear existing posts to ensure we don't show old posts during the search
+        // Also clear localStorage to prevent any cached posts from appearing
+        setIsSearching(true); // Set flag to prevent showing posts in table
+        setRedditLinks({});
+        localStorage.removeItem("redditLinks");
+        
         // Fetch Reddit links for each query in parallel
         // Each query will fetch top 7 results for better coverage (some may be filtered)
         const RESULTS_PER_QUERY = 7;
         const linkPromises = data.result.map((query: string) => {
-          return fetchRedditLinks(query, RESULTS_PER_QUERY);
+          return fetchRedditLinks(query, RESULTS_PER_QUERY, true); // Pass true to defer state updates
         });
         
         // Wait for all links to be fetched, then batch fetch all post content together
         Promise.all(linkPromises).then(async () => {
           // Small delay to ensure all links are saved to localStorage and state is updated
           setTimeout(async () => {
-            await batchFetchAllPostContent();
+            // Fetch post content without updating state (only update localStorage)
+            // This prevents posts from appearing in UI before filtering
+            await batchFetchAllPostContent(true); // Pass true to defer state updates
             
-            // Get current post count before filtering
-            const postsBeforeFilter = Object.values(redditLinks).reduce((total, links) => total + links.length, 0);
+            // Get current post count from localStorage (since state wasn't updated yet)
+            let postsBeforeFilter = 0;
+            try {
+              const saved = localStorage.getItem("redditLinks");
+              if (saved) {
+                const savedLinks: Record<string, Array<any>> = JSON.parse(saved);
+                postsBeforeFilter = Object.values(savedLinks).reduce((total: number, links: Array<any>) => total + links.length, 0);
+              }
+            } catch (e) {
+              console.error("Error reading post count from localStorage:", e);
+            }
             
-            // Filter posts after content is loaded
+            // Filter posts after content is loaded (will update state with filtered results)
             const filterResult = await filterPosts(dbProductDescription || productIdeaToUse);
             
             // Calculate the exact number of posts that will be in the table after filtering
@@ -1373,6 +1456,22 @@ function PlaygroundContent() {
               console.log("No posts to increment usage for");
             }
             
+            // NOW update state with filtered posts (after filtering and usage update are complete)
+            // Read the final filtered results from localStorage (filterPosts saved them there)
+            try {
+              const saved = localStorage.getItem("redditLinks");
+              if (saved) {
+                const finalLinks = JSON.parse(saved);
+                setRedditLinks(finalLinks);
+                console.log("Updated state with filtered posts after usage update");
+              }
+            } catch (e) {
+              console.error("Error reading final filtered posts from localStorage:", e);
+            }
+            
+            // Clear the searching flag - posts can now be displayed in the table
+            setIsSearching(false);
+            
             // Show upgrade modal after posts are fetched if we hit the limit or are close
             if (upgradeModalContext) {
           setTimeout(() => {
@@ -1404,7 +1503,7 @@ function PlaygroundContent() {
     }
   };
 
-  const fetchRedditLinks = async (query: string, resultsPerQuery: number = 7) => {
+  const fetchRedditLinks = async (query: string, resultsPerQuery: number = 7, deferStateUpdates: boolean = false) => {
     setIsLoadingLinks((prev) => ({ ...prev, [query]: true }));
     
     try {
@@ -1434,15 +1533,44 @@ function PlaygroundContent() {
         // Don't increment usage here - will be incremented after filtering
         // This ensures usage count matches the number of posts displayed in the table
 
-        setRedditLinks((prev) => {
-          const updated = {
-            ...prev,
-            [query]: data.results,
-          };
-          // Save to localStorage (only minimal data)
-          safeSetLocalStorage("redditLinks", updated);
-          return updated;
-        });
+        // Read current state from localStorage if deferring, otherwise from state
+        let currentLinksState: Record<string, Array<any>> = {};
+        if (deferStateUpdates) {
+          try {
+            const saved = localStorage.getItem("redditLinks");
+            if (saved) {
+              currentLinksState = JSON.parse(saved);
+            }
+          } catch (e) {
+            console.error("Error reading from localStorage in fetchRedditLinks:", e);
+          }
+        } else {
+          // Read from localStorage first, then state as fallback
+          try {
+            const saved = localStorage.getItem("redditLinks");
+            if (saved) {
+              currentLinksState = JSON.parse(saved);
+            } else {
+              currentLinksState = {};
+            }
+          } catch (e) {
+            currentLinksState = {};
+          }
+        }
+        
+        const updated = {
+          ...currentLinksState,
+          [query]: data.results,
+        };
+        
+        // Always save to localStorage
+        safeSetLocalStorage("redditLinks", updated);
+        
+        // Only update state if not deferring
+        if (!deferStateUpdates) {
+          setRedditLinks(updated);
+        }
+        
         setError(null);
         
         // Don't fetch post content here - will be batched together after all queries complete
@@ -1465,7 +1593,8 @@ function PlaygroundContent() {
   };
 
   // Batch fetch post content for ALL queries at once
-  const batchFetchAllPostContent = async () => {
+  // If deferStateUpdates is true, only update localStorage and don't trigger React re-renders
+  const batchFetchAllPostContent = async (deferStateUpdates: boolean = false) => {
     // Read from localStorage to get the latest state (since we save there immediately)
     let currentState: Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>> = {};
     
@@ -1503,44 +1632,54 @@ function PlaygroundContent() {
             } else if (!link.selftext && !link.postData) {
               // Post not cached and not already loaded, add to fetch list
               allPostsNeedingFetch.push({ url: link.link, query, linkIndex: index, postFullname });
-              // Set loading state for posts that need fetching
-              setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [link.link!]: true }));
+              // Set loading state for posts that need fetching (only if not deferring)
+              if (!deferStateUpdates) {
+                setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [link.link!]: true }));
+              }
             }
           }
         }
       });
     });
     
-    // Update state with cached posts first
+    // Update state with cached posts first (only if not deferring)
     if (postsToUpdate.length > 0) {
-      setRedditLinks((prev) => {
-        const updated = { ...prev };
-        postsToUpdate.forEach(({ query, linkIndex, cached }) => {
-          if (updated[query] && updated[query][linkIndex]) {
-            updated[query][linkIndex] = {
-              ...updated[query][linkIndex],
-              selftext: cached.selftext || null,
-              postData: cached.postData || null,
-            };
-          }
-        });
-        safeSetLocalStorage("redditLinks", updated);
-        return updated;
+      const updatedCached = { ...currentState };
+      postsToUpdate.forEach(({ query, linkIndex, cached }) => {
+        if (updatedCached[query] && updatedCached[query][linkIndex]) {
+          updatedCached[query][linkIndex] = {
+            ...updatedCached[query][linkIndex],
+            selftext: cached.selftext || null,
+            postData: cached.postData || null,
+          };
+        }
       });
+      // Update localStorage temporarily even when deferring (so filterPosts can read it)
+      // It will be overwritten with filtered results later
+      safeSetLocalStorage("redditLinks", updatedCached);
+      
+      if (!deferStateUpdates) {
+        setRedditLinks(updatedCached);
+      } else {
+        // When deferring, update state but localStorage will be overwritten after filtering
+        setRedditLinks(updatedCached);
+      }
     }
     
     // Process fetching if needed
     if (allPostsNeedingFetch.length > 0) {
       console.log(`Batch fetching ${allPostsNeedingFetch.length} posts from ${Object.keys(currentState).length} queries in a single batch operation`);
-      await processBatchFetch(allPostsNeedingFetch);
+      await processBatchFetch(allPostsNeedingFetch, deferStateUpdates);
     } else {
       console.log("All posts were found in cache, no fetching needed");
     }
   };
   
   // Helper function to process batch fetching
+  // If deferStateUpdates is true, only update localStorage and don't trigger React re-renders
   const processBatchFetch = async (
-    allPostsNeedingFetch: Array<{ url: string; query: string; linkIndex: number; postFullname: string }>
+    allPostsNeedingFetch: Array<{ url: string; query: string; linkIndex: number; postFullname: string }>,
+    deferStateUpdates: boolean = false
   ) => {
     if (allPostsNeedingFetch.length === 0) {
       console.log("All posts were found in cache, no fetching needed");
@@ -1650,40 +1789,74 @@ function PlaygroundContent() {
           });
 
           // Update all links in this batch with their post content
-          setRedditLinks((prev) => {
-            const updated = { ...prev };
-            
-            batch.forEach((postFullname) => {
-              const postData = postDataMap.get(postFullname);
-              if (postData) {
-                const { url, linkIndex, query } = postData;
-                const post = postMap.get(postFullname);
+          // Read current state from localStorage if deferring, otherwise from state
+          let currentBatchState: Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>> = {};
+          if (deferStateUpdates) {
+            try {
+              const saved = localStorage.getItem("redditLinks");
+              if (saved) {
+                currentBatchState = JSON.parse(saved);
+              }
+            } catch (e) {
+              console.error("Error reading state from localStorage in batch:", e);
+            }
+          } else {
+            // When not deferring, we need to read from localStorage first, then state will be updated
+            // We'll read from localStorage as the source of truth
+            try {
+              const saved = localStorage.getItem("redditLinks");
+              if (saved) {
+                currentBatchState = JSON.parse(saved);
+              }
+            } catch (e) {
+              console.error("Error reading state from localStorage in batch (non-deferred):", e);
+              // Fallback: use empty object, state update will handle it
+              currentBatchState = {};
+            }
+          }
+          
+          const updated = { ...currentBatchState };
+          
+          batch.forEach((postFullname) => {
+            const postData = postDataMap.get(postFullname);
+            if (postData) {
+              const { url, linkIndex, query } = postData;
+              const post = postMap.get(postFullname);
+              
+              if (post && updated[query] && updated[query][linkIndex]) {
+                const postContent = {
+                  selftext: post.selftext || null,
+                  postData: post,
+                };
                 
-                if (post && updated[query] && updated[query][linkIndex]) {
-                  const postContent = {
-                    selftext: post.selftext || null,
-                    postData: post,
-                  };
-                  
-                  updated[query][linkIndex] = {
-                    ...updated[query][linkIndex],
-                    ...postContent,
-                  };
-                  
-                  cachePost(url, postContent);
-                }
+                updated[query][linkIndex] = {
+                  ...updated[query][linkIndex],
+                  ...postContent,
+                };
                 
+                cachePost(url, postContent);
+              }
+              
+              if (!deferStateUpdates) {
                 setIsLoadingPostContent((prevLoading) => {
                   const newState = { ...prevLoading };
                   delete newState[url];
                   return newState;
                 });
               }
-            });
-            
-            safeSetLocalStorage("redditLinks", updated);
-            return updated;
+            }
           });
+          
+          // Update localStorage temporarily even when deferring (so filterPosts can read it)
+          // It will be overwritten with filtered results later
+          safeSetLocalStorage("redditLinks", updated);
+          
+          if (!deferStateUpdates) {
+            setRedditLinks(updated);
+          } else {
+            // When deferring, update state but localStorage will be overwritten after filtering
+            setRedditLinks(updated);
+          }
         } catch (err) {
           retryCount++;
           if (retryCount < maxRetries) {
@@ -2945,8 +3118,8 @@ function PlaygroundContent() {
                           </tbody>
                         </table>
                         </div>
-                        {/* Pagination controls */}
-                        {totalDiscoveryPages > 1 && (
+                        {/* Pagination controls - always show */}
+                        {distinctLinks.length > 0 && (
                           <div className="flex items-center justify-between border-t border-border px-3 py-1.5 bg-card">
                             <div className="text-xs text-muted-foreground">
                               Showing {(discoveryPage - 1) * DISCOVERY_ITEMS_PER_PAGE + 1} to{" "}

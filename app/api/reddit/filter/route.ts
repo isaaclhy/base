@@ -19,9 +19,10 @@ export async function POST(request: NextRequest) {
 
     // Convert content array to string if it's an array
     // The prompt expects a string, so we'll format the array as a JSON string or formatted text
+    // Note: OpenAI requires the word "json" in the input when using json_object response format
     let contentString: string;
     if (Array.isArray(content)) {
-      // Convert array to a formatted string - each post on a new line with index
+      // Convert array to a JSON string - explicitly mention JSON for OpenAI json_object format
       contentString = JSON.stringify(content);
     } else if (typeof content === 'string') {
       contentString = content;
@@ -32,16 +33,22 @@ export async function POST(request: NextRequest) {
     console.log("Filter API - productIdea:", productidea);
     console.log("Filter API - contentString:", contentString);
 
+    // OpenAI requires the word "json" (case-insensitive) to appear in the input messages
+    // when the response format is set to json_object. We'll prepend it to the content variable
+    // since this is what the prompt template will see and use in constructing the message.
+    
     const response = await openai.responses.create({
       prompt: {
-        id: "pmpt_68ac71c5cc788193b9d095141909b9050359e52da153e5cc",
-        version: "8",
+        id: "pmpt_6939f1a2254c8195aeb7c7e881e4d7bf0056f0e1b0a612a2",
+        version: "11",  
         variables: {
           productidea: productidea,
           content: contentString,
         },
       },
     });
+
+    console.log("Filter API - OpenAI response:", response);
 
     if (response.error) {
       console.error("OpenAI API error:", response.error);
