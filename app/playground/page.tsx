@@ -9,6 +9,7 @@ import PricingSection from "@/app/landing-sections/pricing";
 import { RedditPost } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { signIn } from "next-auth/react";
@@ -31,7 +32,8 @@ const extractThingIdFromLink = (link: string): string | null => {
 // Helper function to safely save to localStorage with quota error handling
 const safeSetLocalStorage = (key: string, value: any, onError?: () => void) => {
   try {
-    // Only store minimal data in redditLinks - exclude postData and selftext to save space
+    // Store full data in redditLinks including postData and selftext
+    // This ensures filtered results preserve all content for display after refresh
     let dataToStore = value;
     if (key === "redditLinks" && typeof value === "object") {
       dataToStore = Object.fromEntries(
@@ -42,7 +44,9 @@ const safeSetLocalStorage = (key: string, value: any, onError?: () => void) => {
                 title: link.title,
                 link: link.link,
                 snippet: link.snippet,
-                // Don't store postData or selftext here - they're stored separately in cache
+                selftext: link.selftext || null,
+                postData: link.postData || null,
+                // Store full data to ensure content matches after refresh
               }))
             : links,
         ])
@@ -186,6 +190,12 @@ function PlaygroundContent() {
   }
   const [analyticsPosts, setAnalyticsPosts] = useState<AnalyticsPost[]>([]);
   const [analyticsFilter, setAnalyticsFilter] = useState<"posted" | "skipped" | "failed">("posted");
+  const [createFilter, setCreateFilter] = useState<"comment" | "post">("comment");
+  const [createRedditLink, setCreateRedditLink] = useState("");
+  const [createPersona, setCreatePersona] = useState("");
+  const [createIntent, setCreateIntent] = useState("");
+  const [createGeneratedComment, setCreateGeneratedComment] = useState("");
+  const [isGeneratingCreateComment, setIsGeneratingCreateComment] = useState(false);
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(true);
   const [analyticsPage, setAnalyticsPage] = useState(1);
   const ANALYTICS_ITEMS_PER_PAGE = 20;
@@ -382,15 +392,22 @@ function PlaygroundContent() {
         // Load cached comments from localStorage - we'll restore them when distinctLinks are computed
         
         // Load cached posts from localStorage and populate links
-        // Then fetch only posts that aren't cached
+        // IMPORTANT: Since we now save full data (selftext/postData) to localStorage for filtered posts,
+        // we should NOT load from cache if selftext/postData already exists (it would overwrite filtered content)
+        // Only load from cache for legacy posts that are missing this data
         setTimeout(() => {
           Object.entries(links).forEach(([query, linkArray]: [string, any]) => {
             if (Array.isArray(linkArray)) {
-              // First, try to load from cache and update state
+              // Only try to load from cache if BOTH selftext AND postData are missing (legacy posts)
+              // This preserves filtered content that already has selftext/postData saved
               let hasUpdates = false;
               const updatedLinks = linkArray.map((link: any) => {
-                if (link.link && (!link.selftext && !link.postData)) {
-                  // Try to get from cache
+                // Check if both selftext and postData are missing (null, undefined, or empty string)
+                const hasNoSelftext = !link.selftext || link.selftext === null || link.selftext === "";
+                const hasNoPostData = !link.postData || link.postData === null;
+                
+                if (link.link && hasNoSelftext && hasNoPostData) {
+                  // Try to get from cache for legacy posts only
                   const cached = getCachedPost(link.link);
                   if (cached && (cached.selftext || cached.postData)) {
                     hasUpdates = true;
@@ -401,10 +418,11 @@ function PlaygroundContent() {
                     };
                   }
                 }
+                // Return link as-is if it already has selftext/postData (filtered posts)
                 return link;
               });
               
-              // Update state if we found cached posts
+              // Update state if we found cached posts (only for legacy posts)
               if (hasUpdates) {
                 setRedditLinks((prev) => {
                   const updated = { ...prev, [query]: updatedLinks };
@@ -578,6 +596,19 @@ function PlaygroundContent() {
 
         if (!response.ok) {
           const errorData = await response.json();
+          // Check if this is a usage limit error
+          if (errorData.limitReached || (response.status === 403 && errorData.error?.includes("limit"))) {
+            // Refresh usage to get latest count
+            refreshUsage();
+            // Show upgrade modal if limit reached
+            setUpgradeModalContext({
+              limitReached: true,
+              remaining: 0
+            });
+            setTimeout(() => {
+              setShowUpgradeModal(true);
+            }, 300);
+          }
           throw new Error(errorData.error || "Failed to generate comment");
         }
 
@@ -586,6 +617,9 @@ function PlaygroundContent() {
         if (data.error) {
           throw new Error(data.error);
         }
+
+        // Refresh usage after successful comment generation
+        refreshUsage();
 
         if (data.comments && data.comments.length > 0) {
           const generatedComment = data.comments.join("\n\n");
@@ -1168,7 +1202,18 @@ function PlaygroundContent() {
 
         if (batchFilterResults.length !== batch.length) {
           console.error(`Filter results length (${batchFilterResults.length}) doesn't match batch length (${batch.length}) for batch ${batchIndex + 1}`);
-          batchFilterResults = new Array(batch.length).fill(false);
+          console.error(`Batch filter results:`, batchFilterResults);
+          console.error(`Batch selftexts sent:`, selftexts);
+          
+          // If we got fewer results than expected, pad with false values
+          // If we got more results than expected, truncate to match batch length
+          if (batchFilterResults.length < batch.length) {
+            console.warn(`Padding ${batch.length - batchFilterResults.length} missing results with false`);
+            batchFilterResults = [...batchFilterResults, ...new Array(batch.length - batchFilterResults.length).fill(false)];
+          } else if (batchFilterResults.length > batch.length) {
+            console.warn(`Truncating ${batchFilterResults.length - batch.length} extra results`);
+            batchFilterResults = batchFilterResults.slice(0, batch.length);
+          }
         }
 
         // Add this batch's results to the combined results
@@ -1200,7 +1245,33 @@ function PlaygroundContent() {
       const finalPostCount = keptPosts;
 
       // Start with the current links we read (not from prev state which might be stale)
-      const updated = { ...currentLinks };
+      // Deep copy to ensure we preserve all nested data (selftext, postData, etc.)
+      const updated: typeof currentLinks = {};
+      Object.keys(currentLinks).forEach(query => {
+        updated[query] = currentLinks[query].map(link => {
+          // Explicitly preserve all properties including selftext and postData
+          // This ensures filtered posts retain the full content (selftext) instead of just snippet
+          const preservedLink = {
+            ...link,
+            // Explicitly preserve selftext (even if null/undefined) - this is the full post content
+            selftext: link.selftext !== undefined ? link.selftext : null,
+            // Preserve postData which contains the full Reddit post data
+            postData: link.postData !== undefined ? link.postData : null,
+            // Preserve other fields
+            title: link.title,
+            link: link.link,
+            snippet: link.snippet,
+          };
+          
+          // Log if selftext is missing (for debugging)
+          if (!preservedLink.selftext && preservedLink.link) {
+            console.warn(`[filterPosts] Post ${preservedLink.link} is missing selftext, will fall back to snippet`);
+          }
+          
+          return preservedLink;
+        });
+      });
+      
       let removedCount = 0;
 
       // Process in reverse order to maintain correct indices
@@ -1228,7 +1299,33 @@ function PlaygroundContent() {
       
       // Update localStorage with filtered results (but NOT state yet - will update after usage)
       // This ensures posts only appear after all batches complete and usage is updated
+      // safeSetLocalStorage will preserve selftext and postData
       safeSetLocalStorage("redditLinks", updated);
+      
+      // Verify that selftext is preserved in the saved data
+      const savedAfterFilter = localStorage.getItem("redditLinks");
+      if (savedAfterFilter) {
+        try {
+          const verifyLinks = JSON.parse(savedAfterFilter);
+          let postsWithSelftext = 0;
+          let postsWithoutSelftext = 0;
+          Object.values(verifyLinks).forEach((links: any) => {
+            if (Array.isArray(links)) {
+              links.forEach((link: any) => {
+                if (link.selftext) {
+                  postsWithSelftext++;
+                } else {
+                  postsWithoutSelftext++;
+                }
+              });
+            }
+          });
+          console.log(`[filterPosts] After saving: ${postsWithSelftext} posts with selftext, ${postsWithoutSelftext} posts without selftext`);
+        } catch (e) {
+          console.error("Error verifying saved data:", e);
+        }
+      }
+      
       // DO NOT update state here - will be updated after usage update completes
       
       return { success: true, finalPostCount }; // Filtering completed successfully
@@ -1352,18 +1449,6 @@ function PlaygroundContent() {
       const data = await response.json();
       
       if (data.error) {
-        // Check if this is a limit error - show upgrade modal instead of error
-        if (data.limitReached || data.error.toLowerCase().includes("limit")) {
-          setUpgradeModalContext({
-            limitReached: true,
-            remaining: data.remaining || 0
-          });
-          setTimeout(() => {
-            setShowUpgradeModal(true);
-          }, 500);
-          setIsLoading(false);
-          return; // Don't throw error, just show modal
-        }
         throw new Error(data.error);
       }
 
@@ -1374,19 +1459,32 @@ function PlaygroundContent() {
         // Save queries to localStorage
         localStorage.setItem("savedQueries", JSON.stringify(data.result));
         
-        // Store usage info for showing upgrade modal later
-        if (data.partialFulfillment || (data.remaining !== undefined && data.remaining <= 10)) {
-          setUpgradeModalContext({
-            limitReached: data.remaining === 0,
-            remaining: data.remaining
-          });
+        // Usage is now tracked only when comments are generated, not when queries/posts are fetched
+        // No need to check usage limits here
+        
+        // Get existing posts URLs BEFORE adding new ones (to track which posts are new for usage calculation)
+        let existingPostUrls = new Set<string>();
+        let existingPostsCount = 0;
+        try {
+          const existingSaved = localStorage.getItem("redditLinks");
+          if (existingSaved) {
+            const existingLinks: Record<string, Array<any>> = JSON.parse(existingSaved);
+            existingPostsCount = Object.values(existingLinks).reduce((total: number, links: Array<any>) => total + links.length, 0);
+            // Collect all existing post URLs
+            Object.values(existingLinks).forEach((links: Array<any>) => {
+              links.forEach((link: any) => {
+                if (link.link) {
+                  existingPostUrls.add(link.link);
+                }
+              });
+            });
+          }
+        } catch (e) {
+          console.error("Error reading existing posts from localStorage:", e);
         }
         
-        // Clear existing posts to ensure we don't show old posts during the search
-        // Also clear localStorage to prevent any cached posts from appearing
-        setIsSearching(true); // Set flag to prevent showing posts in table
-        setRedditLinks({});
-        localStorage.removeItem("redditLinks");
+        // Don't clear existing posts - we'll append new results to them
+        setIsSearching(true); // Set flag to prevent showing posts in table during search
         
         // Fetch Reddit links for each query in parallel
         // Each query will fetch top 7 results for better coverage (some may be filtered)
@@ -1403,7 +1501,7 @@ function PlaygroundContent() {
             // This prevents posts from appearing in UI before filtering
             await batchFetchAllPostContent(true); // Pass true to defer state updates
             
-            // Get current post count from localStorage (since state wasn't updated yet)
+            // Get total post count from localStorage (existing + new, before filtering)
             let postsBeforeFilter = 0;
             try {
               const saved = localStorage.getItem("redditLinks");
@@ -1416,68 +1514,84 @@ function PlaygroundContent() {
             }
             
             // Filter posts after content is loaded (will update state with filtered results)
-            const filterResult = await filterPosts(dbProductDescription || productIdeaToUse);
+            // COMMENTED OUT: Filtering disabled temporarily
+            // const filterResult = await filterPosts(dbProductDescription || productIdeaToUse);
             
-            // Calculate the exact number of posts that will be in the table after filtering
-            let postsToIncrement = 0;
+            // Get final post count (no filtering, so use postsBeforeFilter)
+            let finalPostCount = postsBeforeFilter;
+            let finalLinks: Record<string, Array<any>> = {};
             
-            if (filterResult.success) {
-              // Filtering completed successfully - use the final post count from filtering
-              postsToIncrement = filterResult.finalPostCount;
-              console.log("Filter completed successfully, will increment usage for", postsToIncrement, "posts");
-            } else {
-              // Filtering didn't run or failed - use all posts as fallback
-              postsToIncrement = postsBeforeFilter;
-              console.log("Filter didn't run or failed, will increment usage for all", postsToIncrement, "posts");
-            }
-            
-            // Increment usage with the exact number of posts that will be displayed
-            if (postsToIncrement > 0) {
-              try {
-                const usageResponse = await fetch("/api/usage/increment", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({ count: postsToIncrement }),
-                });
-                
-                if (usageResponse.ok) {
-                  console.log("Usage incremented successfully by", postsToIncrement);
-                  refreshUsage();
-                } else {
-                  const errorData = await usageResponse.json();
-                  console.error("Error response from usage increment API:", errorData);
-                }
-              } catch (usageError) {
-                console.error("Error updating usage:", usageError);
-              }
-            } else {
-              console.log("No posts to increment usage for");
-            }
-            
-            // NOW update state with filtered posts (after filtering and usage update are complete)
-            // Read the final filtered results from localStorage (filterPosts saved them there)
+            // Read posts from localStorage (unfiltered)
             try {
               const saved = localStorage.getItem("redditLinks");
               if (saved) {
-                const finalLinks = JSON.parse(saved);
+                finalLinks = JSON.parse(saved);
+              }
+            } catch (e) {
+              console.error("Error reading posts from localStorage:", e);
+            }
+            
+            // Count how many NEW posts (not in existingPostUrls) - no filtering applied
+            let newPostsAfterFilter = 0;
+            Object.values(finalLinks).forEach((links: Array<any>) => {
+              links.forEach((link: any) => {
+                if (link.link && !existingPostUrls.has(link.link)) {
+                  newPostsAfterFilter++;
+                }
+              });
+            });
+            
+            // Only increment usage for new posts (no filtering, so all new posts are included)
+            const postsToIncrement = Math.max(0, newPostsAfterFilter);
+            
+            console.log(`Existing posts: ${existingPostsCount}, Total posts: ${postsBeforeFilter}, New posts: ${newPostsAfterFilter} (filtering disabled)`);
+            
+            // Usage is now incremented when comments are generated, not when posts are fetched
+            // No usage increment here
+            
+            // NOW update state with posts (filtering disabled, so all posts are included)
+            // Re-read from localStorage to ensure we have the latest data with selftext preserved
+            try {
+              const saved = localStorage.getItem("redditLinks");
+              if (saved) {
+                const latestLinks = JSON.parse(saved);
+                // Verify selftext is present in the data
+                let postsWithSelftext = 0;
+                let postsWithoutSelftext = 0;
+                Object.values(latestLinks).forEach((links: any) => {
+                  if (Array.isArray(links)) {
+                    links.forEach((link: any) => {
+                      if (link.selftext) {
+                        postsWithSelftext++;
+                      } else if (link.link) {
+                        postsWithoutSelftext++;
+                        console.warn(`[handleSubmit] Post ${link.link} missing selftext`);
+                      }
+                    });
+                  }
+                });
+                console.log(`[handleSubmit] Loading posts: ${postsWithSelftext} with selftext, ${postsWithoutSelftext} without selftext`);
+                
+                setRedditLinks(latestLinks);
+                console.log("Updated state with posts after usage update");
+              } else if (Object.keys(finalLinks).length > 0) {
+                // Fallback to finalLinks if localStorage read fails
                 setRedditLinks(finalLinks);
-                console.log("Updated state with filtered posts after usage update");
+                console.log("Updated state with posts (fallback)");
               }
             } catch (e) {
               console.error("Error reading final filtered posts from localStorage:", e);
+              // Fallback to finalLinks
+              if (Object.keys(finalLinks).length > 0) {
+                setRedditLinks(finalLinks);
+              }
             }
             
             // Clear the searching flag - posts can now be displayed in the table
             setIsSearching(false);
             
-            // Show upgrade modal after posts are fetched if we hit the limit or are close
-            if (upgradeModalContext) {
-          setTimeout(() => {
-                setShowUpgradeModal(true);
-              }, 500);
-            }
+            // Usage is tracked when comments are generated, not when posts are fetched
+            // No need to show upgrade modal here
           }, 1000);
         });
       } else {
@@ -1530,6 +1644,12 @@ function PlaygroundContent() {
       }
 
       if (data.results && Array.isArray(data.results)) {
+        // Log which posts were found by this query
+        console.log(`[Google Search] Query: "${query}" found ${data.results.length} Reddit posts:`);
+        data.results.forEach((result: any, index: number) => {
+          console.log(`  ${index + 1}. ${result.title || 'No title'} - ${result.link || 'No link'}`);
+        });
+        
         // Don't increment usage here - will be incremented after filtering
         // This ensures usage count matches the number of posts displayed in the table
 
@@ -1558,9 +1678,17 @@ function PlaygroundContent() {
           }
         }
         
-        const updated = {
+        // Merge new results with existing results for this query, avoiding duplicates
+        const existingLinksForQuery = currentLinksState[query] || [];
+        const existingLinkUrls = new Set(existingLinksForQuery.map((link: any) => link.link).filter(Boolean));
+        
+        // Only add new links that don't already exist (by URL)
+        const newLinks = data.results.filter((link: any) => link.link && !existingLinkUrls.has(link.link));
+        const mergedLinksForQuery = [...existingLinksForQuery, ...newLinks];
+        
+          const updated = {
           ...currentLinksState,
-          [query]: data.results,
+          [query]: mergedLinksForQuery,
         };
         
         // Always save to localStorage
@@ -1634,7 +1762,7 @@ function PlaygroundContent() {
               allPostsNeedingFetch.push({ url: link.link, query, linkIndex: index, postFullname });
               // Set loading state for posts that need fetching (only if not deferring)
               if (!deferStateUpdates) {
-                setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [link.link!]: true }));
+              setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [link.link!]: true }));
               }
             }
           }
@@ -1645,15 +1773,15 @@ function PlaygroundContent() {
     // Update state with cached posts first (only if not deferring)
     if (postsToUpdate.length > 0) {
       const updatedCached = { ...currentState };
-      postsToUpdate.forEach(({ query, linkIndex, cached }) => {
+        postsToUpdate.forEach(({ query, linkIndex, cached }) => {
         if (updatedCached[query] && updatedCached[query][linkIndex]) {
           updatedCached[query][linkIndex] = {
             ...updatedCached[query][linkIndex],
-            selftext: cached.selftext || null,
-            postData: cached.postData || null,
-          };
-        }
-      });
+              selftext: cached.selftext || null,
+              postData: cached.postData || null,
+            };
+          }
+        });
       // Update localStorage temporarily even when deferring (so filterPosts can read it)
       // It will be overwritten with filtered results later
       safeSetLocalStorage("redditLinks", updatedCached);
@@ -1816,27 +1944,27 @@ function PlaygroundContent() {
           }
           
           const updated = { ...currentBatchState };
-          
-          batch.forEach((postFullname) => {
-            const postData = postDataMap.get(postFullname);
-            if (postData) {
-              const { url, linkIndex, query } = postData;
-              const post = postMap.get(postFullname);
-              
-              if (post && updated[query] && updated[query][linkIndex]) {
-                const postContent = {
-                  selftext: post.selftext || null,
-                  postData: post,
-                };
+            
+            batch.forEach((postFullname) => {
+              const postData = postDataMap.get(postFullname);
+              if (postData) {
+                const { url, linkIndex, query } = postData;
+                const post = postMap.get(postFullname);
                 
-                updated[query][linkIndex] = {
-                  ...updated[query][linkIndex],
-                  ...postContent,
-                };
+                if (post && updated[query] && updated[query][linkIndex]) {
+                  const postContent = {
+                    selftext: post.selftext || null,
+                    postData: post,
+                  };
+                  
+                  updated[query][linkIndex] = {
+                    ...updated[query][linkIndex],
+                    ...postContent,
+                  };
+                  
+                  cachePost(url, postContent);
+                }
                 
-                cachePost(url, postContent);
-              }
-              
               if (!deferStateUpdates) {
                 setIsLoadingPostContent((prevLoading) => {
                   const newState = { ...prevLoading };
@@ -2497,7 +2625,7 @@ function PlaygroundContent() {
                 "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
                 !sidebarOpen && "pl-14"
           )}>
-            <div className="space-y-6">
+            <div className="space-y-6 px-1">
                   <div className="space-y-4">
               <div>
                       <label htmlFor="product-website" className="block text-sm font-medium text-foreground mb-1">
@@ -2629,6 +2757,230 @@ function PlaygroundContent() {
             </div>
           </div>
         );
+      case "create":
+        return (
+          <div className="flex h-full flex-col">
+            {/* Main content area - scrollable */}
+            <div className={cn(
+              "flex h-full flex-col",
+              !sidebarOpen && "pl-2"
+            )}>
+              {/* Fixed header with title */}
+              <div className={cn(
+                "sticky top-0 z-10 bg-background pb-2",
+                !sidebarOpen && "pl-14"
+              )}>
+                <div className="flex flex-col gap-3">
+                  <h3 className="text-lg font-semibold">
+                    Create
+                  </h3>
+                  <div className="flex gap-2">
+                    <Button
+                      variant={createFilter === "comment" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setCreateFilter("comment")}
+                    >
+                      Comment
+                    </Button>
+                    <Button
+                      variant={createFilter === "post" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setCreateFilter("post")}
+                    >
+                      Post
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Content area that spans remaining space */}
+              <div className={cn(
+                "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
+                !sidebarOpen && "pl-14"
+              )}>
+                <div className="space-y-6 px-1">
+                  {createFilter === "comment" ? (
+                    <div className="space-y-4">
+                      <div>
+                        <label htmlFor="create-reddit-link" className="block text-sm font-medium text-foreground mb-1">
+                          Reddit Link
+                        </label>
+                        <Input
+                          id="create-reddit-link"
+                          type="url"
+                          value={createRedditLink}
+                          onChange={(e) => setCreateRedditLink(e.target.value)}
+                          placeholder="https://reddit.com/r/..."
+                          className="w-full max-w-md"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="create-persona" className="block text-sm font-medium text-foreground mb-1">
+                          Persona
+                        </label>
+                        <Select
+                          id="create-persona"
+                          value={createPersona}
+                          onChange={(e) => setCreatePersona(e.target.value)}
+                          className="w-full max-w-md"
+                        >
+                          <option value="">Select persona...</option>
+                          <option value="founder">Founder</option>
+                          <option value="user">User</option>
+                        </Select>
+                      </div>
+                      <div>
+                        <label htmlFor="create-intent" className="block text-sm font-medium text-foreground mb-1">
+                          Intent
+                        </label>
+                        <Select
+                          id="create-intent"
+                          value={createIntent}
+                          onChange={(e) => setCreateIntent(e.target.value)}
+                          className="w-full max-w-md"
+                        >
+                          <option value="">Select intent...</option>
+                          <option value="drive-traffic">Drive traffic</option>
+                          <option value="get-feedback">Get feedback</option>
+                          <option value="join-waitlist">Join waitlist</option>
+                        </Select>
+                      </div>
+                      <div className="mt-6">
+                        <Button
+                          type="button"
+                          onClick={async () => {
+                            if (!createRedditLink.trim() || !createIntent || isGeneratingCreateComment) {
+                              return;
+                            }
+
+                            // Check if product details are available
+                            const dbLink = productDetailsFromDb?.link || website;
+                            const dbProductDescription = productDetailsFromDb?.productDescription;
+                            
+                            if (!dbProductDescription || !dbLink) {
+                              setToast({
+                                visible: true,
+                                message: "Please enter your product details in the Product tab first.",
+                                variant: "error",
+                              });
+                              setActiveTab("product");
+                              return;
+                            }
+
+                            setIsGeneratingCreateComment(true);
+                            setCreateGeneratedComment("");
+
+                            try {
+                              // Step 1: Fetch Reddit post content
+                              const redditResponse = await fetch(`/api/reddit?url=${encodeURIComponent(createRedditLink)}`);
+                              
+                              if (!redditResponse.ok) {
+                                const errorData = await redditResponse.json();
+                                throw new Error(errorData.error || "Failed to fetch Reddit post");
+                              }
+
+                              const redditData = await redditResponse.json();
+                              const post: RedditPost = redditData.post;
+                              
+                              // Extract post content (title + selftext)
+                              const postContent = `${post.title}\n\n${post.selftext || ""}`;
+
+                              // Step 2: Generate comment using OpenAI
+                              const generateResponse = await fetch("/api/openai/comment", {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({
+                                  productIdea: dbProductDescription,
+                                  productLink: dbLink,
+                                  postContent: postContent,
+                                }),
+                              });
+
+                              if (!generateResponse.ok) {
+                                const errorData = await generateResponse.json();
+                                // Check if this is a usage limit error
+                                if (errorData.limitReached || (generateResponse.status === 403 && errorData.error?.includes("limit"))) {
+                                  refreshUsage();
+                                  setUpgradeModalContext({
+                                    limitReached: true,
+                                    remaining: 0
+                                  });
+                                  setTimeout(() => {
+                                    setShowUpgradeModal(true);
+                                  }, 300);
+                                }
+                                throw new Error(errorData.error || "Failed to generate comment");
+                              }
+
+                              const generateData = await generateResponse.json();
+                              const comments = generateData.comments || [];
+                              
+                              // Display the first generated comment (or join all if multiple)
+                              if (comments.length > 0) {
+                                setCreateGeneratedComment(comments[0] || comments.join("\n\n"));
+                                // Refresh usage after successful generation
+                                refreshUsage();
+                              } else {
+                                setCreateGeneratedComment("No comments generated");
+                              }
+                            } catch (error) {
+                              console.error("Error generating comment:", error);
+                              setCreateGeneratedComment(`Error: ${error instanceof Error ? error.message : "Failed to generate comment"}`);
+                            } finally {
+                              setIsGeneratingCreateComment(false);
+                            }
+                          }}
+                          disabled={!createRedditLink.trim() || !createPersona || !createIntent || isGeneratingCreateComment}
+                          className="bg-black text-white hover:bg-black/90 disabled:opacity-50"
+                        >
+                          {isGeneratingCreateComment ? "Generating..." : "Generate Comment"}
+                        </Button>
+                      </div>
+                      {(createGeneratedComment || isGeneratingCreateComment) && (
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-1">
+                            Generated Comment
+                          </label>
+                          {isGeneratingCreateComment ? (
+                            <div className="flex items-center gap-2 p-4 border border-border rounded-md bg-background max-w-md">
+                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                              <span className="text-sm text-muted-foreground">Generating comment...</span>
+                            </div>
+                          ) : (
+                            <div className="relative max-w-md rounded-md border border-input focus-within:ring-2 focus-within:ring-black focus-within:ring-offset-0">
+                              <textarea
+                                readOnly
+                                value={createGeneratedComment}
+                                className="w-full h-[150px] rounded-md border-0 bg-background px-3 py-2 pb-12 text-sm text-foreground focus:outline-none resize-none"
+                                placeholder="Generated comment will appear here..."
+                              />
+                              <Button
+                                type="button"
+                                onClick={async () => {
+                                  // TODO: Implement post comment functionality
+                                  console.log("Post comment:", createGeneratedComment);
+                                }}
+                                className="absolute bottom-2 right-2 bg-black text-white hover:bg-black/90 text-xs h-7"
+                              >
+                                Post Comment
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      {/* Post inputs will be added here */}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
       case "analytics":
         return (
           <div className="flex h-full flex-col">
@@ -2644,7 +2996,7 @@ function PlaygroundContent() {
               )}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <h3 className="text-lg font-semibold">
-                    Analytics
+                    History
                   </h3>
                   <div className="flex gap-2 self-start sm:self-auto">
                     <Button
@@ -3022,6 +3374,8 @@ function PlaygroundContent() {
                                         <span className="text-xs text-muted-foreground">Loading...</span>
                                   </div>
                                 ) : (
+                                  // Always prefer selftext if available (it's what was used for filtering)
+                                  // Only use cleanSnippet if selftext is not available
                                   (link.selftext || cleanSnippet) && (
                                         <div>
                                       <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
@@ -3195,7 +3549,7 @@ function PlaygroundContent() {
                 "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
                 !sidebarOpen && "pl-14"
               )}>
-          <div className="space-y-6">
+          <div className="space-y-6 px-1">
                   {feedbackSubmitted ? (
                     <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 p-6">
                       <CheckCircle2 className="h-12 w-12 text-emerald-500 mb-4" />
@@ -3731,11 +4085,11 @@ function PlaygroundContent() {
                 <div className="space-y-4 mb-6">
                   {upgradeModalContext.limitReached ? (
                     <p className="text-sm text-muted-foreground">
-                      You've reached your weekly limit of 200 posts. Upgrade to Premium to get 10,000 posts per month and never worry about limits again.
+                      You've reached your weekly limit of 30 Free Credits. Upgrade to Premium to get 10,000 Free Credits per month and never worry about limits again.
                     </p>
                   ) : (
                     <p className="text-sm text-muted-foreground">
-                      You have {upgradeModalContext.remaining} posts remaining this week. Upgrade to Premium for 10,000 posts per month and unlock more features.
+                      You have {upgradeModalContext.remaining} Free Credits remaining this week. Upgrade to Premium for 10,000 Free Credits per month and unlock more features.
                     </p>
                   )}
                 </div>
@@ -3756,7 +4110,7 @@ function PlaygroundContent() {
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                        <span>200 generated comments</span>
+                        <span>30 Free Credits</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
@@ -3788,7 +4142,7 @@ function PlaygroundContent() {
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                        <span>10,000 generated comments</span>
+                        <span>10,000 Free Credits</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />

@@ -12,6 +12,7 @@ import {
   Package,
   Menu,
   X,
+  Plus,
 } from "lucide-react";
 import { UserInfoCard } from "@/components/auth/user-info-card";
 import { UsageProgress } from "@/components/usage/usage-progress";
@@ -21,7 +22,7 @@ interface PlaygroundLayoutProps {
   children: React.ReactNode;
 }
 
-type TabId = "product" | "dashboard" | "analytics" | "feedback" | "pricing";
+type TabId = "product" | "dashboard" | "analytics" | "feedback" | "pricing" | "create";
 
 const PlaygroundTabContext = createContext<{
   activeTab: TabId;
@@ -64,7 +65,8 @@ interface Tab {
 const tabs: Tab[] = [
   { id: "product", label: "Product", icon: Package },
   { id: "dashboard", label: "Discovery", icon: LayoutDashboard },
-  { id: "analytics", label: "Analytics", icon: BarChart3 },
+  { id: "create", label: "Create", icon: Plus },
+  { id: "analytics", label: "History", icon: BarChart3 },
   { id: "feedback", label: "Feedback", icon: MessageSquare },
   { id: "pricing", label: "Pricing", icon: CreditCard },
 ];

@@ -58,7 +58,10 @@ export function UsageProgress() {
     return null;
   }
 
-  const percentage = (usage.currentCount / usage.maxCount) * 100;
+  // Calculate remaining (countdown from max to 0)
+  const remaining = Math.max(0, (usage.maxCount ?? 30) - (usage.currentCount ?? 0));
+  // Invert percentage: start at 100% (fully filled) and decrease to 0% as credits are used
+  const remainingPercentage = (remaining / (usage.maxCount ?? 30)) * 100;
   const activePlan = usage.plan || session.user?.plan || "free";
 
   return (
@@ -70,22 +73,22 @@ export function UsageProgress() {
           </span>
         </div>
         <div className="mb-2 flex items-center justify-between text-xs">
-          <span className="font-medium text-foreground">Weekly Usage</span>
+          <span className="font-medium text-foreground">Free Credits</span>
           <span className="text-muted-foreground">
-            {usage?.currentCount ?? 0} / {usage?.maxCount ?? 200}
+            {remaining} / {usage?.maxCount ?? 30}
           </span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-muted">
           <div
             className={cn(
               "h-full transition-all duration-300",
-              percentage >= 100
+              remaining === 0
                 ? "bg-destructive"
-                : percentage >= 80
+                : remaining <= (usage.maxCount ?? 30) * 0.2
                 ? "bg-yellow-500"
                 : "bg-primary"
             )}
-            style={{ width: `${Math.min(percentage, 100)}%` }}
+            style={{ width: `${Math.min(remainingPercentage, 100)}%` }}
           />
         </div>
       </div>

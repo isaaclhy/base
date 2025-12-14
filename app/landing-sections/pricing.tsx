@@ -8,13 +8,13 @@ import { cn } from "@/lib/utils";
 const features = {
   free: [
     "Unlimited reddit post search",
-    "200 generated comments",
+    "30 Free Credits",
     "Usage analytics",
   ],
   premium: [
     "24/7 automated comment posting on relevant posts",
     "Unlimited reddit post search",
-    "10,000 generated comments",
+    "10,000 Free Credits",
     "Usage analytics",
   ],
 };

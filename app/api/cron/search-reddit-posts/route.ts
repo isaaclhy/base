@@ -316,7 +316,7 @@ async function handleCronRequest(
     const response1 = await (openaiClient as any).responses.create({
       prompt: {
         id: "pmpt_69330a1b0d788197826b386ddc375be7015a3de39dafb3df",
-        version: "4",
+        version: "5",
         variables: {
           gpt_query_completion_count: String(queryCount),
           productidea: productIdeaToUse,

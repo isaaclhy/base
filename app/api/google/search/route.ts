@@ -24,6 +24,7 @@ async function fetchGoogleCustomSearch(
     q: query,
     num: num,
     start: 1, // Always start from the first result (top results)
+    dateRestrict: "m1", // Limit results to past month (this month)
   });
 
   const results = response.data;

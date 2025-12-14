@@ -9,12 +9,12 @@ import { Button } from "@/components/ui/button";
 const features = {
   free: [
     "Unlimited reddit post search",
-    "200 generated comments",
+    "30 Free Credits",
     "Usage analytics",
   ],
   premium: [
     "Unlimited reddit post search",
-    "10,000 generated comments",
+    "10,000 Free Credits",
     "Usage analytics",
   ],
 };

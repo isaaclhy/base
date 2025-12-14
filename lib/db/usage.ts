@@ -10,7 +10,7 @@ export interface UserUsage {
   lastUpdated: Date;
 }
 
-export const FREE_POST_LIMIT = 200;
+export const FREE_POST_LIMIT = 30;
 export const PREMIUM_POST_LIMIT = 2500; // 10,000 per month ≈ 2,500 per week
 
 const DEFAULT_MAX_POSTS_PER_WEEK = FREE_POST_LIMIT;
