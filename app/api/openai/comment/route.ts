@@ -5,13 +5,15 @@ import { incrementUsage, getMaxPostsPerWeekForPlan } from "@/lib/db/usage";
 import { getUserByEmail } from "@/lib/db/users";
 
 const client = new OpenAI({
-  apiKey: process.env.OPENAI_KEY
+  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_KEY
 });
 
 export interface GenerateCommentQuery {
   productIdea: string;
   productLink: string;
   postContent: string;
+  persona?: string; // Optional persona parameter
+  selftext?: string; // Optional selftext for User persona
 }
 
 export interface GenerateCommentResponse {
@@ -56,7 +58,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<GenerateC
     }
 
     const body: GenerateCommentQuery = await request.json();
-    const { productIdea, productLink, postContent } = body;
+    const { productIdea, productLink, postContent, persona, selftext } = body;
+
+    console.log('[Comment Generation] Received persona:', persona);
+    console.log('[Comment Generation] selftext provided:', selftext !== undefined);
 
     if (!productIdea || !productLink || !postContent) {
       return NextResponse.json(
@@ -65,17 +70,35 @@ export async function POST(request: NextRequest): Promise<NextResponse<GenerateC
       );
     }
 
-    const response = await (client as any).responses.create({
-      prompt: {
-        "id": "pmpt_6898a80a39208193b66057015ddb125d05c2b3824070c5a5",
-        "version": "16",
-        "variables": {
-          "productidea": productIdea,
-          "postcontent": postContent,
-          "productlink": productLink,
+    let response: any;
+
+    // If persona is "User", use the different prompt with idea and content (selftext only)
+    if (persona === "user" && selftext !== undefined) {
+      console.log('[Comment Generation] Using User persona prompt with idea and content');
+      response = await (client as any).responses.create({
+        prompt: {
+          "id": "pmpt_694070307fec8190a790348d7d4672ed045ef4781855787f",
+          "version": "3",
+          "variables": {
+            "idea": productIdea,
+            "content": selftext
+          }
         }
-      }
-    });
+      });
+    } else {
+      // Default prompt for Founder or other personas
+      console.log('[Comment Generation] Using default/Founder persona prompt');
+      response = await (client as any).responses.create({
+        prompt: {
+          "id": "pmpt_6898a80a39208193b66057015ddb125d05c2b3824070c5a5",
+          "version": "16",
+          "variables": {
+            "productidea": productIdea,
+            "postcontent": postContent,
+          }
+        }
+      });
+    }
 
     if (response.error) {
       console.error('OpenAI API error:', response.error);
@@ -83,9 +106,32 @@ export async function POST(request: NextRequest): Promise<NextResponse<GenerateC
     }
 
     const output = response.output.filter((res: any) => res.type == 'message')[0].content.filter((res: any) => res.type == 'output_text')[0].text;
-    console.log(output)
+    console.log('[Comment Generation] Raw OpenAI output:', output);
 
-    const comments: OpenAIResponseSchema = JSON.parse(output);
+    // The User persona prompt might return a different format
+    // Try to parse as JSON first, if it fails, treat it as a single comment string
+    let comments: OpenAIResponseSchema;
+    try {
+      const parsed = JSON.parse(output);
+      if (parsed.items && Array.isArray(parsed.items)) {
+        comments = parsed;
+      } else if (Array.isArray(parsed)) {
+        // If it's just an array, wrap it in items
+        comments = { items: parsed };
+      } else if (typeof parsed === 'string') {
+        // If it's a single string, wrap it in items array
+        comments = { items: [parsed] };
+      } else {
+        // Try to extract items from the parsed object
+        comments = parsed;
+      }
+    } catch (e) {
+      // If JSON parsing fails, treat the output as a single comment string
+      console.log('[Comment Generation] Output is not JSON, treating as plain text');
+      comments = { items: [output] };
+    }
+    
+    console.log('[Comment Generation] Parsed comments:', comments);
     
     // Increment usage after successfully generating comment
     let finalRemaining = remaining - 1; // Decrement by 1 since we're about to increment

@@ -2882,8 +2882,10 @@ function PlaygroundContent() {
                               const redditData = await redditResponse.json();
                               const post: RedditPost = redditData.post;
                               
-                              // Extract post content (title + selftext)
+                              // Extract post content (title + selftext) for Founder persona
+                              // For User persona, use only selftext
                               const postContent = `${post.title}\n\n${post.selftext || ""}`;
+                              const selftext = post.selftext || "";
 
                               // Step 2: Generate comment using OpenAI
                               const generateResponse = await fetch("/api/openai/comment", {
@@ -2895,6 +2897,8 @@ function PlaygroundContent() {
                                   productIdea: dbProductDescription,
                                   productLink: dbLink,
                                   postContent: postContent,
+                                  persona: createPersona,
+                                  selftext: selftext,
                                 }),
                               });
 
