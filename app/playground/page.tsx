@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, useTransition } from "react";
-import { ExternalLink, X, Loader2, CheckCircle2, Send, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { ExternalLink, X, Loader2, CheckCircle2, Send, Trash2, ChevronLeft, ChevronRight, Settings, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatTextarea } from "@/components/ui/chat-textarea";
 import PlaygroundLayout, { usePlaygroundTab, usePlaygroundSidebar, useRefreshUsage, useSetPlaygroundTab } from "@/components/playground-layout";
@@ -162,6 +162,27 @@ function PlaygroundContent() {
   const [isPosting, setIsPosting] = useState<Record<string, boolean>>({});
   const [isBulkPostModalOpen, setIsBulkPostModalOpen] = useState(false);
   const [isBulkPosting, setIsBulkPosting] = useState(false);
+  const [isDiscoverySettingsModalOpen, setIsDiscoverySettingsModalOpen] = useState(false);
+  const [discoveryPersona, setDiscoveryPersona] = useState<string>("");
+  const [isPersonaDropdownOpen, setIsPersonaDropdownOpen] = useState(false);
+  const personaDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Handle click outside to close persona dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (personaDropdownRef.current && !personaDropdownRef.current.contains(event.target as Node)) {
+        setIsPersonaDropdownOpen(false);
+      }
+    };
+
+    if (isPersonaDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isPersonaDropdownOpen]);
   const [toast, setToast] = useState<{ visible: boolean; message: string; link?: string | null; variant?: "success" | "error" } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -196,6 +217,8 @@ function PlaygroundContent() {
   const [createIntent, setCreateIntent] = useState("");
   const [createGeneratedComment, setCreateGeneratedComment] = useState("");
   const [isGeneratingCreateComment, setIsGeneratingCreateComment] = useState(false);
+  const [isPostingCreateComment, setIsPostingCreateComment] = useState(false);
+  const [createPostData, setCreatePostData] = useState<RedditPost | null>(null);
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(true);
   const [analyticsPage, setAnalyticsPage] = useState(1);
   const ANALYTICS_ITEMS_PER_PAGE = 20;
@@ -217,6 +240,7 @@ function PlaygroundContent() {
   const [isLoadingProductDetails, setIsLoadingProductDetails] = useState(false);
   const [isGeneratingProductDescription, setIsGeneratingProductDescription] = useState(false);
   const [productDetailsFromDb, setProductDetailsFromDb] = useState<{ link?: string; productDescription?: string } | null>(null);
+  const [userPlan, setUserPlan] = useState<"free" | "premium" | null>(null);
 
   const analyticsUrlSet = useMemo(() => {
     const set = new Set<string>();
@@ -333,6 +357,33 @@ function PlaygroundContent() {
       };
       
       loadProductDetails();
+    }
+  }, [status, session]);
+
+  // Load user plan for premium feature checks
+  useEffect(() => {
+    if (status === "authenticated" && session?.user?.email) {
+      const loadUserPlan = async () => {
+        try {
+          const response = await fetch("/api/usage");
+          if (response.ok) {
+            const data = await response.json();
+            const plan = data.plan || session?.user?.plan || "free";
+            setUserPlan(plan as "free" | "premium");
+          } else {
+            // Fallback to session plan
+            setUserPlan((session?.user?.plan as "free" | "premium") || "free");
+          }
+        } catch (error) {
+          console.error("Error loading user plan:", error);
+          // Fallback to session plan
+          setUserPlan((session?.user?.plan as "free" | "premium") || "free");
+        }
+      };
+      
+      loadUserPlan();
+    } else {
+      setUserPlan(null);
     }
   }, [status, session]);
 
@@ -2829,7 +2880,7 @@ function PlaygroundContent() {
                           <option value="user">User</option>
                         </Select>
                       </div>
-                      <div>
+                      {/* <div>
                         <label htmlFor="create-intent" className="block text-sm font-medium text-foreground mb-1">
                           Intent
                         </label>
@@ -2844,12 +2895,12 @@ function PlaygroundContent() {
                           <option value="get-feedback">Get feedback</option>
                           <option value="join-waitlist">Join waitlist</option>
                         </Select>
-                      </div>
+                      </div> */}
                       <div className="mt-6">
                         <Button
                           type="button"
                           onClick={async () => {
-                            if (!createRedditLink.trim() || !createIntent || isGeneratingCreateComment) {
+                            if (!createRedditLink.trim() || isGeneratingCreateComment) {
                               return;
                             }
 
@@ -2881,6 +2932,9 @@ function PlaygroundContent() {
 
                               const redditData = await redditResponse.json();
                               const post: RedditPost = redditData.post;
+                              
+                              // Store post data for later use when posting
+                              setCreatePostData(post);
                               
                               // Extract post content (title + selftext) for Founder persona
                               // For User persona, use only selftext
@@ -2936,7 +2990,7 @@ function PlaygroundContent() {
                               setIsGeneratingCreateComment(false);
                             }
                           }}
-                          disabled={!createRedditLink.trim() || !createPersona || !createIntent || isGeneratingCreateComment}
+                          disabled={!createRedditLink.trim() || !createPersona || isGeneratingCreateComment}
                           className="bg-black text-white hover:bg-black/90 disabled:opacity-50"
                         >
                           {isGeneratingCreateComment ? "Generating..." : "Generate Comment"}
@@ -2963,12 +3017,156 @@ function PlaygroundContent() {
                               <Button
                                 type="button"
                                 onClick={async () => {
-                                  // TODO: Implement post comment functionality
-                                  console.log("Post comment:", createGeneratedComment);
+                                  if (!createGeneratedComment.trim() || isPostingCreateComment) {
+                                    return;
+                                  }
+
+                                  if (!createRedditLink.trim()) {
+                                    setToast({
+                                      visible: true,
+                                      message: "Reddit link is required.",
+                                      variant: "error",
+                                    });
+                                    return;
+                                  }
+
+                                  const thingId = extractThingIdFromLink(createRedditLink);
+                                  if (!thingId) {
+                                    setToast({
+                                      visible: true,
+                                      message: "Invalid Reddit URL. Please check the link format.",
+                                      variant: "error",
+                                    });
+                                    return;
+                                  }
+
+                                  setIsPostingCreateComment(true);
+
+                                  try {
+                                    // Post comment to Reddit
+                                    const response = await fetch("/api/reddit/post-comment", {
+                                      method: "POST",
+                                      headers: {
+                                        "Content-Type": "application/json",
+                                      },
+                                      body: JSON.stringify({
+                                        thing_id: thingId,
+                                        text: createGeneratedComment.trim(),
+                                      }),
+                                    });
+
+                                    if (!response.ok) {
+                                      const errorData = await response.json();
+                                      throw new Error(errorData.error || "Failed to post comment to Reddit");
+                                    }
+
+                                    const result = await response.json();
+
+                                    // Fetch post data if we don't have it
+                                    let postData = createPostData;
+                                    if (!postData) {
+                                      try {
+                                        const redditResponse = await fetch(`/api/reddit?url=${encodeURIComponent(createRedditLink)}`);
+                                        if (redditResponse.ok) {
+                                          const redditData = await redditResponse.json();
+                                          postData = redditData.post;
+                                        }
+                                      } catch (fetchError) {
+                                        console.error("Error fetching post data:", fetchError);
+                                        // Continue without post data
+                                      }
+                                    }
+
+                                    // Save to MongoDB
+                                    try {
+                                      const dbResponse = await fetch("/api/posts/create", {
+                                        method: "POST",
+                                        headers: {
+                                          "Content-Type": "application/json",
+                                        },
+                                        body: JSON.stringify({
+                                          status: "posted",
+                                          query: productDetailsFromDb?.productDescription || "Manual create",
+                                          title: postData?.title || null,
+                                          link: createRedditLink,
+                                          snippet: postData?.selftext?.substring(0, 200) || null,
+                                          selftext: postData?.selftext || null,
+                                          postData: postData || null,
+                                          comment: createGeneratedComment.trim(),
+                                          notes: createGeneratedComment.trim(),
+                                        }),
+                                      });
+
+                                      if (!dbResponse.ok) {
+                                        const dbError = await dbResponse.json();
+                                        console.error("Error saving post to MongoDB:", dbError);
+                                        // Log error but don't fail the operation
+                                      } else {
+                                        console.log("Post saved to MongoDB successfully");
+                                      }
+                                    } catch (dbError) {
+                                      console.error("Error saving post to database:", dbError);
+                                      // Don't fail the whole operation if DB save fails
+                                    }
+
+                                    // Refresh analytics
+                                    await refreshAnalytics();
+
+                                    // Show success message
+                                    showToast("Comment posted successfully.", { link: createRedditLink, variant: "success" });
+
+                                    // Clear the generated comment and form
+                                    setCreateGeneratedComment("");
+                                    setCreatePostData(null);
+                                  } catch (err) {
+                                    console.error("Error posting comment:", err);
+                                    const errorMessage = err instanceof Error ? err.message : "Failed to post comment to Reddit";
+                                    showToast(errorMessage, { variant: "error" });
+
+                                    // Try to save failed attempt to database
+                                    try {
+                                      let postData = createPostData;
+                                      if (!postData) {
+                                        try {
+                                          const redditResponse = await fetch(`/api/reddit?url=${encodeURIComponent(createRedditLink)}`);
+                                          if (redditResponse.ok) {
+                                            const redditData = await redditResponse.json();
+                                            postData = redditData.post;
+                                          }
+                                        } catch (fetchError) {
+                                          console.error("Error fetching post data:", fetchError);
+                                        }
+                                      }
+
+                                      await fetch("/api/posts/create", {
+                                        method: "POST",
+                                        headers: {
+                                          "Content-Type": "application/json",
+                                        },
+                                        body: JSON.stringify({
+                                          status: "failed",
+                                          query: productDetailsFromDb?.productDescription || "Manual create",
+                                          title: postData?.title || null,
+                                          link: createRedditLink,
+                                          snippet: postData?.selftext?.substring(0, 200) || null,
+                                          selftext: postData?.selftext || null,
+                                          postData: postData || null,
+                                          comment: createGeneratedComment.trim() || null,
+                                          notes: errorMessage,
+                                        }),
+                                      });
+                                      await refreshAnalytics();
+                                    } catch (recordError) {
+                                      console.error("Error recording failed analytics entry:", recordError);
+                                    }
+                                  } finally {
+                                    setIsPostingCreateComment(false);
+                                  }
                                 }}
-                                className="absolute bottom-2 right-2 bg-black text-white hover:bg-black/90 text-xs h-7"
+                                disabled={isPostingCreateComment || !createGeneratedComment.trim()}
+                                className="absolute bottom-2 right-2 bg-black text-white hover:bg-black/90 text-xs h-7 disabled:opacity-50"
                               >
-                                Post Comment
+                                {isPostingCreateComment ? "Posting..." : "Post Comment"}
                               </Button>
                             </div>
                           )}
@@ -3204,12 +3402,15 @@ function PlaygroundContent() {
           );
         }
 
+        const isFreeUser = userPlan === "free";
+        
         return (
-          <div className="flex h-full flex-col">
+          <div className="flex h-full flex-col relative">
             {/* Main content area - scrollable */}
             <div className={cn(
               "flex h-full flex-col",
-              !sidebarOpen && "pl-14"
+              !sidebarOpen && "pl-14",
+              isFreeUser && "blur-sm pointer-events-none"
             )}>
               {/* Fixed header with title and buttons */}
               {!isLoading && (
@@ -3222,23 +3423,6 @@ function PlaygroundContent() {
                       Reddit Posts
                     </h3>
                     <div className="flex gap-2 self-start sm:self-auto">
-                      {results.length > 0 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setIsBulkPostModalOpen(true)}
-                          disabled={
-                            distinctLinksCount === 0 ||
-                            distinctLinks.every(
-                              (item) =>
-                                !postTextareas[item.uniqueKey] ||
-                                !postTextareas[item.uniqueKey].trim()
-                            )
-                          }
-                        >
-                          Post all comments
-                        </Button>
-                      )}
                       <Button
                         onClick={() => {
                           // Use database productDescription as the message
@@ -3253,17 +3437,26 @@ function PlaygroundContent() {
                         {isLoading ? "Searching..." : "Search for Reddit Posts"}
                       </Button>
                       {results.length > 0 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleRemoveAllPosts}
-                          disabled={
-                            distinctLinksCount === 0 &&
-                            !Object.values(isLoadingLinks).some(Boolean)
-                          }
-                        >
-                          Remove all posts
-                        </Button>
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleRemoveAllPosts}
+                            disabled={
+                              distinctLinksCount === 0 &&
+                              !Object.values(isLoadingLinks).some(Boolean)
+                            }
+                          >
+                            Remove all posts
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsDiscoverySettingsModalOpen(true)}
+                          >
+                            <Settings className="h-4 w-4" />
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -3526,6 +3719,26 @@ function PlaygroundContent() {
               </div>
             </div>
             </div>
+            {/* Premium upgrade overlay for free users */}
+            {isFreeUser && (
+              <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+                <div className="w-full max-w-md space-y-6 rounded-lg border border-border bg-card p-8 text-center shadow-lg">
+                  <div className="space-y-2">
+                    <h2 className="text-2xl font-semibold text-foreground">Discovery is a Premium Feature</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Upgrade to Premium to unlock Discovery and find relevant Reddit posts automatically.
+                    </p>
+                  </div>
+                  <Button
+                    size="lg"
+                    onClick={() => setActiveTab("pricing")}
+                    className="w-full"
+                  >
+                    Upgrade to Premium
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         );
       case "feedback":
@@ -4008,53 +4221,76 @@ function PlaygroundContent() {
           </div>
         </>
       )}
-      {isBulkPostModalOpen && (
+      {isDiscoverySettingsModalOpen && (
         <>
           <div
             className="fixed inset-0 z-40 bg-background/40 backdrop-blur-sm"
-            onClick={() => {
-              if (!isBulkPosting) {
-                setIsBulkPostModalOpen(false);
-              }
-            }}
+            onClick={() => setIsDiscoverySettingsModalOpen(false)}
           />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="w-full max-w-md rounded-lg border border-border bg-card shadow-lg">
-              <div className="border-b border-border px-6 py-4">
+              <div className="border-b border-border px-6 py-4 flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-foreground">
-                  Post all comments
+                  Discovery Settings
                 </h3>
+                <button
+                  onClick={() => setIsDiscoverySettingsModalOpen(false)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Close modal"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-              <div className="px-6 py-4 space-y-3 text-sm text-muted-foreground">
-                <p>
-                  This will post all generated comments for the Reddit posts currently
-                  shown on this page. Only posts that already have a comment will be posted.
-                </p>
-                <p>
-                  Comments will be posted one by one to Reddit and saved in your analytics.
-                </p>
+              <div className="px-6 py-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-foreground">
+                    Persona
+                  </label>
+                  <div className="relative w-48" ref={personaDropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsPersonaDropdownOpen(!isPersonaDropdownOpen)}
+                      className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-white px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <span className="text-sm text-foreground">
+                        {discoveryPersona
+                          ? discoveryPersona.charAt(0).toUpperCase() + discoveryPersona.slice(1)
+                          : "Select persona..."}
+                      </span>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                    {isPersonaDropdownOpen && (
+                      <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-card shadow-lg">
+                        <div className="py-1">
+                          {["user", "founder"].map((persona) => (
+                            <button
+                              key={persona}
+                              type="button"
+                              onClick={() => {
+                                setDiscoveryPersona(persona);
+                                setIsPersonaDropdownOpen(false);
+                              }}
+                              className={cn(
+                                "flex w-full items-center px-3 py-2 text-sm hover:bg-muted"
+                              )}
+                            >
+                              <span className="text-foreground">
+                                {persona.charAt(0).toUpperCase() + persona.slice(1)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
               <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
                 <Button
-                  variant="outline"
-                  onClick={() => !isBulkPosting && setIsBulkPostModalOpen(false)}
-                  disabled={isBulkPosting}
-                >
-                  Cancel
-                </Button>
-                <Button
                   variant="default"
-                  onClick={handleBulkPostAll}
-                  disabled={isBulkPosting}
+                  onClick={() => setIsDiscoverySettingsModalOpen(false)}
                 >
-                  {isBulkPosting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      Posting...
-                    </>
-                  ) : (
-                    <>Post all comments</>
-                  )}
+                  Apply
                 </Button>
               </div>
             </div>

@@ -12,7 +12,7 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           "flex h-9 w-full rounded-md border border-input bg-white px-3 py-1 text-base shadow-sm transition-colors",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-0",
           "disabled:cursor-not-allowed disabled:opacity-50",
-          "[&>option]:bg-background [&>option]:text-foreground",
+          "[&>option]:bg-background [&>option]:text-foreground [&>option:checked]:bg-transparent",
           className
         )}
         ref={ref}
