@@ -90,11 +90,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<GenerateC
       console.log('[Comment Generation] Using default/Founder persona prompt');
       response = await (client as any).responses.create({
         prompt: {
-          "id": "pmpt_6898a80a39208193b66057015ddb125d05c2b3824070c5a5",
-          "version": "16",
+          "id": "pmpt_694ff0c078ec8197ad0b92621f11735905afaefebad67788",
+          "version": "4",
           "variables": {
-            "productidea": productIdea,
-            "postcontent": postContent,
+            "content": postContent,
+            "idea": productIdea
           }
         }
       });

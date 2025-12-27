@@ -69,7 +69,6 @@ const tabs: Tab[] = [
   { id: "leads", label: "Leads", icon: Users },
   { id: "create", label: "Create", icon: Plus },
   { id: "analytics", label: "History", icon: BarChart3 },
-  { id: "feedback", label: "Feedback", icon: MessageSquare },
   { id: "pricing", label: "Pricing", icon: CreditCard },
 ];
 

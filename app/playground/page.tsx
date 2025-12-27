@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, useTransition } from "react";
-import { ExternalLink, X, Loader2, CheckCircle2, Send, Trash2, ChevronLeft, ChevronRight, Settings, ChevronDown, Plus, ArrowUp, MessageSquare } from "lucide-react";
+import { ExternalLink, X, Loader2, CheckCircle2, Send, Trash2, ChevronLeft, ChevronRight, Settings, ChevronDown, Plus, ArrowUp, MessageSquare, CheckSquare, Check, Circle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatTextarea } from "@/components/ui/chat-textarea";
 import PlaygroundLayout, { usePlaygroundTab, usePlaygroundSidebar, useRefreshUsage, useSetPlaygroundTab } from "@/components/playground-layout";
@@ -251,6 +251,12 @@ function PlaygroundContent() {
   const [leadsSortBy, setLeadsSortBy] = useState<"date-desc" | "date-asc" | "upvotes-desc" | "upvotes-asc" | "comments-desc" | "comments-asc" | "title-asc" | "title-desc">("date-desc");
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
+  const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
+  const [isBulkOperationsModalOpen, setIsBulkOperationsModalOpen] = useState(false);
+  const [bulkPersona, setBulkPersona] = useState<"Founder" | "User">("Founder");
+  const [bulkOperationStatus, setBulkOperationStatus] = useState<Record<string, "haven't started" | "generating" | "posting" | "completed" | "error">>({});
+  const [bulkGeneratedComments, setBulkGeneratedComments] = useState<Record<string, string>>({});
+  const [bulkModalLeads, setBulkModalLeads] = useState<Array<typeof distinctLeadsLinks[number]>>([]);
   const LEADS_ITEMS_PER_PAGE = 20;
 
   const analyticsUrlSet = useMemo(() => {
@@ -858,7 +864,7 @@ function PlaygroundContent() {
   const totalDiscoveryPages = Math.ceil(distinctLinks.length / DISCOVERY_ITEMS_PER_PAGE);
 
   // Fetch leads based on keywords
-  const fetchLeadsForKeyword = async (keyword: string, resultsPerQuery: number = 10) => {
+  const fetchLeadsForKeyword = async (keyword: string, resultsPerQuery: number = 20) => {
     setIsLoadingLeadsLinks((prev) => ({ ...prev, [keyword]: true }));
 
     // Create search query: site:reddit.com [keyword]
@@ -1059,7 +1065,7 @@ function PlaygroundContent() {
     try {
       // Fetch Reddit links for each keyword in parallel
       const linkPromises = keywords.map((keyword) => {
-        return fetchLeadsForKeyword(keyword, 10); // Top 10 results per keyword
+        return fetchLeadsForKeyword(keyword, 20); // Top 20 results per keyword
       });
 
       await Promise.all(linkPromises);
@@ -2703,19 +2709,19 @@ function PlaygroundContent() {
   };
 
   // Handler for Post button - post comment to Reddit and move to analytics
-  const handlePostClick = async (linkItem: { uniqueKey: string; query: string; title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }) => {
+  const handlePostClick = async (linkItem: { uniqueKey: string; query: string; title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }): Promise<boolean> => {
     const linkKey = linkItem.uniqueKey;
     const commentText = postTextareas[linkKey];
 
     // Validate required data
     if (!commentText || !commentText.trim()) {
       alert("Please generate or enter a comment before posting.");
-      return;
+      return false;
     }
 
     if (!linkItem.postData?.name) {
       alert("Invalid post data. Cannot post comment.");
-      return;
+      return false;
     }
 
     // Set posting state
@@ -2804,6 +2810,7 @@ function PlaygroundContent() {
 
       // Show success message
       showToast("Comment posted successfully.", { link: linkItem.link || null, variant: "success" });
+      return true;
     } catch (err) {
       console.error("Error posting comment:", err);
       const errorMessage = err instanceof Error ? err.message : "Failed to post comment to Reddit";
@@ -2833,6 +2840,7 @@ function PlaygroundContent() {
     } finally {
       setIsPosting((prev) => ({ ...prev, [linkKey]: false }));
     }
+    return false;
   };
 
   const handleBulkPostAll = async () => {
@@ -2859,6 +2867,142 @@ function PlaygroundContent() {
   // Handler for Generate Comment button
   const handleGenerateComment = async (linkItem: { uniqueKey: string; query: string; title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }, persona?: string) => {
     await generateCommentForLink(linkItem, { force: true, showAlerts: true, persona: persona || "Founder" });
+  };
+
+  // Handler for bulk commenting
+  const handleBulkComment = async () => {
+    if (selectedLeads.size === 0) {
+      showToast("No leads selected", { variant: "error" });
+      return;
+    }
+
+    // Use the stored modal leads (they persist even if filtered out from distinctLeadsLinks)
+    const selectedLeadItems = bulkModalLeads;
+    
+    // Initialize status for all selected leads
+    const initialStatus: Record<string, "haven't started" | "generating" | "posting" | "completed" | "error"> = {};
+    selectedLeadItems.forEach(item => {
+      initialStatus[item.uniqueKey] = "haven't started";
+    });
+    setBulkOperationStatus(initialStatus);
+
+    // Process all leads asynchronously in parallel
+    const ideaToUse = submittedProductIdea || currentProductIdea;
+    const dbLink = productDetailsFromDb?.link || website;
+    const dbProductDescription = productDetailsFromDb?.productDescription;
+    const productIdeaToUse = dbProductDescription || ideaToUse;
+    
+    if (!productIdeaToUse || !dbLink) {
+      showToast("Please enter your product details in the Product tab first.", { variant: "error" });
+      return;
+    }
+
+    const processLead = async (leadItem: typeof selectedLeadItems[number]) => {
+      const linkKey = leadItem.uniqueKey;
+      
+      try {
+        // Step 1: Generate comment
+        setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "generating" }));
+        
+        const postContent = leadItem.selftext || leadItem.snippet || leadItem.title || "";
+        if (!postContent) {
+          setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          return;
+        }
+
+        const response = await fetch("/api/openai/comment", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            productIdea: productIdeaToUse,
+            productLink: dbLink,
+            postContent: postContent,
+            persona: bulkPersona.toLowerCase(),
+            selftext: leadItem.selftext || undefined,
+          }),
+        });
+
+        if (!response.ok) {
+          setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          return;
+        }
+
+        const data = await response.json();
+        if (data.error || !data.comments || data.comments.length === 0) {
+          setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          return;
+        }
+
+        const generatedComment = data.comments.join("\n\n");
+        setBulkGeneratedComments(prev => ({ ...prev, [linkKey]: generatedComment }));
+
+        // Step 2: Post comment
+        setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "posting" }));
+
+        if (!leadItem.postData?.name) {
+          setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          return;
+        }
+
+        const postResponse = await fetch("/api/reddit/post-comment", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            thing_id: extractThingIdFromLink(leadItem.link || ""),
+            text: generatedComment.trim(),
+          }),
+        });
+
+        if (!postResponse.ok) {
+          setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          return;
+        }
+
+        // Save to MongoDB
+        try {
+          await fetch("/api/posts/create", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              status: "posted",
+              query: leadItem.query,
+              title: leadItem.title || null,
+              link: leadItem.link || null,
+              snippet: leadItem.snippet || null,
+              selftext: leadItem.selftext || null,
+              postData: leadItem.postData || null,
+              comment: generatedComment.trim(),
+              notes: generatedComment.trim(),
+            }),
+          });
+        } catch (dbError) {
+          console.error("Error saving post to database:", dbError);
+        }
+
+        // Mark as completed
+        setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "completed" }));
+        
+      } catch (error) {
+        console.error("Error processing lead:", error);
+        setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+      }
+    };
+
+    // Process all leads in parallel
+    await Promise.all(selectedLeadItems.map(leadItem => processLead(leadItem)));
+    
+    // Refresh analytics and usage once after all operations complete
+    await refreshAnalytics();
+    refreshUsage();
+    
+    // Clear selected leads after bulk operation completes
+    setSelectedLeads(new Set());
   };
 
   // Handler for Skip button
@@ -2938,11 +3082,11 @@ function PlaygroundContent() {
       // Don't fail the whole operation if DB save fails
     }
 
-    // Refresh analytics from database after closing
+    // Refresh analytics from database after closing to update the filter set
     await refreshAnalytics();
 
     if (isLeadsLink) {
-      // Remove from leadsLinks
+      // Remove from leadsLinks state and localStorage
       setLeadsLinks((prev) => {
         const updated = { ...prev };
         if (updated[linkItem.query]) {
@@ -2959,7 +3103,7 @@ function PlaygroundContent() {
         return updated;
       });
     } else {
-    // Remove from redditLinks
+      // Remove from redditLinks state and localStorage
     setRedditLinks((prev) => {
       const updated = { ...prev };
       if (updated[linkItem.query]) {
@@ -2977,6 +3121,9 @@ function PlaygroundContent() {
       delete updated[linkItem.uniqueKey];
       return updated;
     });
+
+    // Show success message
+    showToast("Lead removed and will not appear again", { variant: "success" });
   };
 
   const distinctLinksCount = distinctLinks.length;
@@ -3067,6 +3214,106 @@ function PlaygroundContent() {
     setIsPosting({});
     postTextareasRef.current = {};
     showToast("All posts have been cleared", { variant: "success" });
+  };
+
+  const handleAnalyticsPostSubmit = async () => {
+    if (!selectedAnalyticsPost) {
+      return;
+    }
+
+    const commentText = drawerComment.trim();
+
+    if (!commentText) {
+      showToast("Please enter a comment before posting.", { variant: "error" });
+      return;
+    }
+
+    let thingId = selectedAnalyticsPost.postData?.name || null;
+    if (!thingId && selectedAnalyticsPost.link) {
+      thingId = extractThingIdFromLink(selectedAnalyticsPost.link);
+    }
+
+    if (!thingId) {
+      showToast("Unable to determine the Reddit post ID.", { variant: "error" });
+      return;
+    }
+
+    setIsPostingFromAnalytics(true);
+
+    try {
+      const response = await fetch("/api/reddit/post-comment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          thing_id: thingId,
+          text: commentText,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to post comment to Reddit");
+      }
+
+      if (selectedAnalyticsPost.id) {
+        try {
+          const updateResponse = await fetch("/api/posts/update-status", {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              id: selectedAnalyticsPost.id,
+              status: "posted",
+              comment: commentText,
+            }),
+          });
+
+          if (!updateResponse.ok) {
+            const updateError = await updateResponse.json().catch(() => ({}));
+            console.error("Error updating analytics post status:", updateError);
+          }
+        } catch (updateError) {
+          console.error("Error updating analytics post status:", updateError);
+        }
+      } else {
+        try {
+          await fetch("/api/posts/create", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              status: "posted",
+              query: selectedAnalyticsPost.query,
+              title: selectedAnalyticsPost.title,
+              link: selectedAnalyticsPost.link,
+              snippet: selectedAnalyticsPost.snippet,
+              selftext: selectedAnalyticsPost.selftext,
+              postData: selectedAnalyticsPost.postData,
+              comment: commentText,
+            }),
+          });
+        } catch (createError) {
+          console.error("Error recording posted analytics entry:", createError);
+        }
+      }
+
+      showToast("Comment posted successfully.", {
+        link: selectedAnalyticsPost.link || null,
+        variant: "success",
+      });
+      closeAnalyticsDrawer();
+      await refreshAnalytics();
+    } catch (error) {
+      console.error("Error posting analytics comment:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to post comment to Reddit";
+      showToast(errorMessage, { variant: "error" });
+    } finally {
+      setIsPostingFromAnalytics(false);
+    }
   };
 
   const renderContent = () => {
@@ -4229,11 +4476,30 @@ function PlaygroundContent() {
                     Leads
                     </h3>
                     <div className="flex gap-2 self-start sm:self-auto">
+                      {selectedLeads.size > 0 && (
                         <Button
+                          variant="default"
+                          size="sm"
+                          className="bg-black text-white hover:bg-black/90"
+                        onClick={() => {
+                            // Store the selected lead items before opening modal
+                            const selectedLeadItems = distinctLeadsLinks.filter(link => selectedLeads.has(link.uniqueKey));
+                            setBulkModalLeads(selectedLeadItems);
+                            setIsBulkOperationsModalOpen(true);
+                            // Reset status when opening modal
+                            setBulkOperationStatus({});
+                            setBulkGeneratedComments({});
+                          }}
+                        >
+                          Bulk Operations
+                      </Button>
+                      )}
+                          <Button
                       onClick={handleLeadsSearch}
                       disabled={!keywords || keywords.length === 0 || isLoadingLeads}
-                          size="sm"
+                            size="sm"
                       variant={distinctLeadsLinks.length > 0 ? "outline" : "default"}
+                      className="w-[140px]"
                     >
                       {isLoadingLeads ? (
                         <>
@@ -4243,7 +4509,7 @@ function PlaygroundContent() {
                       ) : (
                         "Refresh Leads"
                       )}
-                      </Button>
+                          </Button>
                       {distinctLeadsLinks.length > 0 && (
                         <div className="relative" ref={sortDropdownRef}>
                           <Button
@@ -4383,6 +4649,28 @@ function PlaygroundContent() {
                           <table className="w-full border-collapse table-fixed">
                             <thead className="sticky top-0 z-20">
                               <tr className="border-b border-border bg-muted/50">
+                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[40px]">
+                                  <div
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const isChecked = paginatedLeadsLinks.length > 0 && selectedLeads.size > 0 && selectedLeads.size === paginatedLeadsLinks.length;
+                                      if (isChecked) {
+                                        setSelectedLeads(new Set());
+                                      } else {
+                                        setSelectedLeads(new Set(paginatedLeadsLinks.map(item => item.uniqueKey)));
+                                      }
+                                    }}
+                                    className={cn(
+                                      "cursor-pointer h-4 w-4 rounded border border-border bg-white flex items-center justify-center transition-colors",
+                                      "focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-0",
+                                      paginatedLeadsLinks.length > 0 && selectedLeads.size > 0 && selectedLeads.size === paginatedLeadsLinks.length && "bg-white border-primary"
+                                    )}
+                                  >
+                                    {paginatedLeadsLinks.length > 0 && selectedLeads.size > 0 && selectedLeads.size === paginatedLeadsLinks.length && (
+                                      <Check className="h-3 w-3 text-primary" />
+                                    )}
+                                  </div>
+                                </th>
                                 <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[70px]">Stats</th>
                                 <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[250px]">Title</th>
                                 <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[120px]">Subreddit</th>
@@ -4419,6 +4707,32 @@ function PlaygroundContent() {
                                     setIsDiscoveryDrawerVisible(true);
                                   }}
                                 >
+                                    {/* Checkbox column */}
+                                    <td className="py-3 px-2 align-middle w-[40px]" onClick={(e) => e.stopPropagation()}>
+                                      <div
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedLeads(prev => {
+                                            const newSet = new Set(prev);
+                                            if (selectedLeads.has(linkKey)) {
+                                              newSet.delete(linkKey);
+                                            } else {
+                                              newSet.add(linkKey);
+                                            }
+                                            return newSet;
+                                          });
+                                        }}
+                                        className={cn(
+                                          "cursor-pointer h-4 w-4 rounded border border-border bg-white flex items-center justify-center transition-colors",
+                                          "focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-0",
+                                          selectedLeads.has(linkKey) && "bg-white border-primary"
+                                        )}
+                                      >
+                                        {selectedLeads.has(linkKey) && (
+                                          <Check className="h-3 w-3 text-primary" />
+                                        )}
+                                  </div>
+                                  </td>
                                     {/* Stats column */}
                                     <td className="py-3 px-2 align-middle w-[70px]">
                                       {link.postData ? (
@@ -4430,7 +4744,7 @@ function PlaygroundContent() {
                                                 ? `${(link.postData.ups / 1000).toFixed(1)}k`
                                                 : (link.postData.ups || 0)}
                                             </span>
-                                          </div>
+                                  </div>
                                           <div className="flex items-center gap-1.5">
                                             <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
                                             <span className="font-medium text-foreground">
@@ -4438,18 +4752,18 @@ function PlaygroundContent() {
                                                 ? `${(link.postData.num_comments / 1000).toFixed(1)}k`
                                                 : (link.postData.num_comments || 0)}
                                             </span>
-                                          </div>
+                                    </div>
                                         </div>
                                       ) : (
                                         <div className="text-xs text-muted-foreground">-</div>
-                                      )}
-                                    </td>
-
+                                )}
+                                  </td>
+                                  
                                   {/* Title column */}
                                     <td className="py-3 px-2 align-middle w-[250px]">
                                       <div className="text-sm font-medium text-foreground truncate" title={link.title || undefined}>
                                         {link.title?.replace(/\s*\[r\/[^\]]+\]\s*$/i, '').replace(/\s*\(r\/[^)]+\)\s*$/i, '').replace(/\s*r\/[^\s]+\s*$/i, '').replace(/:\s*$/, '').trim() || link.title}
-                                  </div>
+                                        </div>
                                   </td>
                                   
                                     {/* Subreddit column */}
@@ -4457,8 +4771,8 @@ function PlaygroundContent() {
                                       {subreddit ? (
                                         <div className="text-xs text-muted-foreground">
                                           r/{subreddit}
-                                  </div>
-                                ) : (
+                                      </div>
+                                    ) : (
                                         <div className="text-xs text-muted-foreground">-</div>
                                 )}
                                   </td>
@@ -4468,18 +4782,18 @@ function PlaygroundContent() {
                                       {link.postData?.created_utc ? (
                                         <div className="text-xs text-muted-foreground">
                                           {formatTimeAgo(link.postData.created_utc)}
-                                      </div>
+                                </div>
                                     ) : (
                                         <div className="text-xs text-muted-foreground">-</div>
-                                      )}
-                                    </td>
-
-                                    {/* Actions column */}
+                                    )}
+                                  </td>
+                                  
+                                  {/* Actions column */}
                                     <td className="py-3 px-2 align-middle w-[80px]">
                                       <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
                                         {link.link && (
-                                  <Button
-                                    size="sm"
+                                    <Button
+                                      size="sm"
                                             variant="outline"
                                             className="text-xs p-1.5 h-7 w-7"
                                             onClick={(e) => {
@@ -4489,7 +4803,7 @@ function PlaygroundContent() {
                                             title="Visit link"
                                   >
                                             <ExternalLink className="h-3 w-3" />
-                                  </Button>
+                                      </Button>
                                         )}
                                       <Button
                                         size="sm"
@@ -4692,106 +5006,6 @@ function PlaygroundContent() {
         );
       default:
         return null;
-    }
-  };
-
-  const handleAnalyticsPostSubmit = async () => {
-    if (!selectedAnalyticsPost) {
-      return;
-    }
-
-    const commentText = drawerComment.trim();
-
-    if (!commentText) {
-      showToast("Please enter a comment before posting.", { variant: "error" });
-      return;
-    }
-
-    let thingId = selectedAnalyticsPost.postData?.name || null;
-    if (!thingId && selectedAnalyticsPost.link) {
-      thingId = extractThingIdFromLink(selectedAnalyticsPost.link);
-    }
-
-    if (!thingId) {
-      showToast("Unable to determine the Reddit post ID.", { variant: "error" });
-      return;
-    }
-
-    setIsPostingFromAnalytics(true);
-
-    try {
-      const response = await fetch("/api/reddit/post-comment", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          thing_id: thingId,
-          text: commentText,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to post comment to Reddit");
-      }
-
-      if (selectedAnalyticsPost.id) {
-        try {
-          const updateResponse = await fetch("/api/posts/update-status", {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              id: selectedAnalyticsPost.id,
-              status: "posted",
-              comment: commentText,
-            }),
-          });
-
-          if (!updateResponse.ok) {
-            const updateError = await updateResponse.json().catch(() => ({}));
-            console.error("Error updating analytics post status:", updateError);
-          }
-        } catch (updateError) {
-          console.error("Error updating analytics post status:", updateError);
-        }
-      } else {
-        try {
-          await fetch("/api/posts/create", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              status: "posted",
-              query: selectedAnalyticsPost.query,
-              title: selectedAnalyticsPost.title,
-              link: selectedAnalyticsPost.link,
-              snippet: selectedAnalyticsPost.snippet,
-              selftext: selectedAnalyticsPost.selftext,
-              postData: selectedAnalyticsPost.postData,
-              comment: commentText,
-            }),
-          });
-        } catch (createError) {
-          console.error("Error recording posted analytics entry:", createError);
-        }
-      }
-
-      showToast("Comment posted successfully.", {
-        link: selectedAnalyticsPost.link || null,
-        variant: "success",
-      });
-      closeAnalyticsDrawer();
-      await refreshAnalytics();
-    } catch (error) {
-      console.error("Error posting analytics comment:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to post comment to Reddit";
-      showToast(errorMessage, { variant: "error" });
-    } finally {
-      setIsPostingFromAnalytics(false);
     }
   };
 
@@ -5050,8 +5264,11 @@ function PlaygroundContent() {
                 <Button
                   variant="default"
                   size="sm"
-                  onClick={() => {
-                    handlePostClick(selectedDiscoveryPost);
+                  onClick={async () => {
+                    const success = await handlePostClick(selectedDiscoveryPost);
+                    if (success) {
+                    setIsDiscoveryDrawerVisible(false);
+                    }
                   }}
                   disabled={isPosting[selectedDiscoveryPost.uniqueKey] || !postTextareas[selectedDiscoveryPost.uniqueKey]?.trim()}
                 >
@@ -5139,6 +5356,136 @@ function PlaygroundContent() {
                   onClick={() => setIsDiscoverySettingsModalOpen(false)}
                 >
                   Apply
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+      {isBulkOperationsModalOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-background/40 backdrop-blur-sm"
+            onClick={() => setIsBulkOperationsModalOpen(false)}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="w-full max-w-2xl rounded-lg border border-border bg-card shadow-lg">
+              <div className="border-b border-border px-6 py-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-foreground">
+                  Bulk Commenting <span className="text-sm text-muted-foreground font-normal">({selectedLeads.size} selected)</span>
+                </h3>
+                <button
+                  onClick={() => setIsBulkOperationsModalOpen(false)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Close modal"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="px-6 py-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-foreground">
+                    Post as:
+                  </label>
+                  <div className="flex items-center gap-1 border border-border rounded-md p-1">
+                    <button
+                      type="button"
+                      onClick={() => setBulkPersona("Founder")}
+                      className={cn(
+                        "px-3 py-1 text-xs font-medium rounded transition-colors",
+                        bulkPersona === "Founder"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      Founder
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBulkPersona("User")}
+                      className={cn(
+                        "px-3 py-1 text-xs font-medium rounded transition-colors",
+                        bulkPersona === "User"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      User
+                    </button>
+                  </div>
+                </div>
+                {/* Scrollable list of selected leads */}
+                <div className="max-h-[300px] overflow-y-auto border border-border rounded-md">
+                  {/* Header */}
+                  <div className="sticky top-0 bg-muted/50 border-b border-border px-3 py-2 flex items-center justify-between">
+                    <div className="flex-1 min-w-0 pr-3">
+                      <p className="text-xs font-semibold text-foreground">Title</p>
+                    </div>
+                    <div className="shrink-0 w-[80px] flex justify-center">
+                      <p className="text-xs font-semibold text-foreground text-left">Status</p>
+                    </div>
+                    <div className="shrink-0 w-[60px] text-center">
+                      <p className="text-xs font-semibold text-foreground">Link</p>
+                    </div>
+                  </div>
+                  <div className="divide-y divide-border">
+                    {bulkModalLeads.map((leadItem) => {
+                        const status = bulkOperationStatus[leadItem.uniqueKey] || "haven't started";
+                        const cleanedTitle = (leadItem.title || "")
+                          .replace(/\[r\/[^\]]+\]/gi, '')
+                          .replace(/\(r\/[^)]+\)/gi, '')
+                          .replace(/r\/[^\s]+/gi, '')
+                          .replace(/:\s*$/, '')
+                          .trim();
+                        
+                        return (
+                          <div key={leadItem.uniqueKey} className="flex items-center justify-between px-3 h-12">
+                            <div className="flex-1 min-w-0 pr-3">
+                              <p className="text-xs font-medium text-foreground truncate" title={cleanedTitle}>
+                                {cleanedTitle || "Untitled"}
+                              </p>
+                            </div>
+                            <div className="shrink-0 w-[80px] flex justify-center">
+                              <div className="text-left">
+                                {status === "generating" || status === "posting" ? (
+                                  <Loader2 className="h-4 w-4 animate-spin text-primary inline-block" />
+                                ) : status === "completed" ? (
+                                  <CheckCircle2 className="h-4 w-4 text-green-500 inline-block" />
+                                ) : status === "error" ? (
+                                  <X className="h-4 w-4 text-red-500 inline-block" />
+                                ) : status === "haven't started" ? (
+                                  <Circle className="h-4 w-4 text-muted-foreground inline-block" />
+                                ) : (
+                                  <div className="h-4 w-4 inline-block" />
+                                )}
+                              </div>
+                            </div>
+                            <div className="shrink-0 w-[60px] text-center">
+                              {leadItem.link ? (
+                                <button
+                                  onClick={() => window.open(leadItem.link || '', '_blank')}
+                                  className="hover:scale-110 transition-transform cursor-pointer text-muted-foreground hover:text-foreground"
+                                  title="Open link"
+                                >
+                                  <ExternalLink className="h-4 w-4" />
+                                </button>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
+                <Button
+                  variant="default"
+                  onClick={handleBulkComment}
+                  disabled={Object.values(bulkOperationStatus).some(status => status === "generating" || status === "posting")}
+                >
+                  Post Comment
                 </Button>
               </div>
             </div>

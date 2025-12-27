@@ -15,24 +15,35 @@ async function fetchGoogleCustomSearch(
   resultsPerQuery: number = 7
 ): Promise<customsearch_v1.Schema$Search[]> {
   // Google Custom Search API allows max 10 results per request
-  // We fetch top results per query (default 7) for better coverage
-  const num = Math.min(resultsPerQuery, 10); // Cap at 10 (Google's max per request)
-  console.log("QQQQQQQQQ ", query);
-  const response = await customsearch.cse.list({
-    auth: process.env.GCS_KEY,
-    cx: "c691f007075074afc",
-    q: query,
-    num: num,
-    start: 1, // Always start from the first result (top results)
-    dateRestrict: "w1", // Limit results to past week
-  });
+  // To get more than 10 results, we need to make multiple requests
+  const maxPerRequest = 10;
+  const totalResults = Math.min(resultsPerQuery, 20); // Cap at 20
+  const requestsNeeded = Math.ceil(totalResults / maxPerRequest);
+  
+  const allResults: customsearch_v1.Schema$Search[] = [];
+  
+  for (let i = 0; i < requestsNeeded; i++) {
+    const startIndex = i * maxPerRequest + 1;
+    const numResults = Math.min(maxPerRequest, totalResults - (i * maxPerRequest));
+        
+    const response = await customsearch.cse.list({
+      auth: process.env.GCS_KEY,
+      cx: "c691f007075074afc",
+      q: query,
+      num: numResults,
+      start: startIndex,
+      dateRestrict: "w1", // Limit results to past week
+    });
 
-  const results = response.data;
-  if (!results) {
-    throw new Error("No data returned from Google Custom Search");
+    const results = response.data;
+    if (!results) {
+      throw new Error("No data returned from Google Custom Search");
+    }
+    
+    allResults.push(results);
   }
 
-  return [results]; // Return as array for consistency with previous implementation
+  return allResults;
 }
 
 type RedditSearchResult = {

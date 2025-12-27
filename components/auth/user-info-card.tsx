@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
-import { LogOut, MoreVertical, Trash2, Loader2, X, AlertTriangle, CreditCard } from "lucide-react";
+import { LogOut, MoreVertical, Trash2, Loader2, X, AlertTriangle, CreditCard, MessageSquare, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState, useRef, useEffect } from "react";
@@ -200,6 +200,24 @@ export function UserInfoCard() {
                     variant="ghost"
                     size="sm"
                     className="w-full justify-start gap-2 text-xs"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      if (isInPlayground) {
+                        setActiveTab("feedback");
+                      } else {
+                        router.push("/playground?tab=feedback");
+                      }
+                    }}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    Feedback
+                  </Button>
+                </div>
+                <div className="p-1 border-t border-border">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2 text-xs"
                     onClick={handleReconnectReddit}
                     disabled={isReconnectingReddit}
                   >
@@ -209,7 +227,10 @@ export function UserInfoCard() {
                         Reconnecting Reddit...
                       </>
                     ) : (
-                      <>Reconnect Reddit</>
+                      <>
+                        <Link2 className="h-4 w-4" />
+                        Reconnect Reddit
+                      </>
                     )}
                   </Button>
                 </div>
