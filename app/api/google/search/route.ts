@@ -17,14 +17,14 @@ async function fetchGoogleCustomSearch(
   // Google Custom Search API allows max 10 results per request
   // We fetch top results per query (default 7) for better coverage
   const num = Math.min(resultsPerQuery, 10); // Cap at 10 (Google's max per request)
-  
+  console.log("QQQQQQQQQ ", query);
   const response = await customsearch.cse.list({
     auth: process.env.GCS_KEY,
     cx: "c691f007075074afc",
     q: query,
     num: num,
     start: 1, // Always start from the first result (top results)
-    dateRestrict: "m1", // Limit results to past month (this month)
+    dateRestrict: "w1", // Limit results to past week
   });
 
   const results = response.data;

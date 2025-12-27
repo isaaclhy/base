@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   Plus,
+  Users,
 } from "lucide-react";
 import { UserInfoCard } from "@/components/auth/user-info-card";
 import { UsageProgress } from "@/components/usage/usage-progress";
@@ -22,7 +23,7 @@ interface PlaygroundLayoutProps {
   children: React.ReactNode;
 }
 
-type TabId = "product" | "dashboard" | "analytics" | "feedback" | "pricing" | "create";
+type TabId = "product" | "dashboard" | "analytics" | "feedback" | "pricing" | "create" | "leads";
 
 const PlaygroundTabContext = createContext<{
   activeTab: TabId;
@@ -30,7 +31,7 @@ const PlaygroundTabContext = createContext<{
   sidebarOpen: boolean;
   refreshUsage: () => void;
 }>({
-  activeTab: "dashboard",
+  activeTab: "leads",
   setActiveTab: () => {},
   sidebarOpen: true,
   refreshUsage: () => {},
@@ -64,7 +65,8 @@ interface Tab {
 
 const tabs: Tab[] = [
   { id: "product", label: "Product", icon: Package },
-  { id: "dashboard", label: "Discovery", icon: LayoutDashboard },
+  // { id: "dashboard", label: "Discovery", icon: LayoutDashboard },
+  { id: "leads", label: "Leads", icon: Users },
   { id: "create", label: "Create", icon: Plus },
   { id: "analytics", label: "History", icon: BarChart3 },
   { id: "feedback", label: "Feedback", icon: MessageSquare },
@@ -72,7 +74,7 @@ const tabs: Tab[] = [
 ];
 
 export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
-  const [activeTab, setActiveTab] = useState<TabId>("dashboard");
+  const [activeTab, setActiveTab] = useState<TabId>("leads");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
 

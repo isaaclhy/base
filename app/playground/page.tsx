@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, useTransition } from "react";
-import { ExternalLink, X, Loader2, CheckCircle2, Send, Trash2, ChevronLeft, ChevronRight, Settings, ChevronDown } from "lucide-react";
+import { ExternalLink, X, Loader2, CheckCircle2, Send, Trash2, ChevronLeft, ChevronRight, Settings, ChevronDown, Plus, ArrowUp, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatTextarea } from "@/components/ui/chat-textarea";
 import PlaygroundLayout, { usePlaygroundTab, usePlaygroundSidebar, useRefreshUsage, useSetPlaygroundTab } from "@/components/playground-layout";
@@ -139,6 +139,8 @@ function PlaygroundContent() {
   const refreshUsage = useRefreshUsage();
   const [website, setWebsite] = useState("");
   const [productDescription, setProductDescription] = useState("");
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [keywordInput, setKeywordInput] = useState("");
   const [callToAction, setCallToAction] = useState("");
   const [persona, setPersona] = useState("");
   const [postCount, setPostCount] = useState<number>(50);
@@ -234,13 +236,22 @@ function PlaygroundContent() {
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [selectedDiscoveryPost, setSelectedDiscoveryPost] = useState<typeof distinctLinks[0] | null>(null);
   const [isDiscoveryDrawerVisible, setIsDiscoveryDrawerVisible] = useState(false);
+  const [drawerPersona, setDrawerPersona] = useState<"Founder" | "User">("Founder");
   const [discoveryPage, setDiscoveryPage] = useState(1);
   const DISCOVERY_ITEMS_PER_PAGE = 20;
   const [isSavingProductDetails, setIsSavingProductDetails] = useState(false);
   const [isLoadingProductDetails, setIsLoadingProductDetails] = useState(false);
   const [isGeneratingProductDescription, setIsGeneratingProductDescription] = useState(false);
-  const [productDetailsFromDb, setProductDetailsFromDb] = useState<{ link?: string; productDescription?: string } | null>(null);
+  const [productDetailsFromDb, setProductDetailsFromDb] = useState<{ link?: string; productDescription?: string; keywords?: string } | null>(null);
   const [userPlan, setUserPlan] = useState<"free" | "premium" | null>(null);
+  const [leadsLinks, setLeadsLinks] = useState<Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>>>({});
+  const [isLoadingLeads, setIsLoadingLeads] = useState(false);
+  const [isLoadingLeadsLinks, setIsLoadingLeadsLinks] = useState<Record<string, boolean>>({});
+  const [leadsPage, setLeadsPage] = useState(1);
+  const [leadsSortBy, setLeadsSortBy] = useState<"date-desc" | "date-asc" | "upvotes-desc" | "upvotes-asc" | "comments-desc" | "comments-asc" | "title-asc" | "title-desc">("date-desc");
+  const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
+  const sortDropdownRef = useRef<HTMLDivElement>(null);
+  const LEADS_ITEMS_PER_PAGE = 20;
 
   const analyticsUrlSet = useMemo(() => {
     const set = new Set<string>();
@@ -346,6 +357,18 @@ function PlaygroundContent() {
               if (data.productDetails.productDescription) {
                 setProductDescription(data.productDetails.productDescription);
               }
+              // Load keywords from the keywords field (array) or fallback to productDetails.keywords (legacy)
+              if (data.keywords && Array.isArray(data.keywords)) {
+                setKeywords(data.keywords);
+              } else if (data.productDetails?.keywords) {
+                // Legacy: If keywords is a string, split by comma; if array, use as is
+                const keywordsArray = typeof data.productDetails.keywords === 'string'
+                  ? data.productDetails.keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k)
+                  : Array.isArray(data.productDetails.keywords)
+                    ? data.productDetails.keywords
+                    : [];
+                setKeywords(keywordsArray);
+              }
             } else {
               setProductDetailsFromDb(null);
             }
@@ -380,7 +403,7 @@ function PlaygroundContent() {
           setUserPlan((session?.user?.plan as "free" | "premium") || "free");
         }
       };
-      
+
       loadUserPlan();
     } else {
       setUserPlan(null);
@@ -404,6 +427,18 @@ function PlaygroundContent() {
               if (data.productDetails.productDescription) {
                 setProductDescription(data.productDetails.productDescription);
               }
+              // Load keywords from the keywords field (array) or fallback to productDetails.keywords (legacy)
+              if (data.keywords && Array.isArray(data.keywords)) {
+                setKeywords(data.keywords);
+              } else if (data.productDetails?.keywords) {
+                // Legacy: If keywords is a string, split by comma; if array, use as is
+                const keywordsArray = typeof data.productDetails.keywords === 'string'
+                  ? data.productDetails.keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k)
+                  : Array.isArray(data.productDetails.keywords)
+                    ? data.productDetails.keywords
+                    : [];
+                setKeywords(keywordsArray);
+              }
             }
           }
         } catch (error) {
@@ -420,6 +455,23 @@ function PlaygroundContent() {
   useEffect(() => {
     setAnalyticsPage(1);
   }, [analyticsFilter]);
+
+  // Close sort dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sortDropdownRef.current && !sortDropdownRef.current.contains(event.target as Node)) {
+        setIsSortDropdownOpen(false);
+      }
+    };
+
+    if (isSortDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isSortDropdownOpen]);
 
   // Load previous ideas from localStorage on mount
   useEffect(() => {
@@ -501,6 +553,17 @@ function PlaygroundContent() {
         console.error("Failed to parse saved queries:", e);
       }
     }
+
+    // Load saved leads links
+    const savedLeadsLinks = localStorage.getItem("leadsLinks");
+    if (savedLeadsLinks) {
+      try {
+        const leads = JSON.parse(savedLeadsLinks);
+        setLeadsLinks(leads);
+      } catch (e) {
+        console.error("Failed to parse saved leads links:", e);
+      }
+    }
     
     // Analytics posts will be loaded from MongoDB via useEffect
   }, []);
@@ -579,9 +642,9 @@ function PlaygroundContent() {
         selftext?: string | null;
         postData?: RedditPost | null;
       },
-      options?: { force?: boolean; showAlerts?: boolean }
+      options?: { force?: boolean; showAlerts?: boolean; persona?: string }
     ) => {
-      const { force = false, showAlerts = false } = options || {};
+      const { force = false, showAlerts = false, persona } = options || {};
       const linkKey = linkItem.uniqueKey;
       const ideaToUse = submittedProductIdea || currentProductIdea;
 
@@ -642,6 +705,8 @@ function PlaygroundContent() {
             productIdea: productIdeaToUse, // Use database productDescription
             productLink: dbLink, // Use database link
             postContent: postContent,
+            persona: persona ? persona.toLowerCase() : "founder", // Convert to lowercase for API
+            selftext: linkItem.selftext || undefined,
           }),
         });
 
@@ -791,6 +856,338 @@ function PlaygroundContent() {
   }, [distinctLinks, discoveryPage]);
 
   const totalDiscoveryPages = Math.ceil(distinctLinks.length / DISCOVERY_ITEMS_PER_PAGE);
+
+  // Fetch leads based on keywords
+  const fetchLeadsForKeyword = async (keyword: string, resultsPerQuery: number = 10) => {
+    setIsLoadingLeadsLinks((prev) => ({ ...prev, [keyword]: true }));
+
+    // Create search query: site:reddit.com [keyword]
+    const searchQuery = `${keyword}`;
+
+    try {
+      const response = await fetch("/api/google/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          searchQuery: searchQuery,
+          resultsPerQuery: resultsPerQuery,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to fetch Reddit links");
+      }
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      if (data.results && Array.isArray(data.results)) {
+        // Log keyword and all results found
+        console.log(`[KEYWORD SEARCH] Keyword: "${keyword}" | Results found: ${data.results.length}`);
+        console.log(`[KEYWORD RESULTS] Keyword: "${keyword}" | Results:`, data.results);
+
+        // Read current leads state
+        let currentLeadsState: Record<string, Array<any>> = {};
+        try {
+          const saved = localStorage.getItem("leadsLinks");
+          if (saved) {
+            currentLeadsState = JSON.parse(saved);
+          }
+        } catch (e) {
+          console.error("Error reading from localStorage in fetchLeadsForKeyword:", e);
+        }
+
+        // Merge new results with existing results for this keyword, avoiding duplicates
+        const existingLinksForKeyword = currentLeadsState[keyword] || [];
+        const existingLinkUrls = new Set(existingLinksForKeyword.map((link: any) => link.link).filter(Boolean));
+
+        // Only add new links that don't already exist (by URL)
+        const newLinks = data.results.filter((link: any) => link.link && !existingLinkUrls.has(link.link));
+
+        // Log each lead with its keyword
+        newLinks.forEach((link: any) => {
+          console.log(`[LEAD] Keyword: "${keyword}" | Title: "${link.title || 'N/A'}" | URL: ${link.link}`);
+        });
+
+        const mergedLinksForKeyword = [...existingLinksForKeyword, ...newLinks];
+
+        const updated = {
+          ...currentLeadsState,
+          [keyword]: mergedLinksForKeyword,
+        };
+
+        // Save to localStorage
+        try {
+          localStorage.setItem("leadsLinks", JSON.stringify(updated));
+        } catch (e) {
+          console.error("Error saving leadsLinks to localStorage:", e);
+        }
+
+        setLeadsLinks(updated);
+
+        // Log summary for this keyword
+        console.log(`[LEAD SUMMARY] Keyword: "${keyword}" | Total leads found: ${mergedLinksForKeyword.length} | New leads: ${newLinks.length}`);
+      }
+    } catch (err) {
+      console.error(`Error fetching leads for keyword "${keyword}":`, err);
+    } finally {
+      setIsLoadingLeadsLinks((prev) => ({ ...prev, [keyword]: false }));
+    }
+  };
+
+  // Batch fetch post content for leads
+  const batchFetchLeadsPostContent = async () => {
+    let currentState: Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>> = {};
+
+    try {
+      const saved = localStorage.getItem("leadsLinks");
+      if (saved) {
+        currentState = JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error("Error reading leadsLinks from localStorage:", e);
+      currentState = leadsLinks;
+    }
+
+    const allPostsNeedingFetch: Array<{ url: string; keyword: string; linkIndex: number; postFullname: string }> = [];
+
+    // Collect all posts that need fetching
+    Object.entries(currentState).forEach(([keyword, links]) => {
+      links.forEach((link, index) => {
+        if (link.link && !link.selftext && !link.postData) {
+          const urlMatch = link.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
+          if (urlMatch) {
+            const [, , postId] = urlMatch;
+            const postFullname = `t3_${postId}`;
+            allPostsNeedingFetch.push({ url: link.link, keyword, linkIndex: index, postFullname });
+            setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [link.link!]: true }));
+          }
+        }
+      });
+    });
+
+    if (allPostsNeedingFetch.length === 0) {
+      return;
+    }
+
+    // Fetch posts in batches
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < allPostsNeedingFetch.length; i += BATCH_SIZE) {
+      const batch = allPostsNeedingFetch.slice(i, i + BATCH_SIZE);
+
+      await Promise.all(
+        batch.map(async ({ url, keyword, linkIndex }) => {
+          try {
+            // Check cache first
+            const cached = getCachedPost(url);
+            if (cached && (cached.selftext || cached.postData)) {
+              // Update from cache
+              setLeadsLinks((prev) => {
+                const updated = { ...prev };
+                if (updated[keyword] && updated[keyword][linkIndex]) {
+                  updated[keyword][linkIndex] = {
+                    ...updated[keyword][linkIndex],
+                    selftext: cached.selftext,
+                    postData: cached.postData,
+                  };
+                }
+                try {
+                  localStorage.setItem("leadsLinks", JSON.stringify(updated));
+                } catch (e) {
+                  console.error("Error saving leadsLinks to localStorage:", e);
+                }
+                return updated;
+              });
+              setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [url]: false }));
+              return;
+            }
+
+            // Fetch from API
+            const redditResponse = await fetch(`/api/reddit?url=${encodeURIComponent(url)}`);
+            if (redditResponse.ok) {
+              const redditData = await redditResponse.json();
+              const post: RedditPost = redditData.post;
+
+              // Cache the post
+              cachePost(url, { selftext: post.selftext || null, postData: post });
+
+              // Update state
+              setLeadsLinks((prev) => {
+                const updated = { ...prev };
+                if (updated[keyword] && updated[keyword][linkIndex]) {
+                  updated[keyword][linkIndex] = {
+                    ...updated[keyword][linkIndex],
+                    selftext: post.selftext || null,
+                    postData: post,
+                  };
+                }
+                try {
+                  localStorage.setItem("leadsLinks", JSON.stringify(updated));
+                } catch (e) {
+                  console.error("Error saving leadsLinks to localStorage:", e);
+                }
+                return updated;
+              });
+            }
+          } catch (error) {
+            console.error(`Error fetching post content for ${url}:`, error);
+          } finally {
+            setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [url]: false }));
+          }
+        })
+      );
+    }
+  };
+
+  // Handle leads search
+  const handleLeadsSearch = async () => {
+    if (!keywords || keywords.length === 0) {
+      showToast("Please add keywords in the Product tab first", { variant: "error" });
+      setActiveTab("product");
+      return;
+    }
+
+    setIsLoadingLeads(true);
+    setLeadsPage(1);
+
+    try {
+      // Fetch Reddit links for each keyword in parallel
+      const linkPromises = keywords.map((keyword) => {
+        return fetchLeadsForKeyword(keyword, 10); // Top 10 results per keyword
+      });
+
+      await Promise.all(linkPromises);
+
+      // Small delay to ensure all links are saved
+      setTimeout(async () => {
+        await batchFetchLeadsPostContent();
+        setIsLoadingLeads(false);
+      }, 500);
+    } catch (error) {
+      console.error("Error fetching leads:", error);
+      setIsLoadingLeads(false);
+      showToast("Error fetching leads. Please try again.", { variant: "error" });
+    }
+  };
+
+  // Compute distinct leads links (similar to distinctLinks)
+  const distinctLeadsLinks = useMemo(() => {
+    let globalIndex = 0;
+    const allLinksWithKeyword = Object.entries(leadsLinks)
+      .reverse()
+      .flatMap(([keyword, links]) =>
+        [...links].reverse().map((link, linkIndex) => {
+          const uniqueKey = `leads-${keyword}-${link.link || "no-link"}-${linkIndex}-${globalIndex}`;
+          const item = {
+            ...link,
+            query: keyword,
+            linkIndex,
+            uniqueKey,
+            order: globalIndex,
+          } as typeof link & {
+            query: string;
+            linkIndex: number;
+            uniqueKey: string;
+            order: number;
+          };
+          globalIndex += 1;
+          return item;
+        })
+      );
+
+    const sortedLinks = [...allLinksWithKeyword].sort((a, b) => {
+      if (leadsSortBy === "date-desc" || leadsSortBy === "date-asc") {
+        const timeA =
+          typeof a.postData?.created_utc === "number"
+            ? a.postData.created_utc
+            : -Infinity;
+        const timeB =
+          typeof b.postData?.created_utc === "number"
+            ? b.postData.created_utc
+            : -Infinity;
+        if (timeA !== timeB) {
+          return leadsSortBy === "date-desc" ? timeB - timeA : timeA - timeB;
+        }
+        return a.order - b.order;
+      } else if (leadsSortBy === "upvotes-desc" || leadsSortBy === "upvotes-asc") {
+        const upvotesA = a.postData?.ups || 0;
+        const upvotesB = b.postData?.ups || 0;
+        if (upvotesA !== upvotesB) {
+          return leadsSortBy === "upvotes-desc" ? upvotesB - upvotesA : upvotesA - upvotesB;
+        }
+        return a.order - b.order;
+      } else if (leadsSortBy === "comments-desc" || leadsSortBy === "comments-asc") {
+        const commentsA = a.postData?.num_comments || 0;
+        const commentsB = b.postData?.num_comments || 0;
+        if (commentsA !== commentsB) {
+          return leadsSortBy === "comments-desc" ? commentsB - commentsA : commentsA - commentsB;
+        }
+        return a.order - b.order;
+      } else if (leadsSortBy === "title-asc" || leadsSortBy === "title-desc") {
+        const titleA = (a.title || "").toLowerCase();
+        const titleB = (b.title || "").toLowerCase();
+        if (titleA !== titleB) {
+          return leadsSortBy === "title-asc" 
+            ? titleA.localeCompare(titleB)
+            : titleB.localeCompare(titleA);
+        }
+        return a.order - b.order;
+      }
+      return a.order - b.order;
+    });
+
+    const seenUrls = new Set<string>();
+    const results: Array<(typeof sortedLinks)[number]> = [];
+
+    for (const linkItem of sortedLinks) {
+      if (!linkItem.link) {
+        continue;
+      }
+
+      const normalizedUrl = normalizeUrl(linkItem.link);
+      if (analyticsUrlSet.has(normalizedUrl)) {
+        continue;
+      }
+
+      if (seenUrls.has(normalizedUrl)) {
+        continue;
+      }
+
+      seenUrls.add(normalizedUrl);
+
+      // Log which keyword this lead came from when adding to results
+      console.log(`[LEAD DISPLAY] Keyword: "${linkItem.query}" | Title: "${linkItem.title || 'N/A'}" | URL: ${linkItem.link}`);
+
+      results.push(linkItem);
+    }
+
+    return results;
+  }, [leadsLinks, analyticsUrlSet, leadsSortBy]);
+
+  // Paginated leads links
+  const paginatedLeadsLinks = useMemo(() => {
+    const startIndex = (leadsPage - 1) * LEADS_ITEMS_PER_PAGE;
+    const endIndex = startIndex + LEADS_ITEMS_PER_PAGE;
+    return distinctLeadsLinks.slice(startIndex, endIndex);
+  }, [distinctLeadsLinks, leadsPage]);
+
+  const totalLeadsPages = Math.ceil(distinctLeadsLinks.length / LEADS_ITEMS_PER_PAGE);
+
+  // Reset to page 1 when distinctLeadsLinks changes
+  useEffect(() => {
+    if (distinctLeadsLinks.length > 0) {
+      const maxPage = Math.ceil(distinctLeadsLinks.length / LEADS_ITEMS_PER_PAGE);
+      if (leadsPage > maxPage && maxPage > 0) {
+        setLeadsPage(1);
+      }
+    }
+  }, [distinctLeadsLinks.length, leadsPage]);
 
   // Log selfText of first 50 posts
   useEffect(() => {
@@ -1906,7 +2303,7 @@ function PlaygroundContent() {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "User-Agent"  : "comment-tool/0.1 by isaaclhy13",
+              "User-Agent": "comment-tool/0.1 by isaaclhy13",
             },
             body: JSON.stringify({
               postIds: batch,
@@ -2460,8 +2857,8 @@ function PlaygroundContent() {
   };
 
   // Handler for Generate Comment button
-  const handleGenerateComment = async (linkItem: { uniqueKey: string; query: string; title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }) => {
-    await generateCommentForLink(linkItem, { force: true, showAlerts: true });
+  const handleGenerateComment = async (linkItem: { uniqueKey: string; query: string; title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }, persona?: string) => {
+    await generateCommentForLink(linkItem, { force: true, showAlerts: true, persona: persona || "Founder" });
   };
 
   // Handler for Skip button
@@ -2512,7 +2909,11 @@ function PlaygroundContent() {
 
   // Handler for Close button (X button) - saves as "skipped"
   const handleCloseClick = async (linkItem: { uniqueKey: string; query: string; title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }) => {
+    // Check if this is a leads link (uniqueKey starts with "leads-")
+    const isLeadsLink = linkItem.uniqueKey.startsWith("leads-");
+
     const trimmedComment = (postTextareas[linkItem.uniqueKey] || "").trim();
+
     // Save to MongoDB with "skipped" status
     try {
       await fetch("/api/posts/create", {
@@ -2540,16 +2941,35 @@ function PlaygroundContent() {
     // Refresh analytics from database after closing
     await refreshAnalytics();
 
+    if (isLeadsLink) {
+      // Remove from leadsLinks
+      setLeadsLinks((prev) => {
+        const updated = { ...prev };
+        if (updated[linkItem.query]) {
+          updated[linkItem.query] = updated[linkItem.query].filter((link) => link.link !== linkItem.link);
+          if (updated[linkItem.query].length === 0) {
+            delete updated[linkItem.query];
+          }
+        }
+        try {
+          localStorage.setItem("leadsLinks", JSON.stringify(updated));
+        } catch (e) {
+          console.error("Error saving leadsLinks to localStorage:", e);
+        }
+        return updated;
+      });
+    } else {
     // Remove from redditLinks
     setRedditLinks((prev) => {
       const updated = { ...prev };
       if (updated[linkItem.query]) {
         // Remove the post by filtering it out
         updated[linkItem.query] = updated[linkItem.query].filter((link) => link.link !== linkItem.link);
-        localStorage.setItem("redditLinks", JSON.stringify(updated));
+          safeSetLocalStorage("redditLinks", updated);
       }
       return updated;
     });
+    }
 
     // Remove textarea value
     setPostTextareas((prev) => {
@@ -2668,6 +3088,45 @@ function PlaygroundContent() {
                   <h3 className="text-lg font-semibold">
                     Product
                   </h3>
+                  <Button
+                    onClick={async () => {
+                      setIsSavingProductDetails(true);
+                      try {
+                        const response = await fetch("/api/user/product-details", {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify({
+                            link: website || undefined,
+                            productDescription: productDescription || undefined,
+                            keywords: keywords.length > 0 ? keywords : undefined,
+                          }),
+                        });
+
+                        if (!response.ok) {
+                          const errorData = await response.json();
+                          throw new Error(errorData.error || "Failed to save product details");
+                        }
+
+                        const data = await response.json();
+                        if (data.success) {
+                          // Show success toast (auto-dismisses after 5 seconds)
+                          showToast("Product details saved successfully!", { variant: "success" });
+                        }
+                      } catch (error) {
+                        console.error("Error saving product details:", error);
+                        showToast(error instanceof Error ? error.message : "Failed to save product details", { variant: "error" });
+                      } finally {
+                        setIsSavingProductDetails(false);
+                      }
+                    }}
+                    disabled={isSavingProductDetails || isLoadingProductDetails}
+                    className="bg-black text-white hover:bg-black/90 disabled:opacity-50 self-start sm:self-auto"
+                    size="sm"
+                  >
+                    {isSavingProductDetails ? "Saving..." : "Save"}
+                  </Button>
                 </div>
               </div>
               
@@ -2761,47 +3220,81 @@ function PlaygroundContent() {
                         >
                           {isGeneratingProductDescription ? "Generating..." : "AI generate"}
                         </Button>
-                      </div>
                     </div>
                   </div>
                   <div>
-                    <Button
-                      onClick={async () => {
-                        setIsSavingProductDetails(true);
-                        try {
-                          const response = await fetch("/api/user/product-details", {
-                            method: "POST",
-                            headers: {
-                              "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({
-                              link: website || undefined,
-                              productDescription: productDescription || undefined,
-                            }),
-                          });
-
-                          if (!response.ok) {
-                            const errorData = await response.json();
-                            throw new Error(errorData.error || "Failed to save product details");
-                          }
-
-                          const data = await response.json();
-                          if (data.success) {
-                            // Show success toast (auto-dismisses after 5 seconds)
-                            showToast("Product details saved successfully!", { variant: "success" });
-                          }
-                        } catch (error) {
-                          console.error("Error saving product details:", error);
-                          showToast(error instanceof Error ? error.message : "Failed to save product details", { variant: "error" });
-                        } finally {
-                          setIsSavingProductDetails(false);
-                        }
-                      }}
-                      disabled={isSavingProductDetails || isLoadingProductDetails}
-                      className="bg-black text-white hover:bg-black/90 disabled:opacity-50"
-                    >
-                      {isSavingProductDetails ? "Saving..." : "Save"}
+                      <label htmlFor="product-keywords" className="block text-sm font-medium text-foreground mb-1">
+                        Keywords
+                      </label>
+                      <div className="w-full max-w-md space-y-1">
+                        <div className="min-h-[40px] max-h-[120px] overflow-y-auto flex flex-wrap gap-2 items-start py-1">
+                          {keywords.map((keyword, index) => (
+                            <div
+                              key={index}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-3 py-1 text-sm text-foreground"
+                            >
+                              <span>{keyword}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setKeywords(keywords.filter((_, i) => i !== index));
+                                }}
+                                className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5 transition-colors"
+                                aria-label={`Remove ${keyword}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex gap-2 pt-1">
+                          <Input
+                            id="product-keywords"
+                            type="text"
+                            value={keywordInput}
+                            onChange={(e) => setKeywordInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const trimmed = keywordInput.trim();
+                                if (trimmed && !keywords.includes(trimmed)) {
+                                  if (keywords.length >= 20) {
+                                    showToast("Maximum of 20 keywords allowed", { variant: "error" });
+                                    return;
+                                  }
+                                  setKeywords([...keywords, trimmed]);
+                                  setKeywordInput("");
+                                }
+                              }
+                            }}
+                            placeholder="Enter a keyword"
+                            className="flex-1"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => {
+                              const trimmed = keywordInput.trim();
+                              if (trimmed && !keywords.includes(trimmed)) {
+                                if (keywords.length >= 20) {
+                                  showToast("Maximum of 20 keywords allowed", { variant: "error" });
+                                  return;
+                                }
+                                setKeywords([...keywords, trimmed]);
+                                setKeywordInput("");
+                              }
+                            }}
+                            disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= 20}
+                            className="shrink-0"
+                          >
+                            <Plus className="h-4 w-4" />
                     </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Add keywords related to your product niche {keywords.length > 0 && `(${keywords.length}/20)`}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2932,7 +3425,7 @@ function PlaygroundContent() {
 
                               const redditData = await redditResponse.json();
                               const post: RedditPost = redditData.post;
-                              
+
                               // Store post data for later use when posting
                               setCreatePostData(post);
                               
@@ -3361,179 +3854,549 @@ function PlaygroundContent() {
             </div>
           </div>
         );
-      case "dashboard":
-        // Show Reddit connection prompt if not connected
-        if (isRedditConnected === false) {
-          return (
-            <div className="flex h-full flex-col items-center justify-center p-6">
-              <div className="w-full max-w-md space-y-6 rounded-lg border border-border bg-card p-8 text-center">
-                <div className="space-y-2">
-                  <h2 className="text-2xl font-semibold text-foreground">Connect Your Reddit Account</h2>
-                  <p className="text-sm text-muted-foreground">
-                    To get started, you need to connect your Reddit account. This allows us to fetch Reddit posts and post comments on your behalf.
-                  </p>
-                </div>
-                <Button
-                  size="lg"
-                  onClick={() => {
-                    window.location.href = "/api/reddit/auth";
-                  }}
-                  className="w-full"
-                >
-                  Connect Reddit Account
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  You'll be redirected to Reddit to authorize the connection
-                </p>
-              </div>
-            </div>
-          );
-        }
-        
-        // Show loading state while checking connection
-        if (isRedditConnected === null && status === "authenticated") {
-          return (
-            <div className="flex h-full flex-col items-center justify-center p-6">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Checking Reddit connection...</span>
-              </div>
-            </div>
-          );
-        }
+      // case "dashboard":
+      //   // Show Reddit connection prompt if not connected
+      //   if (isRedditConnected === false) {
+      //     return (
+      //       <div className="flex h-full flex-col items-center justify-center p-6">
+      //         <div className="w-full max-w-md space-y-6 rounded-lg border border-border bg-card p-8 text-center">
+      //           <div className="space-y-2">
+      //             <h2 className="text-2xl font-semibold text-foreground">Connect Your Reddit Account</h2>
+      //             <p className="text-sm text-muted-foreground">
+      //               To get started, you need to connect your Reddit account. This allows us to fetch Reddit posts and post comments on your behalf.
+      //             </p>
+      //           </div>
+      //           <Button
+      //             size="lg"
+      //             onClick={() => {
+      //               window.location.href = "/api/reddit/auth";
+      //             }}
+      //             className="w-full"
+      //           >
+      //             Connect Reddit Account
+      //           </Button>
+      //           <p className="text-xs text-muted-foreground">
+      //             You'll be redirected to Reddit to authorize the connection
+      //           </p>
+      //         </div>
+      //       </div>
+      //     );
+      //   }
+      //   
+      //   // Show loading state while checking connection
+      //   if (isRedditConnected === null && status === "authenticated") {
+      //     return (
+      //       <div className="flex h-full flex-col items-center justify-center p-6">
+      //         <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      //           <Loader2 className="h-4 w-4 animate-spin" />
+      //           <span>Checking Reddit connection...</span>
+      //         </div>
+      //       </div>
+      //     );
+      //   }
 
-        const isFreeUser = userPlan === "free";
-        
+      //   return (
+      //     <div className="flex h-full flex-col">
+      //       {/* Main content area - scrollable */}
+      //       <div className={cn(
+      //         "flex h-full flex-col",
+      //         !sidebarOpen && "pl-14"
+      //       )}>
+      //         {/* Fixed header with title and buttons */}
+      //         {!isLoading && (
+      //           <div className={cn(
+      //             "sticky top-0 z-10 bg-background px-6 pt-6 pb-2",
+      //             !sidebarOpen && "pl-14"
+      //           )}>
+      //                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      //                   <h3 className="text-lg font-semibold">
+      //                     Reddit Posts
+      //                   </h3>
+      //                   <div className="flex gap-2 self-start sm:self-auto">
+      //                     <Button
+      //                       onClick={() => {
+      //                         // Use database productDescription as the message
+      //                         if (productDetailsFromDb?.productDescription) {
+      //                           handleSubmit(productDetailsFromDb.productDescription);
+      //                         }
+      //                       }}
+      //                       disabled={!productDetailsFromDb?.productDescription || isLoading}
+      //                       size="sm"
+      //                       variant={results.length > 0 ? "outline" : "default"}
+      //                     >
+      //                       {isLoading ? "Searching..." : "Search for Reddit Posts"}
+      //                     </Button>
+      //                     {results.length > 0 && (
+      //                       <>
+      //                         <Button
+      //                           variant="outline"
+      //                           size="sm"
+      //                           onClick={handleRemoveAllPosts}
+      //                           disabled={
+      //                             distinctLinksCount === 0 &&
+      //                             !Object.values(isLoadingLinks).some(Boolean)
+      //                           }
+      //                         >
+      //                           Remove all posts
+      //                         </Button>
+      //                         <Button
+      //                           variant="outline"
+      //                           size="sm"
+      //                           onClick={() => setIsDiscoverySettingsModalOpen(true)}
+      //                         >
+      //                           <Settings className="h-4 w-4" />
+      //                         </Button>
+      //                       </>
+      //                     )}
+      //                   </div>
+      //                 </div>
+      //               </div>
+      //             )}
+      //             {/* Scrollable content area */}
+      //             <div className={cn(
+      //               "flex-1 overflow-hidden px-6 pt-2 pb-6 flex flex-col min-h-0",
+      //               !sidebarOpen && "pl-14"
+      //             )}>
+      //               <div className="flex-1 flex flex-col min-h-0 space-y-6">
+      //               {/* Results */}
+      //               {isLoading && (
+      //                 <div className="flex flex-col items-center justify-center py-12">
+      //                   <div className="w-full max-w-md space-y-4">
+      //                     <div className="space-y-2 text-center">
+      //                       <h3 className="text-base font-semibold text-foreground">Finding Reddit posts...</h3>
+      //                       <p className="text-sm text-muted-foreground">
+      //                         Generating search queries and discovering relevant posts for your product
+      //                       </p>
+      //                   </div>
+      //                     <div className="w-full">
+      //                       <div className="h-2 w-full overflow-hidden rounded-full bg-muted relative">
+      //                         <div
+      //                           className="h-full w-3/4 rounded-full bg-primary absolute"
+      //                           style={{
+      //                             background: 'linear-gradient(90deg, hsl(var(--primary) / 0.3) 0%, hsl(var(--primary)) 50%, hsl(var(--primary) / 0.3) 100%)',
+      //                             animation: 'progress 1.5s ease-in-out infinite',
+      //                           }}
+      //                         />
+      //                       </div>
+      //                     </div>
+      //                     <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+      //                       <Loader2 className="h-3 w-3 animate-spin" />
+      //                       <span>This may take a few moments...</span>
+      //                     </div>
+      //                   </div>
+      //                 </div>
+      //               )}
+
+      //               {error && (
+      //                 <div className="rounded-lg border border-destructive bg-destructive/10 p-4">
+      //                   <p className="text-sm text-destructive">{error}</p>
+      //                 </div>
+      //               )}
+
+      //               {results.length > 0 && (
+      //                 <div className="flex-1 flex flex-col min-h-0 space-y-4">
+      //                   
+      //                   {/* Show loading state if any query is still loading */}
+      //                   {Object.values(isLoadingLinks).some(Boolean) && (
+      //                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      //                       <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+      //                       <span>Searching Reddit...</span>
+      //                     </div>
+      //                   )}
+      //                   
+      //                   {/* Display Reddit links in table view */}
+      //                   {distinctLinks.length > 0 ? (
+      //                     <div className="rounded-lg border border-border overflow-hidden flex-1 flex flex-col min-h-0">
+      //                       <div className="overflow-x-auto flex-1 overflow-y-auto min-h-0">
+      //                         <table className="w-full border-collapse table-fixed">
+      //                           <thead className="sticky top-0 z-20">
+      //                             <tr className="border-b border-border bg-muted/50">
+      //                               <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[250px]">Title</th>
+      //                               <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[280px]">Content</th>
+      //                               <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[290px]">Comment</th>
+      //                               <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[80px]">Actions</th>
+      //                             </tr>
+      //                           </thead>
+      //                         <tbody>
+      //                           {paginatedLinks.map((linkItem) => {
+      //                             const link = linkItem;
+      //                           // Extract subreddit from URL
+      //                           const subredditMatch = linkItem.link?.match(/reddit\.com\/r\/([^/]+)/);
+      //                           const subreddit = subredditMatch ? subredditMatch[1] : null;
+      //                           // Use unique key that includes query to avoid duplicates
+      //                           const linkKey = linkItem.uniqueKey;
+      //                           const isExpanded = expandedPosts.has(linkKey);
+      //                         
+      //                         // Clean snippet
+      //                         let cleanSnippet = link.snippet || '';
+      //                         cleanSnippet = cleanSnippet.replace(/\d+\s*(hours?|days?|minutes?|weeks?|months?|years?)\s+ago/gi, '');
+      //                         cleanSnippet = cleanSnippet.replace(/posted\s+\d+\s*(hours?|days?|minutes?|weeks?|months?|years?)\s+ago/gi, '');
+      //                         cleanSnippet = cleanSnippet.replace(/^[.\s\u2026]+/g, '');
+      //                         cleanSnippet = cleanSnippet.replace(/^\.+/g, '');
+      //                         cleanSnippet = cleanSnippet.replace(/^[\s\u00A0]+/g, '');
+      //                         cleanSnippet = cleanSnippet.replace(/^\.{1,}/g, '');
+      //                         cleanSnippet = cleanSnippet.trim();
+      //                         
+      //                         return (
+      //                               <tr 
+      //                             key={linkKey}
+      //                                 className="border-b border-border hover:bg-muted/50 cursor-pointer"
+      //                                 onClick={() => {
+      //                                   setSelectedDiscoveryPost(linkItem);
+      //                                   setIsDiscoveryDrawerVisible(true);
+      //                                 }}
+      //                               >
+      //                                 {/* Title column */}
+      //                                 <td className="py-3 px-2 align-top w-[250px]">
+      //                                   <div className="text-sm font-semibold text-foreground">
+      //                                     {link.title}
+      //                                 </div>
+      //                                 </td>
+      //                                 
+      //                                 {/* Content column */}
+      //                                 <td className="py-3 px-2 align-top w-[280px]">
+      //                               {isLoadingPostContent[link.link || ''] ? (
+      //                                     <div className="flex items-center gap-2">
+      //                                   <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+      //                                       <span className="text-xs text-muted-foreground">Loading...</span>
+      //                                 </div>
+      //                               ) : (
+      //                                 // Always prefer selftext if available (it's what was used for filtering)
+      //                                 // Only use cleanSnippet if selftext is not available
+      //                                 (link.selftext || cleanSnippet) && (
+      //                                       <div>
+      //                                     <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
+      //                                       {link.selftext || cleanSnippet}
+      //                                     </p>
+      //                                   </div>
+      //                                 )
+      //                               )}
+      //                                 </td>
+      //                                 
+      //                                 {/* Comment column */}
+      //                                 <td className="py-3 px-2 align-top w-[290px]">
+      //                                   {isGeneratingComment[linkKey] ? (
+      //                                     <div className="flex min-h-[60px] items-center justify-center rounded-md border border-border bg-background px-2 py-1">
+      //                                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      //                                         <Loader2 className="h-3 w-3 animate-spin" />
+      //                                         <span>Generating...</span>
+      //                                       </div>
+      //                                     </div>
+      //                                   ) : (
+      //                                     <div className="relative" onClick={(e) => e.stopPropagation()}>
+      //                               <textarea
+      //                                 value={postTextareas[linkKey] || ""}
+      //                                 onChange={(e) => {
+      //                                   e.stopPropagation();
+      //                                   const newValue = e.target.value;
+      //                                   // Update ref immediately for instant feedback
+      //                                   postTextareasRef.current = {
+      //                                     ...postTextareasRef.current,
+      //                                     [linkKey]: newValue,
+      //                                   };
+      //                                   // Use startTransition to mark state update as non-urgent
+      //                                   // This prevents blocking the UI during typing
+      //                                   startTransition(() => {
+      //                                   setPostTextareas((prev) => ({
+      //                                     ...prev,
+      //                                       [linkKey]: newValue,
+      //                                     }));
+      //                                   });
+      //                                 }}
+      //                                         placeholder="Add comment..."
+      //                                         className="w-full min-h-[60px] rounded-md border border-border bg-background px-2 py-1 pr-20 text-sm placeholder:text-muted-foreground focus:outline-none resize-y"
+      //                                         rows={2}
+      //                                       />
+      //                                       {!postTextareas[linkKey]?.trim() && (
+      //                                 <Button
+      //                                   size="sm"
+      //                                   variant="secondary"
+      //                                           className="absolute top-2 right-2 text-xs h-7"
+      //                                           onClick={(e) => {
+      //                                             e.stopPropagation();
+      //                                             handleGenerateComment(linkItem);
+      //                                           }}
+      //                                   disabled={isGeneratingComment[linkKey]}
+      //                                 >
+      //                                           {isGeneratingComment[linkKey] ? "Generating..." : "Generate"}
+      //                                 </Button>
+      //                                       )}
+      //                               </div>
+      //                                   )}
+      //                                 </td>
+      //                                 
+      //                                 {/* Actions column */}
+      //                                 <td className="py-3 px-2 align-top w-[80px]">
+      //                                   <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+      //                                   <Button
+      //                                     size="sm"
+      //                                     variant="default"
+      //                                       className="text-xs p-2"
+      //                                     onClick={() => handlePostClick(linkItem)}
+      //                                       disabled={isPosting[linkKey]}
+      //                                       title={isPosting[linkKey] ? "Posting..." : "Post comment"}
+      //                                     >
+      //                                       {isPosting[linkKey] ? (
+      //                                         <Loader2 className="h-4 w-4 animate-spin" />
+      //                                       ) : (
+      //                                         <Send className="h-4 w-4" />
+      //                                       )}
+      //                                     </Button>
+      //                                     <Button
+      //                                       size="sm"
+      //                                       variant="outline"
+      //                                       className="text-xs p-2"
+      //                                       onClick={() => handleCloseClick(linkItem)}
+      //                                       title="Close"
+      //                                     >
+      //                                       <Trash2 className="h-4 w-4" />
+      //                                   </Button>
+      //                                 </div>
+      //                                 </td>
+      //                               </tr>
+      //                         );
+      //                       })}
+      //                         </tbody>
+      //                       </table>
+      //                       </div>
+      //                       {/* Pagination controls - always show */}
+      //                       {distinctLinks.length > 0 && (
+      //                         <div className="flex items-center justify-between border-t border-border px-3 py-1.5 bg-card">
+      //                           <div className="text-xs text-muted-foreground">
+      //                             Showing {(discoveryPage - 1) * DISCOVERY_ITEMS_PER_PAGE + 1} to{" "}
+      //                             {Math.min(discoveryPage * DISCOVERY_ITEMS_PER_PAGE, distinctLinks.length)} of{" "}
+      //                             {distinctLinks.length} posts
+      //                           </div>
+      //                           <div className="flex items-center gap-1.5">
+      //                             <Button
+      //                               variant="outline"
+      //                               size="sm"
+      //                               onClick={() => setDiscoveryPage((prev) => Math.max(1, prev - 1))}
+      //                               disabled={discoveryPage === 1}
+      //                               className="text-xs h-7 px-2"
+      //                             >
+      //                               <ChevronLeft className="h-3 w-3" />
+      //                               <span className="hidden sm:inline">Previous</span>
+      //                             </Button>
+      //                             <div className="text-xs text-foreground px-1">
+      //                               Page {discoveryPage} of {totalDiscoveryPages}
+      //                             </div>
+      //                             <Button
+      //                               variant="outline"
+      //                               size="sm"
+      //                               onClick={() => setDiscoveryPage((prev) => Math.min(totalDiscoveryPages, prev + 1))}
+      //                               disabled={discoveryPage === totalDiscoveryPages}
+      //                               className="text-xs h-7 px-2"
+      //                             >
+      //                               <span className="hidden sm:inline">Next</span>
+      //                               <ChevronRight className="h-3 w-3" />
+      //                             </Button>
+      //                           </div>
+      //                         </div>
+      //                       )}
+      //                       </div>
+      //                     ) : (
+      //                       !Object.values(isLoadingLinks).some(Boolean) && (
+      //                         <div className="flex items-center justify-center min-h-[400px]">
+      //                         <p className="text-sm text-muted-foreground">
+      //                             No Reddit posts found. Click "Search for Reddit Posts" to get started.
+      //                         </p>
+      //                         </div>
+      //                       )
+      //                   )}
+      //                 </div>
+      //               )}
+      //             </div>
+      //           </div>
+      //           </div>
+      //         </div>
+      //       );
+      case "leads":
         return (
-          <div className="flex h-full flex-col relative">
+          <div className="flex h-full flex-col">
             {/* Main content area - scrollable */}
             <div className={cn(
               "flex h-full flex-col",
-              !sidebarOpen && "pl-14",
-              isFreeUser && "blur-sm pointer-events-none"
+              !sidebarOpen && "pl-14"
             )}>
               {/* Fixed header with title and buttons */}
-              {!isLoading && (
                 <div className={cn(
-                  "sticky top-0 z-10 bg-background px-6 pt-6 pb-2",
+                "sticky top-0 z-30 bg-background",
                   !sidebarOpen && "pl-14"
                 )}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <h3 className="text-lg font-semibold">
-                      Reddit Posts
+                    Leads
                     </h3>
                     <div className="flex gap-2 self-start sm:self-auto">
-                      <Button
-                        onClick={() => {
-                          // Use database productDescription as the message
-                          if (productDetailsFromDb?.productDescription) {
-                            handleSubmit(productDetailsFromDb.productDescription);
-                          }
-                        }}
-                        disabled={!productDetailsFromDb?.productDescription || isLoading}
-                        size="sm"
-                        variant={results.length > 0 ? "outline" : "default"}
-                      >
-                        {isLoading ? "Searching..." : "Search for Reddit Posts"}
-                      </Button>
-                      {results.length > 0 && (
+                        <Button
+                      onClick={handleLeadsSearch}
+                      disabled={!keywords || keywords.length === 0 || isLoadingLeads}
+                          size="sm"
+                      variant={distinctLeadsLinks.length > 0 ? "outline" : "default"}
+                    >
+                      {isLoadingLeads ? (
                         <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleRemoveAllPosts}
-                            disabled={
-                              distinctLinksCount === 0 &&
-                              !Object.values(isLoadingLinks).some(Boolean)
-                            }
-                          >
-                            Remove all posts
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setIsDiscoverySettingsModalOpen(true)}
-                          >
-                            <Settings className="h-4 w-4" />
-                          </Button>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Refreshing...
                         </>
+                      ) : (
+                        "Refresh Leads"
+                      )}
+                      </Button>
+                      {distinctLeadsLinks.length > 0 && (
+                        <div className="relative" ref={sortDropdownRef}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
+                          >
+                            {leadsSortBy === "date-desc" ? "Sort by" : 
+                             leadsSortBy === "date-asc" ? "Date (Oldest)" :
+                             leadsSortBy === "upvotes-desc" ? "Upvotes (High)" :
+                             leadsSortBy === "upvotes-asc" ? "Upvotes (Low)" :
+                             leadsSortBy === "comments-desc" ? "Comments (Most)" :
+                             leadsSortBy === "comments-asc" ? "Comments (Least)" :
+                             leadsSortBy === "title-asc" ? "Title (A-Z)" :
+                             leadsSortBy === "title-desc" ? "Title (Z-A)" : "Sort by"}
+                            <ChevronDown className="h-3 w-3 ml-1.5" />
+                          </Button>
+                          {isSortDropdownOpen && (
+                            <div className="absolute top-full right-0 mt-1 z-[100] bg-card border border-border rounded-md shadow-lg min-w-[160px]">
+                              <div className="py-1">
+                                <button
+                                  onClick={() => {
+                                    setLeadsSortBy("date-desc");
+                                    setIsSortDropdownOpen(false);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                    leadsSortBy === "date-desc" && "bg-muted"
+                                  )}
+                                >
+                                  Date (Newest)
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setLeadsSortBy("date-asc");
+                                    setIsSortDropdownOpen(false);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                    leadsSortBy === "date-asc" && "bg-muted"
+                                  )}
+                                >
+                                  Date (Oldest)
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setLeadsSortBy("upvotes-desc");
+                                    setIsSortDropdownOpen(false);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                    leadsSortBy === "upvotes-desc" && "bg-muted"
+                                  )}
+                                >
+                                  Upvotes (High)
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setLeadsSortBy("upvotes-asc");
+                                    setIsSortDropdownOpen(false);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                    leadsSortBy === "upvotes-asc" && "bg-muted"
+                                  )}
+                                >
+                                  Upvotes (Low)
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setLeadsSortBy("comments-desc");
+                                    setIsSortDropdownOpen(false);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                    leadsSortBy === "comments-desc" && "bg-muted"
+                                  )}
+                                >
+                                  Comments (Most)
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setLeadsSortBy("comments-asc");
+                                    setIsSortDropdownOpen(false);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                    leadsSortBy === "comments-asc" && "bg-muted"
+                                  )}
+                                >
+                                  Comments (Least)
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setLeadsSortBy("title-asc");
+                                    setIsSortDropdownOpen(false);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                    leadsSortBy === "title-asc" && "bg-muted"
+                                  )}
+                                >
+                                  Title (A-Z)
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setLeadsSortBy("title-desc");
+                                    setIsSortDropdownOpen(false);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                    leadsSortBy === "title-desc" && "bg-muted"
+                                  )}
+                                >
+                                  Title (Z-A)
+                                </button>
+                        </div>
+                      </div>
+                          )}
+                      </div>
                       )}
                     </div>
                   </div>
-                </div>
-              )}
+                  </div>
               {/* Scrollable content area */}
               <div className={cn(
-                "flex-1 overflow-hidden px-6 pt-2 pb-6 flex flex-col min-h-0",
+                "flex-1 overflow-hidden pt-4 flex flex-col min-h-0",
                 !sidebarOpen && "pl-14"
               )}>
-                <div className="flex-1 flex flex-col min-h-0 space-y-6">
-                {/* Results */}
-                {isLoading && (
-                  <div className="flex flex-col items-center justify-center py-12">
-                    <div className="w-full max-w-md space-y-4">
-                      <div className="space-y-2 text-center">
-                        <h3 className="text-base font-semibold text-foreground">Finding Reddit posts...</h3>
-                        <p className="text-sm text-muted-foreground">
-                          Generating search queries and discovering relevant posts for your product
-                        </p>
-                    </div>
-                      <div className="w-full">
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-muted relative">
-                          <div
-                            className="h-full w-3/4 rounded-full bg-primary absolute"
-                            style={{
-                              background: 'linear-gradient(90deg, hsl(var(--primary) / 0.3) 0%, hsl(var(--primary)) 50%, hsl(var(--primary) / 0.3) 100%)',
-                              animation: 'progress 1.5s ease-in-out infinite',
-                            }}
-                          />
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        <span>This may take a few moments...</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {error && (
-                  <div className="rounded-lg border border-destructive bg-destructive/10 p-4">
-                    <p className="text-sm text-destructive">{error}</p>
-                  </div>
-                )}
-
-                {results.length > 0 && (
                   <div className="flex-1 flex flex-col min-h-0 space-y-4">
                     
-                    {/* Show loading state if any query is still loading */}
-                    {Object.values(isLoadingLinks).some(Boolean) && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-                        <span>Searching Reddit...</span>
-                      </div>
-                    )}
-                    
+                  {distinctLeadsLinks.length > 0 ? (
+                  <div className="flex-1 flex flex-col min-h-0 space-y-4">
                     {/* Display Reddit links in table view */}
-                    {distinctLinks.length > 0 ? (
                       <div className="rounded-lg border border-border overflow-hidden flex-1 flex flex-col min-h-0">
                         <div className="overflow-x-auto flex-1 overflow-y-auto min-h-0">
                           <table className="w-full border-collapse table-fixed">
                             <thead className="sticky top-0 z-20">
                               <tr className="border-b border-border bg-muted/50">
+                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[70px]">Stats</th>
                                 <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[250px]">Title</th>
-                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[280px]">Content</th>
-                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[290px]">Comment</th>
+                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[120px]">Subreddit</th>
+                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[120px]">Date</th>
                                 <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[80px]">Actions</th>
                               </tr>
                             </thead>
                           <tbody>
-                            {paginatedLinks.map((linkItem) => {
+                              {paginatedLeadsLinks.map((linkItem) => {
                               const link = linkItem;
                             // Extract subreddit from URL
                             const subredditMatch = linkItem.link?.match(/reddit\.com\/r\/([^/]+)/);
                             const subreddit = subredditMatch ? subredditMatch[1] : null;
-                            // Use unique key that includes query to avoid duplicates
+                                // Use unique key that includes keyword to avoid duplicates
                             const linkKey = linkItem.uniqueKey;
                             const isExpanded = expandedPosts.has(linkKey);
                           
@@ -3556,110 +4419,86 @@ function PlaygroundContent() {
                                     setIsDiscoveryDrawerVisible(true);
                                   }}
                                 >
+                                    {/* Stats column */}
+                                    <td className="py-3 px-2 align-middle w-[70px]">
+                                      {link.postData ? (
+                                        <div className="flex items-center gap-3 text-xs">
+                                          <div className="flex items-center gap-1.5">
+                                            <ArrowUp className="h-3.5 w-3.5 text-muted-foreground" />
+                                            <span className="font-medium text-foreground">
+                                              {link.postData.ups && link.postData.ups >= 1000
+                                                ? `${(link.postData.ups / 1000).toFixed(1)}k`
+                                                : (link.postData.ups || 0)}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-1.5">
+                                            <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                                            <span className="font-medium text-foreground">
+                                              {link.postData.num_comments && link.postData.num_comments >= 1000
+                                                ? `${(link.postData.num_comments / 1000).toFixed(1)}k`
+                                                : (link.postData.num_comments || 0)}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="text-xs text-muted-foreground">-</div>
+                                      )}
+                                    </td>
+
                                   {/* Title column */}
-                                  <td className="py-3 px-2 align-top w-[250px]">
-                                    <div className="text-sm font-semibold text-foreground">
-                                      {link.title}
+                                    <td className="py-3 px-2 align-middle w-[250px]">
+                                      <div className="text-sm font-medium text-foreground truncate" title={link.title || undefined}>
+                                        {link.title?.replace(/\s*\[r\/[^\]]+\]\s*$/i, '').replace(/\s*\(r\/[^)]+\)\s*$/i, '').replace(/\s*r\/[^\s]+\s*$/i, '').replace(/:\s*$/, '').trim() || link.title}
                                   </div>
                                   </td>
                                   
-                                  {/* Content column */}
-                                  <td className="py-3 px-2 align-top w-[280px]">
-                                {isLoadingPostContent[link.link || ''] ? (
-                                      <div className="flex items-center gap-2">
-                                    <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-                                        <span className="text-xs text-muted-foreground">Loading...</span>
+                                    {/* Subreddit column */}
+                                    <td className="py-3 px-2 align-middle w-[120px]">
+                                      {subreddit ? (
+                                        <div className="text-xs text-muted-foreground">
+                                          r/{subreddit}
                                   </div>
                                 ) : (
-                                  // Always prefer selftext if available (it's what was used for filtering)
-                                  // Only use cleanSnippet if selftext is not available
-                                  (link.selftext || cleanSnippet) && (
-                                        <div>
-                                      <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
-                                        {link.selftext || cleanSnippet}
-                                      </p>
-                                    </div>
-                                  )
+                                        <div className="text-xs text-muted-foreground">-</div>
                                 )}
                                   </td>
                                   
-                                  {/* Comment column */}
-                                  <td className="py-3 px-2 align-top w-[290px]">
-                                    {isGeneratingComment[linkKey] ? (
-                                      <div className="flex min-h-[60px] items-center justify-center rounded-md border border-border bg-background px-2 py-1">
-                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                          <Loader2 className="h-3 w-3 animate-spin" />
-                                          <span>Generating...</span>
-                                        </div>
+                                    {/* Date column */}
+                                    <td className="py-3 px-2 align-middle w-[120px]">
+                                      {link.postData?.created_utc ? (
+                                        <div className="text-xs text-muted-foreground">
+                                          {formatTimeAgo(link.postData.created_utc)}
                                       </div>
                                     ) : (
-                                      <div className="relative" onClick={(e) => e.stopPropagation()}>
-                                <textarea
-                                  value={postTextareas[linkKey] || ""}
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    const newValue = e.target.value;
-                                    // Update ref immediately for instant feedback
-                                    postTextareasRef.current = {
-                                      ...postTextareasRef.current,
-                                      [linkKey]: newValue,
-                                    };
-                                    // Use startTransition to mark state update as non-urgent
-                                    // This prevents blocking the UI during typing
-                                    startTransition(() => {
-                                    setPostTextareas((prev) => ({
-                                      ...prev,
-                                        [linkKey]: newValue,
-                                      }));
-                                    });
-                                  }}
-                                          placeholder="Add comment..."
-                                          className="w-full min-h-[60px] rounded-md border border-border bg-background px-2 py-1 pr-20 text-sm placeholder:text-muted-foreground focus:outline-none resize-y"
-                                          rows={2}
-                                        />
-                                        {!postTextareas[linkKey]?.trim() && (
+                                        <div className="text-xs text-muted-foreground">-</div>
+                                      )}
+                                    </td>
+
+                                    {/* Actions column */}
+                                    <td className="py-3 px-2 align-middle w-[80px]">
+                                      <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                        {link.link && (
                                   <Button
                                     size="sm"
-                                    variant="secondary"
-                                            className="absolute top-2 right-2 text-xs h-7"
+                                            variant="outline"
+                                            className="text-xs p-1.5 h-7 w-7"
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              handleGenerateComment(linkItem);
+                                              window.open(link.link!, "_blank", "noopener,noreferrer");
                                             }}
-                                    disabled={isGeneratingComment[linkKey]}
+                                            title="Visit link"
                                   >
-                                            {isGeneratingComment[linkKey] ? "Generating..." : "Generate"}
+                                            <ExternalLink className="h-3 w-3" />
                                   </Button>
                                         )}
-                                </div>
-                                    )}
-                                  </td>
-                                  
-                                  {/* Actions column */}
-                                  <td className="py-3 px-2 align-top w-[80px]">
-                                    <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                                    <Button
-                                      size="sm"
-                                      variant="default"
-                                        className="text-xs p-2"
-                                      onClick={() => handlePostClick(linkItem)}
-                                        disabled={isPosting[linkKey]}
-                                        title={isPosting[linkKey] ? "Posting..." : "Post comment"}
-                                      >
-                                        {isPosting[linkKey] ? (
-                                          <Loader2 className="h-4 w-4 animate-spin" />
-                                        ) : (
-                                          <Send className="h-4 w-4" />
-                                        )}
-                                      </Button>
                                       <Button
                                         size="sm"
                                         variant="outline"
-                                        className="text-xs p-2"
+                                          className="text-xs p-1.5 h-7 w-7"
                                         onClick={() => handleCloseClick(linkItem)}
                                         title="Close"
                                       >
-                                        <Trash2 className="h-4 w-4" />
+                                          <Trash2 className="h-3 w-3" />
                                     </Button>
                                   </div>
                                   </td>
@@ -3669,33 +4508,33 @@ function PlaygroundContent() {
                           </tbody>
                         </table>
                         </div>
-                        {/* Pagination controls - always show */}
-                        {distinctLinks.length > 0 && (
+                        {/* Pagination controls */}
+                        {distinctLeadsLinks.length > 0 && (
                           <div className="flex items-center justify-between border-t border-border px-3 py-1.5 bg-card">
                             <div className="text-xs text-muted-foreground">
-                              Showing {(discoveryPage - 1) * DISCOVERY_ITEMS_PER_PAGE + 1} to{" "}
-                              {Math.min(discoveryPage * DISCOVERY_ITEMS_PER_PAGE, distinctLinks.length)} of{" "}
-                              {distinctLinks.length} posts
+                              Showing {(leadsPage - 1) * LEADS_ITEMS_PER_PAGE + 1} to{" "}
+                              {Math.min(leadsPage * LEADS_ITEMS_PER_PAGE, distinctLeadsLinks.length)} of{" "}
+                              {distinctLeadsLinks.length} posts
                             </div>
                             <div className="flex items-center gap-1.5">
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setDiscoveryPage((prev) => Math.max(1, prev - 1))}
-                                disabled={discoveryPage === 1}
+                                onClick={() => setLeadsPage((prev) => Math.max(1, prev - 1))}
+                                disabled={leadsPage === 1}
                                 className="text-xs h-7 px-2"
                               >
                                 <ChevronLeft className="h-3 w-3" />
                                 <span className="hidden sm:inline">Previous</span>
                               </Button>
                               <div className="text-xs text-foreground px-1">
-                                Page {discoveryPage} of {totalDiscoveryPages}
+                                Page {leadsPage} of {totalLeadsPages}
                               </div>
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setDiscoveryPage((prev) => Math.min(totalDiscoveryPages, prev + 1))}
-                                disabled={discoveryPage === totalDiscoveryPages}
+                                onClick={() => setLeadsPage((prev) => Math.min(totalLeadsPages, prev + 1))}
+                                disabled={leadsPage === totalLeadsPages}
                                 className="text-xs h-7 px-2"
                               >
                                 <span className="hidden sm:inline">Next</span>
@@ -3704,41 +4543,22 @@ function PlaygroundContent() {
                             </div>
                           </div>
                         )}
+                      </div>
                         </div>
                       ) : (
-                        !Object.values(isLoadingLinks).some(Boolean) && (
+                    !isLoadingLeads && !Object.values(isLoadingLeadsLinks).some(Boolean) && (
                           <div className="flex items-center justify-center min-h-[400px]">
                           <p className="text-sm text-muted-foreground">
-                              No Reddit posts found. Click "Search for Reddit Posts" to get started.
+                          {keywords && keywords.length > 0
+                            ? "No leads found. Click 'Refresh Leads' to get started."
+                            : "Please add keywords in the Product tab first, then search for leads."}
                           </p>
                           </div>
                         )
-                    )}
-                  </div>
                 )}
               </div>
             </div>
             </div>
-            {/* Premium upgrade overlay for free users */}
-            {isFreeUser && (
-              <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-                <div className="w-full max-w-md space-y-6 rounded-lg border border-border bg-card p-8 text-center shadow-lg">
-                  <div className="space-y-2">
-                    <h2 className="text-2xl font-semibold text-foreground">Discovery is a Premium Feature</h2>
-                    <p className="text-sm text-muted-foreground">
-                      Upgrade to Premium to unlock Discovery and find relevant Reddit posts automatically.
-                    </p>
-                  </div>
-                  <Button
-                    size="lg"
-                    onClick={() => setActiveTab("pricing")}
-                    className="w-full"
-                  >
-                    Upgrade to Premium
-                  </Button>
-                </div>
-              </div>
-            )}
           </div>
         );
       case "feedback":
@@ -3871,12 +4691,7 @@ function PlaygroundContent() {
           </div>
         );
       default:
-        return (
-          <div>
-            <h2 className="mb-2 text-xl font-semibold">Welcome</h2>
-            <p className="text-muted-foreground">Select a tab from the sidebar to get started.</p>
-          </div>
-        );
+        return null;
     }
   };
 
@@ -4110,14 +4925,19 @@ function PlaygroundContent() {
             )}
           >
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <div className="flex flex-col gap-2">
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">
-                    {selectedDiscoveryPost.title || "No title"}
+              <div className="flex flex-col gap-2 flex-1 min-w-0">
+                <div className="min-w-0">
+                  <h3 className="text-lg font-semibold text-foreground break-words whitespace-normal">
+                    {selectedDiscoveryPost.title?.replace(/:\s*r\/[^\s]+/i, '').trim() || "No title"}
                   </h3>
                   {selectedDiscoveryPost.postData?.created_utc && (
                     <p className="text-xs text-muted-foreground">
                       {formatTimeAgo(selectedDiscoveryPost.postData.created_utc)}
+                    </p>
+                  )}
+                  {selectedDiscoveryPost.query && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Keyword: <span className="font-medium text-foreground">{selectedDiscoveryPost.query}</span>
                     </p>
                   )}
                 </div>
@@ -4144,8 +4964,8 @@ function PlaygroundContent() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="flex h-full flex-col px-4 py-4">
-              <div className="flex-1 space-y-4 overflow-y-auto pr-4 pb-12">
+            <div className="flex h-full flex-col">
+              <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 pr-4 pb-40">
                 {(selectedDiscoveryPost.selftext || selectedDiscoveryPost.snippet) && (
                   <div>
                     <h4 className="text-sm font-medium text-foreground mb-2">Post Content</h4>
@@ -4156,6 +4976,36 @@ function PlaygroundContent() {
                 )}
                 <div>
                   <h4 className="text-sm font-medium text-foreground mb-2">Generated Comment</h4>
+                  <div className="flex items-center gap-3 mb-3">
+                    <label className="text-xs text-muted-foreground">Persona:</label>
+                    <div className="flex items-center gap-2 border border-border rounded-md p-1">
+                      <button
+                        type="button"
+                        onClick={() => setDrawerPersona("Founder")}
+                        className={cn(
+                          "px-3 py-1 text-xs font-medium rounded transition-colors",
+                          drawerPersona === "Founder"
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        Founder
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDrawerPersona("User")}
+                        className={cn(
+                          "px-3 py-1 text-xs font-medium rounded transition-colors",
+                          drawerPersona === "User"
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        User
+                      </button>
+                    </div>
+                  </div>
+                  <div className="border border-border rounded-md p-1">
                   <textarea
                     value={postTextareas[selectedDiscoveryPost.uniqueKey] || ""}
                     onChange={(e) => {
@@ -4165,15 +5015,13 @@ function PlaygroundContent() {
                       }));
                     }}
                     placeholder="Add comment..."
-                    className="w-full min-h-[160px] rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none resize-y"
+                      className="w-full min-h-[160px] bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none resize-none"
                   />
-                  {!postTextareas[selectedDiscoveryPost.uniqueKey]?.trim() && (
                     <Button
                       size="sm"
                       variant="secondary"
-                      className="mt-2"
-                      onClick={() => handleGenerateComment(selectedDiscoveryPost)}
-                      disabled={isGeneratingComment[selectedDiscoveryPost.uniqueKey]}
+                      onClick={() => handleGenerateComment(selectedDiscoveryPost, drawerPersona)}
+                      disabled={postTextareas[selectedDiscoveryPost.uniqueKey]?.trim() === ""}
                     >
                       {isGeneratingComment[selectedDiscoveryPost.uniqueKey] ? (
                         <>
@@ -4184,10 +5032,11 @@ function PlaygroundContent() {
                         "Generate Comment"
                       )}
                     </Button>
-                  )}
+
                 </div>
               </div>
-              <div className="border-t border-border pt-4 mt-4 flex items-center justify-between gap-3">
+              </div>
+              <div className="border-t border-border bg-card px-4 py-3 flex items-center justify-end gap-3 sticky bottom-0">
                 <Button
                   variant="outline"
                   size="sm"
@@ -4195,17 +5044,16 @@ function PlaygroundContent() {
                     setIsDiscoveryDrawerVisible(false);
                     handleCloseClick(selectedDiscoveryPost);
                   }}
-                  className="flex-1"
                 >
                   Skip
                 </Button>
                 <Button
+                  variant="default"
+                  size="sm"
                   onClick={() => {
                     handlePostClick(selectedDiscoveryPost);
-                    setIsDiscoveryDrawerVisible(false);
                   }}
                   disabled={isPosting[selectedDiscoveryPost.uniqueKey] || !postTextareas[selectedDiscoveryPost.uniqueKey]?.trim()}
-                  className="flex-1"
                 >
                   {isPosting[selectedDiscoveryPost.uniqueKey] ? (
                     <>

@@ -26,7 +26,10 @@ export interface User {
   productDetails?: {
     link?: string;
     productDescription?: string;
+    keywords?: string;
   };
+  // Keywords array
+  keywords?: string[];
 }
 
 export async function createOrUpdateUser(userData: {
@@ -329,6 +332,7 @@ export async function updateUserProductDetails(
   productDetails: {
     link?: string;
     productDescription?: string;
+    keywords?: string;
   }
 ): Promise<User | null> {
   const db = await getDatabase();
@@ -350,6 +354,35 @@ export async function updateUserProductDetails(
   
   if (!result) {
     console.error(`Failed to update product details: User with email ${normalizedEmail} not found in database`);
+    return null;
+  }
+  
+  return result as User;
+}
+
+export async function updateUserKeywords(
+  email: string,
+  keywords: string[]
+): Promise<User | null> {
+  const db = await getDatabase();
+  const usersCollection = db.collection<User>('usersv2');
+  
+  // Normalize email to lowercase for lookup
+  const normalizedEmail = email.toLowerCase();
+  
+  const result = await usersCollection.findOneAndUpdate(
+    { email: normalizedEmail },
+    {
+      $set: {
+        keywords,
+        updatedAt: new Date(),
+      },
+    },
+    { returnDocument: 'after' }
+  );
+  
+  if (!result) {
+    console.error(`Failed to update keywords: User with email ${normalizedEmail} not found in database`);
     return null;
   }
   

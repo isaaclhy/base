@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { updateUserProductDetails, getUserByEmail } from "@/lib/db/users";
+import { updateUserProductDetails, getUserByEmail, updateUserKeywords } from "@/lib/db/users";
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,11 +14,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { link, productDescription } = body;
+    const { link, productDescription, keywords } = body;
 
-    if (!link && !productDescription) {
+    if (!link && !productDescription && !keywords) {
       return NextResponse.json(
-        { error: "At least one field (link or productDescription) is required" },
+        { error: "At least one field (link, productDescription, or keywords) is required" },
         { status: 400 }
       );
     }
@@ -35,7 +35,18 @@ export async function POST(request: NextRequest) {
       productDetails.productDescription = productDescription;
     }
 
-    const updatedUser = await updateUserProductDetails(email, productDetails);
+    // Update product details (if provided)
+    let updatedUser;
+    if (Object.keys(productDetails).length > 0) {
+      updatedUser = await updateUserProductDetails(email, productDetails);
+    } else {
+      updatedUser = await getUserByEmail(email);
+    }
+
+    // Update keywords separately (if provided)
+    if (keywords !== undefined && Array.isArray(keywords)) {
+      updatedUser = await updateUserKeywords(email, keywords);
+    }
 
     if (!updatedUser) {
       return NextResponse.json(
@@ -81,6 +92,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       productDetails: user.productDetails || { link: undefined, productDescription: undefined },
+      keywords: user.keywords || [],
     });
   } catch (error) {
     console.error("Error fetching product details:", error);
