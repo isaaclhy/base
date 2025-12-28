@@ -4,7 +4,7 @@ export default function Footer() {
             <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div className="flex w-full flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
                     <div className="w-full max-w-full sm:max-w-[25%] text-left">
-                        <h3 className="mb-2 text-lg sm:text-xl font-bold">GetRedditUserFast</h3>
+                        <h3 className="mb-2 text-lg sm:text-xl font-bold">SignalScouter</h3>
                         <p className="text-sm text-muted-foreground">
                             Find desperate users on Reddit in seconds. Connect with users who already need and want your product.
                         </p>

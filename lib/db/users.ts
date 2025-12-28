@@ -30,6 +30,10 @@ export interface User {
   };
   // Keywords array
   keywords?: string[];
+  // Subreddits array
+  subreddits?: string[];
+  // Onboarding completion status
+  onboardingCompleted?: boolean;
 }
 
 export async function createOrUpdateUser(userData: {
@@ -84,7 +88,7 @@ export async function createOrUpdateUser(userData: {
 
     return result;
   } else {
-    // Create new user with free plan by default
+    // Create new user with free plan by default and onboarding not completed
     const newUser: User = {
       email: normalizedEmail,
       name: userData.name || null,
@@ -94,6 +98,7 @@ export async function createOrUpdateUser(userData: {
       updatedAt: now,
       provider: userData.provider,
       providerId: userData.providerId,
+      onboardingCompleted: false,
     };
 
     const result = await usersCollection.insertOne(newUser);
@@ -383,6 +388,64 @@ export async function updateUserKeywords(
   
   if (!result) {
     console.error(`Failed to update keywords: User with email ${normalizedEmail} not found in database`);
+    return null;
+  }
+  
+  return result as User;
+}
+
+export async function updateUserSubreddits(
+  email: string,
+  subreddits: string[]
+): Promise<User | null> {
+  const db = await getDatabase();
+  const usersCollection = db.collection<User>('usersv2');
+  
+  // Normalize email to lowercase for lookup
+  const normalizedEmail = email.toLowerCase();
+  
+  const result = await usersCollection.findOneAndUpdate(
+    { email: normalizedEmail },
+    {
+      $set: {
+        subreddits,
+        updatedAt: new Date(),
+      },
+    },
+    { returnDocument: 'after' }
+  );
+  
+  if (!result) {
+    console.error(`Failed to update subreddits: User with email ${normalizedEmail} not found in database`);
+    return null;
+  }
+  
+  return result as User;
+}
+
+export async function updateUserOnboardingStatus(
+  email: string,
+  onboardingCompleted: boolean
+): Promise<User | null> {
+  const db = await getDatabase();
+  const usersCollection = db.collection<User>('usersv2');
+  
+  // Normalize email to lowercase for lookup
+  const normalizedEmail = email.toLowerCase();
+  
+  const result = await usersCollection.findOneAndUpdate(
+    { email: normalizedEmail },
+    {
+      $set: {
+        onboardingCompleted,
+        updatedAt: new Date(),
+      },
+    },
+    { returnDocument: 'after' }
+  );
+  
+  if (!result) {
+    console.error(`Failed to update onboarding status: User with email ${normalizedEmail} not found in database`);
     return null;
   }
   

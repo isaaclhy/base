@@ -34,7 +34,7 @@ export default function Navbar() {
         }>
             <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center gap-4 min-w-0 flex-shrink">
-                    <h1 className="text-lg sm:text-xl font-bold truncate">GetRedditUserFast</h1>
+                    <h1 className="text-lg sm:text-xl font-bold truncate">SignalScouter</h1>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                     {session ? (

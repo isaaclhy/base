@@ -124,7 +124,7 @@ export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
         {isSidebarVisible && (
           <div className="flex h-16 items-center justify-between border-b border-border px-4">
             <Link href="/" className="text-lg font-semibold">
-              GetUsersFromReddit
+              SignalScouter
             </Link>
             {/* Only show close button on mobile */}
             {isMobile && (

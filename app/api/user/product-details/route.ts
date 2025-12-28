@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { updateUserProductDetails, getUserByEmail, updateUserKeywords } from "@/lib/db/users";
+import { updateUserProductDetails, getUserByEmail, updateUserKeywords, updateUserSubreddits } from "@/lib/db/users";
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,11 +14,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { link, productDescription, keywords } = body;
+    const { link, productDescription, keywords, subreddits } = body;
 
-    if (!link && !productDescription && !keywords) {
+    if (!link && !productDescription && keywords === undefined && subreddits === undefined) {
       return NextResponse.json(
-        { error: "At least one field (link, productDescription, or keywords) is required" },
+        { error: "At least one field (link, productDescription, keywords, or subreddits) is required" },
         { status: 400 }
       );
     }
@@ -46,6 +46,11 @@ export async function POST(request: NextRequest) {
     // Update keywords separately (if provided)
     if (keywords !== undefined && Array.isArray(keywords)) {
       updatedUser = await updateUserKeywords(email, keywords);
+    }
+
+    // Update subreddits separately (if provided)
+    if (subreddits !== undefined && Array.isArray(subreddits)) {
+      updatedUser = await updateUserSubreddits(email, subreddits);
     }
 
     if (!updatedUser) {
@@ -93,6 +98,7 @@ export async function GET(request: NextRequest) {
       success: true,
       productDetails: user.productDetails || { link: undefined, productDescription: undefined },
       keywords: user.keywords || [],
+      subreddits: user.subreddits || [],
     });
   } catch (error) {
     console.error("Error fetching product details:", error);

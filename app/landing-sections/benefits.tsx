@@ -88,7 +88,7 @@ export default function BenefitsSection() {
                     Draft comment
                   </h4>
                   <p className="mt-1.5 text-[11px] leading-relaxed text-white">
-                    What's your niche and where are those users actually hanging out online? I'm a founder too and struggled to turn early interest into a packed waitlist. Try writing helpful longform posts that solve one pain and link a waitlist, engage in niche communities by answering questions and subtly sharing value so people opt in, and run tiny targeted ads to validate messaging before scaling, each gets you real feedback fast. If you hit volume replying to threads, Bleamies helps find Reddit questions and auto-generate comments to share your product! Would love any feedback or to connect if you try it. Good luck!
+                    What's your niche and where are those users actually hanging out online? I'm a founder too and struggled to turn early interest into a packed waitlist. Try writing helpful longform posts that solve one pain and link a waitlist, engage in niche communities by answering questions and subtly sharing value so people opt in, and run tiny targeted ads to validate messaging before scaling, each gets you real feedback fast. If you hit volume replying to threads, SignalScouter helps find Reddit questions and auto-generate comments to share your product! Would love any feedback or to connect if you try it. Good luck!
                   </p>
                 </div>
                 </div>

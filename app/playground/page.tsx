@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { signIn } from "next-auth/react";
+import { OnboardingModal } from "@/components/onboarding-modal";
 
 const normalizeUrl = (url: string): string => {
   return url
@@ -146,6 +147,13 @@ function PlaygroundContent() {
     keywords: string[];
   } | null>(null);
   const [keywordInput, setKeywordInput] = useState("");
+  const [subreddits, setSubreddits] = useState<string[]>([]);
+  const [subredditInput, setSubredditInput] = useState("");
+  const [subredditSuggestions, setSubredditSuggestions] = useState<Array<{ name: string; displayName: string; subscribers: number }>>([]);
+  const [isLoadingSubreddits, setIsLoadingSubreddits] = useState(false);
+  const [showSubredditDropdown, setShowSubredditDropdown] = useState(false);
+  const subredditInputRef = useRef<HTMLInputElement>(null);
+  const subredditDropdownRef = useRef<HTMLDivElement>(null);
   const [callToAction, setCallToAction] = useState("");
   const [persona, setPersona] = useState("");
   const [postCount, setPostCount] = useState<number>(50);
@@ -180,16 +188,88 @@ function PlaygroundContent() {
       if (personaDropdownRef.current && !personaDropdownRef.current.contains(event.target as Node)) {
         setIsPersonaDropdownOpen(false);
       }
+      if (subredditDropdownRef.current && !subredditDropdownRef.current.contains(event.target as Node)) {
+        setShowSubredditDropdown(false);
+      }
     };
 
-    if (isPersonaDropdownOpen) {
+    if (isPersonaDropdownOpen || showSubredditDropdown) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isPersonaDropdownOpen]);
+  }, [isPersonaDropdownOpen, showSubredditDropdown]);
+
+  // Fuzzy matching function for subreddits
+  const fuzzyMatch = (query: string, text: string): number => {
+    const queryLower = query.toLowerCase();
+    const textLower = text.toLowerCase();
+    
+    // Exact match gets highest score
+    if (textLower === queryLower) return 100;
+    if (textLower.startsWith(queryLower)) return 90;
+    if (textLower.includes(queryLower)) return 70;
+    
+    // Character-based fuzzy matching
+    let queryIndex = 0;
+    let score = 0;
+    for (let i = 0; i < textLower.length && queryIndex < queryLower.length; i++) {
+      if (textLower[i] === queryLower[queryIndex]) {
+        score += 10;
+        queryIndex++;
+      }
+    }
+    
+    // Return score based on how many characters matched
+    return queryIndex === queryLower.length ? score : 0;
+  };
+
+  // Search subreddits with debounce
+  useEffect(() => {
+    if (!subredditInput.trim() || subredditInput.length < 2) {
+      setSubredditSuggestions([]);
+      setShowSubredditDropdown(false);
+      return;
+    }
+
+    const searchSubreddits = async () => {
+      setIsLoadingSubreddits(true);
+      try {
+        const response = await fetch(`/api/reddit/search-subreddits?q=${encodeURIComponent(subredditInput)}`);
+        if (!response.ok) {
+          if (response.status === 401) {
+            const errorData = await response.json();
+            showToast(errorData.error || "Please connect your Reddit account", { variant: "error" });
+          }
+          setSubredditSuggestions([]);
+          return;
+        }
+        const data = await response.json();
+        const results = data.subreddits || [];
+        
+        // Apply fuzzy matching and sort by relevance
+        const scored = results.map((sub: { name: string; displayName: string; subscribers: number }) => ({
+          ...sub,
+          score: fuzzyMatch(subredditInput, sub.name),
+        })).filter((item: { score: number }) => item.score > 0)
+          .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
+          .slice(0, 10);
+        
+        setSubredditSuggestions(scored);
+        setShowSubredditDropdown(scored.length > 0);
+      } catch (error) {
+        console.error("Error searching subreddits:", error);
+        setSubredditSuggestions([]);
+      } finally {
+        setIsLoadingSubreddits(false);
+      }
+    };
+
+    const debounceTimer = setTimeout(searchSubreddits, 300);
+    return () => clearTimeout(debounceTimer);
+  }, [subredditInput]);
   const [toast, setToast] = useState<{ visible: boolean; message: string; link?: string | null; variant?: "success" | "error" } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -238,6 +318,8 @@ function PlaygroundContent() {
   const [feedbackMessage, setFeedbackMessage] = useState<string>("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const analyticsFetchedRef = useRef<boolean>(false);
+  const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [selectedDiscoveryPost, setSelectedDiscoveryPost] = useState<typeof distinctLinks[0] | null>(null);
   const [isDiscoveryDrawerVisible, setIsDiscoveryDrawerVisible] = useState(false);
@@ -384,6 +466,11 @@ function PlaygroundContent() {
                 setKeywords(loadedKeywords);
               }
               
+              // Load subreddits from database
+              if (data.subreddits && Array.isArray(data.subreddits)) {
+                setSubreddits(data.subreddits);
+              }
+              
               // Store original values for dirty checking
               setOriginalProductDetails({
                 website: data.productDetails.link || "",
@@ -441,6 +528,36 @@ function PlaygroundContent() {
     }
   }, [status, session]);
 
+  // Check onboarding status
+  useEffect(() => {
+    if (status === "authenticated" && session?.user?.email) {
+      const checkOnboardingStatus = async () => {
+        try {
+          const response = await fetch("/api/user/onboarding");
+          if (response.ok) {
+            const data = await response.json();
+            const completed = data.onboardingCompleted ?? false;
+            setOnboardingCompleted(completed);
+            if (!completed) {
+              setIsOnboardingModalOpen(true);
+            }
+          } else {
+            // If we can't fetch status, assume not completed (show modal)
+            setOnboardingCompleted(false);
+            setIsOnboardingModalOpen(true);
+          }
+        } catch (error) {
+          console.error("Error checking onboarding status:", error);
+          // On error, assume not completed (show modal)
+          setOnboardingCompleted(false);
+          setIsOnboardingModalOpen(true);
+        }
+      };
+
+      checkOnboardingStatus();
+    }
+  }, [status, session]);
+
   // Load product details when Product tab is active (to refresh)
   useEffect(() => {
     if (status === "authenticated" && session?.user?.email && activeTab === "product") {
@@ -471,6 +588,11 @@ function PlaygroundContent() {
                     ? data.productDetails.keywords
                     : [];
                 setKeywords(loadedKeywords);
+              }
+              
+              // Load subreddits from database
+              if (data.subreddits && Array.isArray(data.subreddits)) {
+                setSubreddits(data.subreddits);
               }
               
               // Store original values for dirty checking
@@ -605,19 +727,36 @@ function PlaygroundContent() {
       }
     }
 
-    // Load saved leads links
+    // Load saved leads links - only if they belong to the current user
     const savedLeadsLinks = localStorage.getItem("leadsLinks");
+    const savedLeadsUserEmail = localStorage.getItem("leadsLinksUserEmail");
+    const currentUserEmail = session?.user?.email?.toLowerCase();
+    
     if (savedLeadsLinks) {
-      try {
-        const leads = JSON.parse(savedLeadsLinks);
-        setLeadsLinks(leads);
-      } catch (e) {
-        console.error("Failed to parse saved leads links:", e);
+      // If there's a stored email and it doesn't match the current user, clear the leads data
+      if (savedLeadsUserEmail && currentUserEmail && savedLeadsUserEmail !== currentUserEmail) {
+        console.log("Clearing leads data from previous user:", savedLeadsUserEmail, "Current user:", currentUserEmail);
+        localStorage.removeItem("leadsLinks");
+        localStorage.removeItem("leadsLinksUserEmail");
+        setLeadsLinks({});
+      } else if (!savedLeadsUserEmail && currentUserEmail) {
+        // If there's no stored email but we have a current user, clear old data (from before we tracked emails)
+        console.log("Clearing leads data from before email tracking was implemented");
+        localStorage.removeItem("leadsLinks");
+        setLeadsLinks({});
+      } else if (savedLeadsUserEmail === currentUserEmail || (!savedLeadsUserEmail && !currentUserEmail)) {
+        // Load the data if emails match, or if both are null (not authenticated yet)
+        try {
+          const leads = JSON.parse(savedLeadsLinks);
+          setLeadsLinks(leads);
+        } catch (e) {
+          console.error("Failed to parse saved leads links:", e);
+        }
       }
     }
     
     // Analytics posts will be loaded from MongoDB via useEffect
-  }, []);
+  }, [session?.user?.email]);
 
   // We no longer auto-check Reddit connection on focus/tab changes.
   // Connection is now explicitly (re)established via the sidebar "Reconnect Reddit" button.
@@ -975,6 +1114,14 @@ function PlaygroundContent() {
 
         // Save to localStorage using safe function
         safeSetLocalStorage("leadsLinks", updated);
+        // Also save the current user's email to associate leads data with the user
+        if (session?.user?.email) {
+          try {
+            localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
+          } catch (e) {
+            console.error("Error saving leadsLinksUserEmail:", e);
+          }
+        }
         setLeadsLinks(updated);
 
         // Log summary for this keyword
@@ -1022,6 +1169,14 @@ function PlaygroundContent() {
               }
               try {
                 localStorage.setItem("leadsLinks", JSON.stringify(updated));
+                // Also save the current user's email to associate leads data with the user
+                if (session?.user?.email) {
+                  try {
+                    localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
+                  } catch (e) {
+                    console.error("Error saving leadsLinksUserEmail:", e);
+                  }
+                }
               } catch (e) {
                 console.error("Error saving leadsLinks to localStorage:", e);
               }
@@ -1096,6 +1251,14 @@ function PlaygroundContent() {
                   };
                 }
                 safeSetLocalStorage("leadsLinks", updated);
+                // Also save the current user's email to associate leads data with the user
+                if (session?.user?.email) {
+                  try {
+                    localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
+                  } catch (e) {
+                    console.error("Error saving leadsLinksUserEmail:", e);
+                  }
+                }
                 return updated;
               });
 
@@ -1135,6 +1298,14 @@ function PlaygroundContent() {
                       };
                     }
                     safeSetLocalStorage("leadsLinks", updated);
+                    // Also save the current user's email to associate leads data with the user
+                    if (session?.user?.email) {
+                      try {
+                        localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
+                      } catch (e) {
+                        console.error("Error saving leadsLinksUserEmail:", e);
+                      }
+                    }
                     return updated;
                   });
                 }
@@ -1169,6 +1340,14 @@ function PlaygroundContent() {
                     };
                   }
                   safeSetLocalStorage("leadsLinks", updated);
+                  // Also save the current user's email to associate leads data with the user
+                  if (session?.user?.email) {
+                    try {
+                      localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
+                    } catch (e) {
+                      console.error("Error saving leadsLinksUserEmail:", e);
+                    }
+                  }
                   return updated;
                 });
               }
@@ -3227,6 +3406,14 @@ function PlaygroundContent() {
           }
         }
         safeSetLocalStorage("leadsLinks", updated);
+        // Also save the current user's email to associate leads data with the user
+        if (session?.user?.email) {
+          try {
+            localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
+          } catch (e) {
+            console.error("Error saving leadsLinksUserEmail:", e);
+          }
+        }
         return updated;
       });
     } else {
@@ -3475,6 +3662,31 @@ function PlaygroundContent() {
     }
   };
 
+  // Auto-save subreddits when added/removed
+  const saveSubreddits = async (newSubreddits: string[]) => {
+    try {
+      const response = await fetch("/api/user/product-details", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          subreddits: newSubreddits.length > 0 ? newSubreddits : undefined,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Subreddits saved successfully
+        }
+      }
+    } catch (error) {
+      console.error("Error auto-saving subreddits:", error);
+      // Don't show error toast for auto-save, just log it
+    }
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case "product":
@@ -3554,7 +3766,8 @@ function PlaygroundContent() {
                 "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
                 !sidebarOpen && "pl-14"
           )}>
-            <div className="space-y-6 px-1">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-1">
+                  {/* Left Column */}
                   <div className="space-y-4">
               <div>
                       <label htmlFor="product-website" className="block text-sm font-medium text-foreground mb-1">
@@ -3566,14 +3779,14 @@ function PlaygroundContent() {
                         value={website}
                         onChange={(e) => setWebsite(e.target.value)}
                         placeholder="https://example.com"
-                        className="w-full max-w-md"
+                        className="w-full"
                       />
               </div>
                     <div>
                       <label htmlFor="product-description" className="block text-sm font-medium text-foreground mb-1">
                         Product Description
                       </label>
-                      <div className="relative w-full max-w-md rounded-md border border-input focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2">
+                      <div className="relative w-full rounded-md border border-input focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2">
                         <textarea
                           id="product-description"
                           value={productDescription}
@@ -3639,35 +3852,46 @@ function PlaygroundContent() {
                         >
                           {isGeneratingProductDescription ? "Generating..." : "AI generate"}
                         </Button>
+                      </div>
                     </div>
                   </div>
+                  
+                  {/* Right Column */}
+                  <div className="space-y-6">
                   <div>
                       <label htmlFor="product-keywords" className="block text-sm font-medium text-foreground mb-1">
                         Keywords
                       </label>
-                      <div className="w-full max-w-md space-y-1">
-                        <div className="min-h-[40px] max-h-[120px] overflow-y-auto flex flex-wrap gap-2 items-start py-1">
-                          {keywords.map((keyword, index) => (
-                            <div
-                              key={index}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-3 py-1 text-sm text-foreground"
-                            >
-                              <span>{keyword}</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const newKeywords = keywords.filter((_, i) => i !== index);
-                                  setKeywords(newKeywords);
-                                  // Auto-save keywords when removed
-                                  saveKeywords(newKeywords);
-                                }}
-                                className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5 transition-colors"
-                                aria-label={`Remove ${keyword}`}
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Add keywords related to your product niche {keywords.length > 0 && `(${keywords.length}/20)`}
+                      </p>
+                      <div className="w-full space-y-1">
+                        <div className="min-h-[40px] flex flex-wrap gap-2 items-start py-1">
+                          {keywords.length === 0 ? (
+                            <p className="text-sm text-muted-foreground italic">No keywords added. Enter keywords related to your product niche.</p>
+                          ) : (
+                            keywords.map((keyword, index) => (
+                              <div
+                                key={index}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-3 py-1 text-sm text-foreground"
                               >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ))}
+                                <span>{keyword}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const newKeywords = keywords.filter((_, i) => i !== index);
+                                    setKeywords(newKeywords);
+                                    // Auto-save keywords when removed
+                                    saveKeywords(newKeywords);
+                                  }}
+                                  className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5 transition-colors"
+                                  aria-label={`Remove ${keyword}`}
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ))
+                          )}
                         </div>
                         <div className="flex gap-2 pt-1">
                           <Input
@@ -3717,9 +3941,131 @@ function PlaygroundContent() {
                           >
                             <Plus className="h-4 w-4" />
                     </Button>
+                  </div>
+                </div>
+              </div>
+                  <div>
+                      <label htmlFor="product-subreddits" className="block text-sm font-medium text-foreground mb-1">
+                        Target Subreddits
+                      </label>
+                      <div className="w-full space-y-1">
+                        <div className="min-h-[40px] flex flex-wrap gap-2 items-start py-1">
+                          {subreddits.length === 0 ? (
+                            <p className="text-sm text-muted-foreground italic">No subreddits selected. Search and add subreddits to get started.</p>
+                          ) : (
+                            subreddits.map((subreddit, index) => (
+                              <div
+                                key={index}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-3 py-1 text-sm text-foreground"
+                              >
+                                <span>r/{subreddit}</span>
+                                <button
+                                  type="button"
+                                onClick={() => {
+                                  const newSubreddits = subreddits.filter((_, i) => i !== index);
+                                  setSubreddits(newSubreddits);
+                                  // Auto-save subreddits when removed
+                                  saveSubreddits(newSubreddits);
+                                }}
+                                  className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5 transition-colors"
+                                  aria-label={`Remove ${subreddit}`}
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <div className="relative flex gap-2 pt-1">
+                          <div className="relative flex-1">
+                            <Input
+                              ref={subredditInputRef}
+                              id="product-subreddits"
+                              type="text"
+                              value={subredditInput}
+                              onChange={(e) => {
+                                setSubredditInput(e.target.value);
+                                setShowSubredditDropdown(true);
+                              }}
+                              onFocus={() => {
+                                if (subredditSuggestions.length > 0) {
+                                  setShowSubredditDropdown(true);
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && subredditSuggestions.length > 0) {
+                                  e.preventDefault();
+                                  const firstSuggestion = subredditSuggestions[0];
+                                  if (firstSuggestion && !subreddits.includes(firstSuggestion.name)) {
+                                    if (subreddits.length >= 15) {
+                                      showToast("Maximum of 15 subreddits allowed", { variant: "error" });
+                                      return;
+                                    }
+                                    const newSubreddits = [...subreddits, firstSuggestion.name];
+                                    setSubreddits(newSubreddits);
+                                    setSubredditInput("");
+                                    setShowSubredditDropdown(false);
+                                    // Auto-save subreddits
+                                    saveSubreddits(newSubreddits);
+                                  }
+                                } else if (e.key === 'Escape') {
+                                  setShowSubredditDropdown(false);
+                                }
+                              }}
+                              placeholder="Search for subreddits..."
+                              className="flex-1"
+                            />
+                            {isLoadingSubreddits && (
+                              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                              </div>
+                            )}
+                            {showSubredditDropdown && subredditSuggestions.length > 0 && (
+                              <div
+                                ref={subredditDropdownRef}
+                                className="absolute z-50 w-full mt-1 bg-background border border-border rounded-md shadow-lg max-h-60 overflow-y-auto"
+                              >
+                                {subredditSuggestions.map((sub, index) => (
+                                  <button
+                                    key={index}
+                                    type="button"
+                                    onClick={() => {
+                                      if (!subreddits.includes(sub.name)) {
+                                        if (subreddits.length >= 15) {
+                                          showToast("Maximum of 15 subreddits allowed", { variant: "error" });
+                                          return;
+                                        }
+                                        const newSubreddits = [...subreddits, sub.name];
+                                        setSubreddits(newSubreddits);
+                                        setSubredditInput("");
+                                        setShowSubredditDropdown(false);
+                                        // Auto-save subreddits
+                                        saveSubreddits(newSubreddits);
+                                      }
+                                    }}
+                                    className="w-full text-left px-3 py-2 hover:bg-muted transition-colors flex items-center justify-between"
+                                  >
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-medium">{sub.displayName}</span>
+                                      {sub.subscribers > 0 && (
+                                        <span className="text-xs text-muted-foreground">
+                                          {sub.subscribers >= 1000 
+                                            ? `${(sub.subscribers / 1000).toFixed(1)}k members`
+                                            : `${sub.subscribers} members`}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {subreddits.includes(sub.name) && (
+                                      <Check className="h-4 w-4 text-primary" />
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          Add keywords related to your product niche {keywords.length > 0 && `(${keywords.length}/20)`}
+                          Search and add subreddits where you want to engage
                         </p>
                       </div>
                     </div>
@@ -5887,6 +6233,15 @@ function PlaygroundContent() {
           </div>
         </div>
       )}
+
+      {/* Onboarding Modal */}
+      <OnboardingModal
+        isOpen={isOnboardingModalOpen}
+        onComplete={() => {
+          setIsOnboardingModalOpen(false);
+          setOnboardingCompleted(true);
+        }}
+      />
     </>
   );
 }
