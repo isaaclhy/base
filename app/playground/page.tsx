@@ -58,10 +58,10 @@ const safeSetLocalStorage = (key: string, value: any, onError?: () => void) => {
     if (e.name === "QuotaExceededError" || e.code === 22 || e.code === 1014) {
       console.warn(`localStorage quota exceeded for key: ${key}`);
       
-      // If it's redditLinks, try to clear old queries to make space
-      if (key === "redditLinks" && onError) {
+      // If it's redditLinks or leadsLinks, try to clear old queries to make space
+      if ((key === "redditLinks" || key === "leadsLinks") && onError) {
         onError();
-      } else if (key === "redditLinks") {
+      } else if (key === "redditLinks" || key === "leadsLinks") {
         // Clear old queries, keep only the most recent 5 queries, then retry
         try {
           const current = JSON.parse(localStorage.getItem(key) || "{}");
@@ -928,13 +928,8 @@ function PlaygroundContent() {
           [keyword]: mergedLinksForKeyword,
         };
 
-        // Save to localStorage
-        try {
-          localStorage.setItem("leadsLinks", JSON.stringify(updated));
-        } catch (e) {
-          console.error("Error saving leadsLinks to localStorage:", e);
-        }
-
+        // Save to localStorage using safe function
+        safeSetLocalStorage("leadsLinks", updated);
         setLeadsLinks(updated);
 
         // Log summary for this keyword
@@ -1033,11 +1028,7 @@ function PlaygroundContent() {
                     postData: post,
                   };
                 }
-                try {
-                  localStorage.setItem("leadsLinks", JSON.stringify(updated));
-                } catch (e) {
-                  console.error("Error saving leadsLinks to localStorage:", e);
-                }
+                safeSetLocalStorage("leadsLinks", updated);
                 return updated;
               });
             }
@@ -3095,11 +3086,7 @@ function PlaygroundContent() {
             delete updated[linkItem.query];
           }
         }
-        try {
-          localStorage.setItem("leadsLinks", JSON.stringify(updated));
-        } catch (e) {
-          console.error("Error saving leadsLinks to localStorage:", e);
-        }
+        safeSetLocalStorage("leadsLinks", updated);
         return updated;
       });
     } else {

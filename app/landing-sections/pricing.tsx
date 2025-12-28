@@ -7,15 +7,17 @@ import { cn } from "@/lib/utils";
 
 const features = {
   free: [
-    "Unlimited reddit post search",
-    "30 Free Credits",
-    "Usage analytics",
+    "Unlimited Manual Reddit Post Searches",
+    "20 keywords",
+    "30 generated comments",
+    "Engagement tracker",
   ],
   premium: [
-    "24/7 automated comment posting on relevant posts",
-    "Unlimited reddit post search",
-    "10,000 Free Credits",
-    "Usage analytics",
+    "24/7 Automated Reddit Post search",
+    "50 keywords",
+    "2,000 generated comments",
+    "Engagement tracker",
+    "Email notification on high potential posts",
   ],
 };
 
@@ -84,7 +86,7 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
       showCTAButtons ? "py-6" : "py-16 sm:py-24"
     )}>
       <div className="mx-auto flex w-full max-w-5xl flex-col items-center px-4 text-center">
-        <div className={cn("space-y-2 mb-6", showCTAButtons && "mb-4")}>
+        <div className={cn("space-y-4 mb-6", showCTAButtons && "mb-4")}>
           <h2 className={cn(
             "font-bold tracking-tight text-foreground",
             showCTAButtons ? "text-2xl" : "text-3xl sm:text-4xl"
@@ -92,23 +94,20 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
             Simple pricing for growing teams
           </h2>
           {!showCTAButtons && (
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Start free and upgrade when you need more scale. Premium unlocks higher usage limits and priority access to new tools.
+            <p className="max-w-2xl my-4 text-base text-muted-foreground">
+              Start free and upgrade when you need more.
             </p>
           )}
         </div>
 
         <div className="grid w-full gap-4 md:grid-cols-2">
           <div className={cn(
-            "flex h-full flex-col rounded-2xl border border-border bg-card text-left shadow-sm",
+            "flex h-full flex-col rounded-2xl border border-border text-left shadow-sm",
             showCTAButtons ? "gap-4 p-6" : "gap-6 p-8"
           )}>
             <div>
-              <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Free
-              </span>
-              <h3 className={cn("font-semibold text-foreground", showCTAButtons ? "mt-2 text-2xl" : "mt-4 text-3xl")}>$0</h3>
-              <p className={cn("text-muted-foreground", showCTAButtons && "text-xs")}>No credit card required</p>
+              <h3 className={cn("font-semibold text-foreground", showCTAButtons ? "text-2xl" : "text-3xl")}>Free</h3>
+              <p className={cn("text-muted-foreground mt-1", showCTAButtons ? "text-sm" : "text-base")}>$0 • No credit card required</p>
             </div>
             <ul className={cn("text-sm text-muted-foreground", showCTAButtons ? "space-y-2" : "space-y-3")}>
               {features.free.map((feature) => (
@@ -126,20 +125,15 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
           </div>
 
           <div className={cn(
-            "flex h-full flex-col rounded-2xl border border-[#ff4500]/60 bg-white text-left shadow-[0_0_35px_-12px_rgba(255,69,0,0.65)]",
+            "relative flex h-full flex-col rounded-2xl border border-[#ff4500]/60 text-left shadow-[0_0_35px_-12px_rgba(255,69,0,0.65)]",
             showCTAButtons ? "gap-4 p-6" : "gap-6 p-8"
           )}>
-            <div className={showCTAButtons ? "space-y-2" : "space-y-3"}>
-              <div className="flex items-center gap-2">
-                <span className="rounded-full bg-[#ff4500] px-3 py-1 text-xs font-medium uppercase tracking-wide text-white">
-                  Premium
-                </span>
-                <span className="rounded-full bg-white/80 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#ff4500] shadow-[0_0_0_1px_rgba(255,69,0,0.2)]">
-                  Popular
-                </span>
-              </div>
-              <h3 className={cn("font-semibold text-[#2d1510]", showCTAButtons ? "text-2xl" : "text-3xl")}>$13.99</h3>
-              <p className={cn("text-[#72341e]", showCTAButtons ? "text-xs" : "text-sm")}>per month, cancel anytime</p>
+            <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-[#ff4500] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">
+              Popular
+            </span>
+            <div>
+              <h3 className={cn("font-semibold text-[#2d1510]", showCTAButtons ? "text-2xl" : "text-3xl")}>Premium</h3>
+              <p className={cn("text-[#72341e] mt-1", showCTAButtons ? "text-sm" : "text-base")}>$13.99 per month • Cancel anytime</p>
             </div>
             <ul className={cn("text-sm text-muted-foreground", showCTAButtons ? "space-y-2" : "space-y-3")}>
               {features.premium.map((feature) => (

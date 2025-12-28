@@ -3,8 +3,8 @@
 import Navbar from "@/components/navbar";
 import Hero from "./landing-sections/hero";
 import BenefitsSection from "./landing-sections/benefits";
+import MainBenefits from "./landing-sections/main-benefits";
 import PricingSection from "./landing-sections/pricing";
-import Examples from "./landing-sections/example";
 import Footer from "./landing-sections/footer";
 
 export default function Home() {
@@ -14,8 +14,8 @@ export default function Home() {
       <Navbar />
       {/* Hero Section */}
       <Hero />
-      {/* Examples Section */}
-      <Examples />
+      {/* Main Benefits Section */}
+      <MainBenefits />
       {/* Benefits Section */}
       <BenefitsSection />
       {/* Pricing Section */}

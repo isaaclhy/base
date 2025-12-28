@@ -91,7 +91,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<GenerateC
       response = await (client as any).responses.create({
         prompt: {
           "id": "pmpt_694ff0c078ec8197ad0b92621f11735905afaefebad67788",
-          "version": "4",
+          "version": "5",
           "variables": {
             "content": postContent,
             "idea": productIdea
