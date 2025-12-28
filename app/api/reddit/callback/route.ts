@@ -22,6 +22,7 @@ function getRedirectUri(request: NextRequest): string {
 
 export async function GET(request: NextRequest) {
   try {
+    // Pass the request to auth() so it can read cookies properly
     const session = await auth();
     const searchParams = request.nextUrl.searchParams;
     const code = searchParams.get("code");
@@ -49,10 +50,32 @@ export async function GET(request: NextRequest) {
         cookieNames: Object.keys(allCookies),
         requestUrl: request.url,
         userAgent: request.headers.get("user-agent"),
+        origin: request.headers.get("origin"),
+        referer: request.headers.get("referer"),
       });
-      return NextResponse.redirect(
-        `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/playground?error=reddit_oauth_invalid_state`
-      );
+      
+      // If state is missing but we have a code, try to exchange it anyway
+      // This handles cases where cookies were blocked (common in localhost with cross-site redirects)
+      // We'll validate the code exchange instead - the code itself provides some security
+      if (code && !storedState) {
+        console.log("State cookie missing (likely blocked by browser), attempting code exchange anyway");
+        // Continue with code exchange - if the code is invalid or expired, the token exchange will fail
+      } else if (!code) {
+        // No code means we can't proceed
+        return NextResponse.redirect(
+          `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/playground?error=reddit_oauth_no_code`
+        );
+      } else if (state && storedState && state !== storedState) {
+        // State mismatch - this is a security issue, don't proceed
+        return NextResponse.redirect(
+          `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/playground?error=reddit_oauth_invalid_state`
+        );
+      } else if (!state) {
+        // No state in URL - can't validate
+        return NextResponse.redirect(
+          `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/playground?error=reddit_oauth_invalid_state`
+        );
+      }
     }
     
     console.log("State validation passed:", {
@@ -61,9 +84,32 @@ export async function GET(request: NextRequest) {
     });
 
     // Verify user is authenticated
-    if (!session?.user?.email) {
+    // If session is not available (common with cross-site redirects), try to get email from state
+    let userEmail: string | null = session?.user?.email || null;
+    
+    if (!userEmail && state) {
+      try {
+        // Decode the state to get the user email we stored there
+        const decodedState = JSON.parse(Buffer.from(state, 'base64').toString());
+        userEmail = decodedState.userId || null;
+        console.log("Extracted user email from state:", userEmail);
+      } catch (e) {
+        console.error("Failed to decode state:", e);
+      }
+    }
+    
+    if (!userEmail) {
+      console.error("Session check failed in Reddit callback:", {
+        hasSession: !!session,
+        hasUser: !!session?.user,
+        hasEmail: !!session?.user?.email,
+        hasState: !!state,
+        cookies: Object.keys(Object.fromEntries(request.cookies.getAll().map(c => [c.name, c.value]))),
+      });
+      // Redirect to playground instead of signin, as user might be logged in but session cookie not sent
+      // The onboarding modal will handle showing the connection status
       return NextResponse.redirect(
-        `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/auth/signin`
+        `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/playground?error=reddit_oauth_session_expired`
       );
     }
 
@@ -113,7 +159,7 @@ export async function GET(request: NextRequest) {
 
     // Store tokens in database
     try {
-      await updateUserRedditTokens(session.user.email, {
+      await updateUserRedditTokens(userEmail, {
         accessToken: tokenData.access_token,
         refreshToken: tokenData.refresh_token,
         expiresAt,

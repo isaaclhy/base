@@ -10,6 +10,7 @@ import { useSearchParams } from "next/navigation";
 interface OnboardingModalProps {
   isOpen: boolean;
   onComplete: () => void;
+  onClose?: () => void;
   initialStep?: number;
 }
 
@@ -19,17 +20,35 @@ interface SubredditSuggestion {
   subscribers: number;
 }
 
-export function OnboardingModal({ isOpen, onComplete, initialStep = 1 }: OnboardingModalProps) {
+export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }: OnboardingModalProps) {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const [currentStep, setCurrentStep] = useState(initialStep);
   const [isLoading, setIsLoading] = useState(false);
   const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
   
+  // Step 1: Reddit connection
+  const [isConnectingReddit, setIsConnectingReddit] = useState(false);
+  const [isRedditConnected, setIsRedditConnected] = useState(false);
+  
+  // Step 2: Product info
+  const [productName, setProductName] = useState("");
+  const [productLink, setProductLink] = useState("");
+  const [productDescription, setProductDescription] = useState("");
+  
+  // Step 3: Subreddits
+  const [subreddits, setSubreddits] = useState<string[]>([]);
+  const [subredditInput, setSubredditInput] = useState("");
+  const [subredditSuggestions, setSubredditSuggestions] = useState<SubredditSuggestion[]>([]);
+  const [isLoadingSubreddits, setIsLoadingSubreddits] = useState(false);
+  const [showSubredditDropdown, setShowSubredditDropdown] = useState(false);
+  const subredditInputRef = useRef<HTMLInputElement>(null);
+  const subredditDropdownRef = useRef<HTMLDivElement>(null);
+
   // Check if we're returning from Reddit OAuth
   useEffect(() => {
     if (isOpen && searchParams.get("reddit_connected") === "success") {
-      setCurrentStep(3);
+      setCurrentStep(1);
       // Check connection status after a short delay to allow tokens to be saved
       setTimeout(async () => {
         try {
@@ -44,28 +63,10 @@ export function OnboardingModal({ isOpen, onComplete, initialStep = 1 }: Onboard
       }, 1000);
     }
   }, [isOpen, searchParams]);
-  
-  // Step 1: Product info
-  const [productName, setProductName] = useState("");
-  const [productLink, setProductLink] = useState("");
-  const [productDescription, setProductDescription] = useState("");
-  
-  // Step 2: Subreddits
-  const [subreddits, setSubreddits] = useState<string[]>([]);
-  const [subredditInput, setSubredditInput] = useState("");
-  const [subredditSuggestions, setSubredditSuggestions] = useState<SubredditSuggestion[]>([]);
-  const [isLoadingSubreddits, setIsLoadingSubreddits] = useState(false);
-  const [showSubredditDropdown, setShowSubredditDropdown] = useState(false);
-  const subredditInputRef = useRef<HTMLInputElement>(null);
-  const subredditDropdownRef = useRef<HTMLDivElement>(null);
-  
-  // Step 3: Reddit connection
-  const [isConnectingReddit, setIsConnectingReddit] = useState(false);
-  const [isRedditConnected, setIsRedditConnected] = useState(false);
 
   // Check Reddit connection status
   useEffect(() => {
-    if (currentStep === 3 && isOpen) {
+    if (currentStep === 1 && isOpen) {
       const checkRedditConnection = async () => {
         try {
           const response = await fetch("/api/reddit/status");
@@ -166,6 +167,13 @@ export function OnboardingModal({ isOpen, onComplete, initialStep = 1 }: Onboard
   };
 
   const handleStep1Next = async () => {
+    if (!isRedditConnected) {
+      return;
+    }
+    setCurrentStep(2);
+  };
+
+  const handleStep2Next = async () => {
     if (!productName.trim() || !productLink.trim() || !productDescription.trim()) {
       return;
     }
@@ -182,7 +190,7 @@ export function OnboardingModal({ isOpen, onComplete, initialStep = 1 }: Onboard
       });
 
       if (response.ok) {
-        setCurrentStep(2);
+        setCurrentStep(3);
       }
     } catch (error) {
       console.error("Error saving product details:", error);
@@ -191,7 +199,7 @@ export function OnboardingModal({ isOpen, onComplete, initialStep = 1 }: Onboard
     }
   };
 
-  const handleStep2Next = async () => {
+  const handleStep3Next = async () => {
     if (subreddits.length < 3) {
       return;
     }
@@ -207,7 +215,8 @@ export function OnboardingModal({ isOpen, onComplete, initialStep = 1 }: Onboard
       });
 
       if (response.ok) {
-        setCurrentStep(3);
+        // Complete onboarding
+        await handleComplete();
       }
     } catch (error) {
       console.error("Error saving subreddits:", error);
@@ -280,8 +289,43 @@ export function OnboardingModal({ isOpen, onComplete, initialStep = 1 }: Onboard
 
           {/* Content */}
           <div className="px-6 py-6 flex-1 overflow-y-auto">
-            {/* Step 1: Product Information */}
+            {/* Step 1: Reddit Connection */}
             {currentStep === 1 && (
+              <div className="space-y-4">
+                <div className="text-center py-8">
+                  <h3 className="text-lg font-semibold text-foreground mb-2">
+                    Connect Your Reddit Account
+                  </h3>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    Connect your Reddit account to search for subreddits and start finding leads.
+                  </p>
+                  {isRedditConnected ? (
+                    <div className="flex items-center justify-center gap-2 text-primary">
+                      <CheckCircle2 className="h-5 w-5" />
+                      <span className="text-sm font-medium">Reddit account connected!</span>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={handleConnectReddit}
+                      disabled={isConnectingReddit}
+                      className="mx-auto"
+                    >
+                      {isConnectingReddit ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Connecting...
+                        </>
+                      ) : (
+                        "Connect Reddit Account"
+                      )}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Product Information */}
+            {currentStep === 2 && (
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium text-foreground mb-2 block">
@@ -373,8 +417,8 @@ export function OnboardingModal({ isOpen, onComplete, initialStep = 1 }: Onboard
               </div>
             )}
 
-            {/* Step 2: Subreddits */}
-            {currentStep === 2 && (
+            {/* Step 3: Subreddits */}
+            {currentStep === 3 && (
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium text-foreground mb-2 block">
@@ -457,40 +501,6 @@ export function OnboardingModal({ isOpen, onComplete, initialStep = 1 }: Onboard
               </div>
             )}
 
-            {/* Step 3: Reddit Connection */}
-            {currentStep === 3 && (
-              <div className="space-y-4">
-                <div className="text-center py-8">
-                  <h3 className="text-lg font-semibold text-foreground mb-2">
-                    Connect Your Reddit Account
-                  </h3>
-                  <p className="text-sm text-muted-foreground mb-6">
-                    Connect your Reddit account to start finding leads and posting comments automatically.
-                  </p>
-                  {isRedditConnected ? (
-                    <div className="flex items-center justify-center gap-2 text-primary">
-                      <CheckCircle2 className="h-5 w-5" />
-                      <span className="text-sm font-medium">Reddit account connected!</span>
-                    </div>
-                  ) : (
-                    <Button
-                      onClick={handleConnectReddit}
-                      disabled={isConnectingReddit}
-                      className="mx-auto"
-                    >
-                      {isConnectingReddit ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          Connecting...
-                        </>
-                      ) : (
-                        "Connect Reddit Account"
-                      )}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Footer */}
@@ -508,25 +518,16 @@ export function OnboardingModal({ isOpen, onComplete, initialStep = 1 }: Onboard
             {currentStep === 1 && (
               <Button
                 onClick={handleStep1Next}
-                disabled={isLoading || !productName.trim() || !productLink.trim() || !productDescription.trim()}
+                disabled={!isRedditConnected}
               >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    Next
-                    <ChevronRight className="h-4 w-4 ml-2" />
-                  </>
-                )}
+                Next
+                <ChevronRight className="h-4 w-4 ml-2" />
               </Button>
             )}
             {currentStep === 2 && (
               <Button
                 onClick={handleStep2Next}
-                disabled={isLoading || subreddits.length < 3}
+                disabled={isLoading || !productName.trim() || !productLink.trim() || !productDescription.trim()}
               >
                 {isLoading ? (
                   <>
@@ -543,8 +544,8 @@ export function OnboardingModal({ isOpen, onComplete, initialStep = 1 }: Onboard
             )}
             {currentStep === 3 && (
               <Button
-                onClick={handleComplete}
-                disabled={isLoading || !isRedditConnected}
+                onClick={handleStep3Next}
+                disabled={isLoading || subreddits.length < 3}
               >
                 {isLoading ? (
                   <>

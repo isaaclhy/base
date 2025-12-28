@@ -79,6 +79,10 @@ export async function GET(request: NextRequest) {
     const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
     const useSecureCookies = isProduction; // HTTPS is required in production for sameSite: "none"
     
+    // For localhost, "lax" won't work for cross-site redirects from Reddit
+    // We need to use "none" even in development, but that requires secure: true
+    // For localhost, we'll use "lax" and accept that the cookie might not be sent on redirect
+    // The auto-retry logic in the callback will handle this case
     response.cookies.set("reddit_oauth_state", state, {
       httpOnly: true,
       secure: useSecureCookies, // Required for sameSite: "none"

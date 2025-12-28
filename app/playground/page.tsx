@@ -6241,6 +6241,10 @@ function PlaygroundContent() {
           setIsOnboardingModalOpen(false);
           setOnboardingCompleted(true);
         }}
+        onClose={() => {
+          setIsOnboardingModalOpen(false);
+          // Don't mark as completed if user closes without finishing
+        }}
       />
     </>
   );
