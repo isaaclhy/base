@@ -17,10 +17,10 @@ export default function BenefitsSection() {
         <div className="mx-auto max-w-3xl space-y-3 text-center mb-12">
 
           <h2 className="text-3xl font-semibold tracking-tight text-[#2d1510] sm:text-4xl">
-            Automate leads, sales and engagements effortlessly
+            Save time and money while scaling your outreach
           </h2>
           <p className="text-base text-[#663826] sm:text-lg">
-            Skip hours of manual work and let us handle the heavy lifting.
+            Automate your Reddit engagement to save hours weekly and reduce costs, all while increasing your ROI.
           </p>
         </div>
 
