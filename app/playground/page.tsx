@@ -140,6 +140,11 @@ function PlaygroundContent() {
   const [website, setWebsite] = useState("");
   const [productDescription, setProductDescription] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
+  const [originalProductDetails, setOriginalProductDetails] = useState<{
+    website: string;
+    productDescription: string;
+    keywords: string[];
+  } | null>(null);
   const [keywordInput, setKeywordInput] = useState("");
   const [callToAction, setCallToAction] = useState("");
   const [persona, setPersona] = useState("");
@@ -253,6 +258,7 @@ function PlaygroundContent() {
   const sortDropdownRef = useRef<HTMLDivElement>(null);
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [isBulkOperationsModalOpen, setIsBulkOperationsModalOpen] = useState(false);
+  const [showNoKeywordsModal, setShowNoKeywordsModal] = useState(false);
   const [bulkPersona, setBulkPersona] = useState<"Founder" | "User">("Founder");
   const [bulkOperationStatus, setBulkOperationStatus] = useState<Record<string, "haven't started" | "generating" | "posting" | "completed" | "error">>({});
   const [bulkGeneratedComments, setBulkGeneratedComments] = useState<Record<string, string>>({});
@@ -364,24 +370,43 @@ function PlaygroundContent() {
                 setProductDescription(data.productDetails.productDescription);
               }
               // Load keywords from the keywords field (array) or fallback to productDetails.keywords (legacy)
+              let loadedKeywords: string[] = [];
               if (data.keywords && Array.isArray(data.keywords)) {
-                setKeywords(data.keywords);
+                loadedKeywords = data.keywords;
+                setKeywords(loadedKeywords);
               } else if (data.productDetails?.keywords) {
                 // Legacy: If keywords is a string, split by comma; if array, use as is
-                const keywordsArray = typeof data.productDetails.keywords === 'string'
+                loadedKeywords = typeof data.productDetails.keywords === 'string'
                   ? data.productDetails.keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k)
                   : Array.isArray(data.productDetails.keywords)
                     ? data.productDetails.keywords
                     : [];
-                setKeywords(keywordsArray);
+                setKeywords(loadedKeywords);
               }
+              
+              // Store original values for dirty checking
+              setOriginalProductDetails({
+                website: data.productDetails.link || "",
+                productDescription: data.productDetails.productDescription || "",
+                keywords: loadedKeywords,
+              });
             } else {
               setProductDetailsFromDb(null);
+              setOriginalProductDetails({
+                website: "",
+                productDescription: "",
+                keywords: [],
+              });
             }
           }
         } catch (error) {
           console.error("Error loading product details:", error);
           setProductDetailsFromDb(null);
+          setOriginalProductDetails({
+            website: "",
+            productDescription: "",
+            keywords: [],
+          });
         }
       };
       
@@ -434,21 +459,41 @@ function PlaygroundContent() {
                 setProductDescription(data.productDetails.productDescription);
               }
               // Load keywords from the keywords field (array) or fallback to productDetails.keywords (legacy)
+              let loadedKeywords: string[] = [];
               if (data.keywords && Array.isArray(data.keywords)) {
-                setKeywords(data.keywords);
+                loadedKeywords = data.keywords;
+                setKeywords(loadedKeywords);
               } else if (data.productDetails?.keywords) {
                 // Legacy: If keywords is a string, split by comma; if array, use as is
-                const keywordsArray = typeof data.productDetails.keywords === 'string'
+                loadedKeywords = typeof data.productDetails.keywords === 'string'
                   ? data.productDetails.keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k)
                   : Array.isArray(data.productDetails.keywords)
                     ? data.productDetails.keywords
                     : [];
-                setKeywords(keywordsArray);
+                setKeywords(loadedKeywords);
               }
+              
+              // Store original values for dirty checking
+              setOriginalProductDetails({
+                website: data.productDetails.link || "",
+                productDescription: data.productDetails.productDescription || "",
+                keywords: loadedKeywords,
+              });
+            } else {
+              setOriginalProductDetails({
+                website: "",
+                productDescription: "",
+                keywords: [],
+              });
             }
           }
         } catch (error) {
           console.error("Error loading product details:", error);
+          setOriginalProductDetails({
+            website: "",
+            productDescription: "",
+            keywords: [],
+          });
         } finally {
           setIsLoadingProductDetails(false);
         }
@@ -1141,8 +1186,7 @@ function PlaygroundContent() {
   // Handle leads search
   const handleLeadsSearch = async () => {
     if (!keywords || keywords.length === 0) {
-      showToast("Please add keywords in the Product tab first", { variant: "error" });
-      setActiveTab("product");
+      setShowNoKeywordsModal(true);
       return;
     }
 
@@ -3399,6 +3443,38 @@ function PlaygroundContent() {
     }
   };
 
+  // Auto-save keywords when added
+  const saveKeywords = async (newKeywords: string[]) => {
+    try {
+      const response = await fetch("/api/user/product-details", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          keywords: newKeywords.length > 0 ? newKeywords : undefined,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Update original values after successful save
+          setOriginalProductDetails((prev) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              keywords: newKeywords,
+            };
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error auto-saving keywords:", error);
+      // Don't show error toast for auto-save, just log it
+    }
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case "product":
@@ -3441,6 +3517,12 @@ function PlaygroundContent() {
 
                         const data = await response.json();
                         if (data.success) {
+                          // Update original values after successful save
+                          setOriginalProductDetails({
+                            website: website || "",
+                            productDescription: productDescription || "",
+                            keywords: keywords,
+                          });
                           // Show success toast (auto-dismisses after 5 seconds)
                           showToast("Product details saved successfully!", { variant: "success" });
                         }
@@ -3451,11 +3533,18 @@ function PlaygroundContent() {
                         setIsSavingProductDetails(false);
                       }
                     }}
-                    disabled={isSavingProductDetails || isLoadingProductDetails}
+                    disabled={
+                      isSavingProductDetails || 
+                      isLoadingProductDetails || 
+                      !originalProductDetails ||
+                      (originalProductDetails.website === (website || "") &&
+                       originalProductDetails.productDescription === (productDescription || "") &&
+                       JSON.stringify(originalProductDetails.keywords.sort()) === JSON.stringify([...keywords].sort()))
+                    }
                     className="bg-black text-white hover:bg-black/90 disabled:opacity-50 self-start sm:self-auto"
                     size="sm"
                   >
-                    {isSavingProductDetails ? "Saving..." : "Save"}
+                    {isSavingProductDetails ? "Saving..." : "Save Changes"}
                   </Button>
                 </div>
               </div>
@@ -3567,7 +3656,10 @@ function PlaygroundContent() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setKeywords(keywords.filter((_, i) => i !== index));
+                                  const newKeywords = keywords.filter((_, i) => i !== index);
+                                  setKeywords(newKeywords);
+                                  // Auto-save keywords when removed
+                                  saveKeywords(newKeywords);
                                 }}
                                 className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5 transition-colors"
                                 aria-label={`Remove ${keyword}`}
@@ -3592,8 +3684,11 @@ function PlaygroundContent() {
                                     showToast("Maximum of 20 keywords allowed", { variant: "error" });
                                     return;
                                   }
-                                  setKeywords([...keywords, trimmed]);
+                                  const newKeywords = [...keywords, trimmed];
+                                  setKeywords(newKeywords);
                                   setKeywordInput("");
+                                  // Auto-save keywords
+                                  saveKeywords(newKeywords);
                                 }
                               }
                             }}
@@ -3610,8 +3705,11 @@ function PlaygroundContent() {
                                   showToast("Maximum of 20 keywords allowed", { variant: "error" });
                                   return;
                                 }
-                                setKeywords([...keywords, trimmed]);
+                                const newKeywords = [...keywords, trimmed];
+                                setKeywords(newKeywords);
                                 setKeywordInput("");
+                                // Auto-save keywords
+                                saveKeywords(newKeywords);
                               }
                             }}
                             disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= 20}
@@ -4579,7 +4677,7 @@ function PlaygroundContent() {
                       )}
                           <Button
                       onClick={handleLeadsSearch}
-                      disabled={!keywords || keywords.length === 0 || isLoadingLeads}
+                      disabled={isLoadingLeads}
                             size="sm"
                       variant={distinctLeadsLinks.length > 0 ? "outline" : "default"}
                       className="w-[140px]"
@@ -5688,6 +5786,53 @@ function PlaygroundContent() {
                 >
                   Maybe Later
                 </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+      {showNoKeywordsModal && (
+        <>
+          <div
+            className="fixed inset-0 z-50 bg-background/40 backdrop-blur-sm"
+            onClick={() => setShowNoKeywordsModal(false)}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="w-full max-w-md rounded-lg border border-border bg-card shadow-lg">
+              <div className="border-b border-border px-6 py-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xl font-semibold text-foreground">
+                    No Keywords Found
+                  </h3>
+                  <button
+                    onClick={() => setShowNoKeywordsModal(false)}
+                    className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                    aria-label="Close modal"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+              <div className="px-6 py-6">
+                <p className="text-sm text-muted-foreground mb-6">
+                  You need to add keywords to search for leads. Keywords help us find relevant Reddit posts that match your product or service.
+                </p>
+                <div className="flex items-center justify-end gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowNoKeywordsModal(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setShowNoKeywordsModal(false);
+                      setActiveTab("product");
+                    }}
+                  >
+                    Add Keywords
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
