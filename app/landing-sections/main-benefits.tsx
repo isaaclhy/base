@@ -135,7 +135,7 @@ const mainBenefits = [
 
 export default function MainBenefits() {
     return (
-        <section className="relative overflow-hidden py-10 sm:py-14 bg-gradient-to-b from-background to-muted/30">
+        <section className="relative overflow-hidden pt-10 sm:pt-14 pb-4 sm:pb-6 bg-gradient-to-b from-background to-muted/30">
             <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
                 <div className="mx-auto max-w-3xl space-y-3 text-center mb-8">
                 <span className="inline-flex items-center rounded-full bg-[#ff4500]/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#ff4500]">
