@@ -958,10 +958,33 @@ function PlaygroundContent() {
 
     const allPostsNeedingFetch: Array<{ url: string; keyword: string; linkIndex: number; postFullname: string }> = [];
 
-    // Collect all posts that need fetching
+    // Collect all posts that need fetching (excluding cached ones)
     Object.entries(currentState).forEach(([keyword, links]) => {
       links.forEach((link, index) => {
         if (link.link && !link.selftext && !link.postData) {
+          // Check cache first
+          const cached = getCachedPost(link.link);
+          if (cached && (cached.selftext || cached.postData)) {
+            // Update from cache
+            setLeadsLinks((prev) => {
+              const updated = { ...prev };
+              if (updated[keyword] && updated[keyword][index]) {
+                updated[keyword][index] = {
+                  ...updated[keyword][index],
+                  selftext: cached.selftext,
+                  postData: cached.postData,
+                };
+              }
+              try {
+                localStorage.setItem("leadsLinks", JSON.stringify(updated));
+              } catch (e) {
+                console.error("Error saving leadsLinks to localStorage:", e);
+              }
+              return updated;
+            });
+            return; // Skip this post, already cached
+          }
+
           const urlMatch = link.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
           if (urlMatch) {
             const [, , postId] = urlMatch;
@@ -977,43 +1000,42 @@ function PlaygroundContent() {
       return;
     }
 
-    // Fetch posts in batches
-    const BATCH_SIZE = 10;
+    // Create a map from postFullname to post info for quick lookup
+    const postMap = new Map<string, { url: string; keyword: string; linkIndex: number }>();
+    allPostsNeedingFetch.forEach(({ url, keyword, linkIndex, postFullname }) => {
+      postMap.set(postFullname, { url, keyword, linkIndex });
+    });
+
+    // Fetch posts in batches using /api/reddit/post
+    const BATCH_SIZE = 25; // Reddit API can handle up to 100, but 25 is safer
     for (let i = 0; i < allPostsNeedingFetch.length; i += BATCH_SIZE) {
       const batch = allPostsNeedingFetch.slice(i, i + BATCH_SIZE);
+      const postIds = batch.map(({ postFullname }) => postFullname);
 
-      await Promise.all(
-        batch.map(async ({ url, keyword, linkIndex }) => {
-          try {
-            // Check cache first
-            const cached = getCachedPost(url);
-            if (cached && (cached.selftext || cached.postData)) {
-              // Update from cache
-              setLeadsLinks((prev) => {
-                const updated = { ...prev };
-                if (updated[keyword] && updated[keyword][linkIndex]) {
-                  updated[keyword][linkIndex] = {
-                    ...updated[keyword][linkIndex],
-                    selftext: cached.selftext,
-                    postData: cached.postData,
-                  };
-                }
-                try {
-                  localStorage.setItem("leadsLinks", JSON.stringify(updated));
-                } catch (e) {
-                  console.error("Error saving leadsLinks to localStorage:", e);
-                }
-                return updated;
-              });
-              setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [url]: false }));
-              return;
-            }
+      try {
+        // Use batch API endpoint
+        const redditResponse = await fetch("/api/reddit/post", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ postIds }),
+        });
 
-            // Fetch from API
-            const redditResponse = await fetch(`/api/reddit?url=${encodeURIComponent(url)}`);
-            if (redditResponse.ok) {
-              const redditData = await redditResponse.json();
-              const post: RedditPost = redditData.post;
+        if (redditResponse.ok) {
+          const redditData = await redditResponse.json();
+          
+          // Reddit API returns: { data: { children: [{ data: RedditPost }] } }
+          const posts = redditData?.data?.children || [];
+          
+          // Process each post and update state
+          posts.forEach((child: { data: RedditPost }) => {
+            const post: RedditPost = child.data;
+            const postFullname = post.name; // e.g., "t3_abc123"
+            const postInfo = postMap.get(postFullname);
+
+            if (postInfo) {
+              const { url, keyword, linkIndex } = postInfo;
 
               // Cache the post
               cachePost(url, { selftext: post.selftext || null, postData: post });
@@ -1031,14 +1053,88 @@ function PlaygroundContent() {
                 safeSetLocalStorage("leadsLinks", updated);
                 return updated;
               });
+
+              setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [url]: false }));
             }
-          } catch (error) {
-            console.error(`Error fetching post content for ${url}:`, error);
-          } finally {
-            setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [url]: false }));
-          }
-        })
-      );
+          });
+
+          // Mark any posts that weren't returned as failed
+          batch.forEach(({ url, postFullname }) => {
+            if (!posts.some((child: { data: RedditPost }) => child.data.name === postFullname)) {
+              console.warn(`Post ${postFullname} not found in batch response`);
+              setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [url]: false }));
+            }
+          });
+        } else {
+          // If batch API fails, fall back to individual calls
+          console.warn("Batch API failed, falling back to individual calls");
+          await Promise.all(
+            batch.map(async ({ url, keyword, linkIndex }) => {
+              try {
+                const redditResponse = await fetch(`/api/reddit?url=${encodeURIComponent(url)}`);
+                if (redditResponse.ok) {
+                  const redditData = await redditResponse.json();
+                  const post: RedditPost = redditData.post;
+
+                  // Cache the post
+                  cachePost(url, { selftext: post.selftext || null, postData: post });
+
+                  // Update state
+                  setLeadsLinks((prev) => {
+                    const updated = { ...prev };
+                    if (updated[keyword] && updated[keyword][linkIndex]) {
+                      updated[keyword][linkIndex] = {
+                        ...updated[keyword][linkIndex],
+                        selftext: post.selftext || null,
+                        postData: post,
+                      };
+                    }
+                    safeSetLocalStorage("leadsLinks", updated);
+                    return updated;
+                  });
+                }
+              } catch (error) {
+                console.error(`Error fetching post content for ${url}:`, error);
+              } finally {
+                setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [url]: false }));
+              }
+            })
+          );
+        }
+      } catch (error) {
+        console.error("Error in batch fetch:", error);
+        // Fall back to individual calls on error
+        await Promise.all(
+          batch.map(async ({ url, keyword, linkIndex }) => {
+            try {
+              const redditResponse = await fetch(`/api/reddit?url=${encodeURIComponent(url)}`);
+              if (redditResponse.ok) {
+                const redditData = await redditResponse.json();
+                const post: RedditPost = redditData.post;
+
+                cachePost(url, { selftext: post.selftext || null, postData: post });
+
+                setLeadsLinks((prev) => {
+                  const updated = { ...prev };
+                  if (updated[keyword] && updated[keyword][linkIndex]) {
+                    updated[keyword][linkIndex] = {
+                      ...updated[keyword][linkIndex],
+                      selftext: post.selftext || null,
+                      postData: post,
+                    };
+                  }
+                  safeSetLocalStorage("leadsLinks", updated);
+                  return updated;
+                });
+              }
+            } catch (error) {
+              console.error(`Error fetching post content for ${url}:`, error);
+            } finally {
+              setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [url]: false }));
+            }
+          })
+        );
+      }
     }
   };
 
