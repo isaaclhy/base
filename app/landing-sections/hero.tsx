@@ -129,7 +129,7 @@ export default function Hero() {
                         Find <span className="underline" style={{ textDecorationColor: 'oklch(0.65 0.22 30)', color: 'oklch(0.65 0.22 30)' }}>desperate users</span> on
                         <span className="block text-primary">Reddit in seconds</span>
                     </h1>
-                    <p className="mx-auto max-w-2xl text-sm text-muted-foreground sm:text-base">
+                    <p className="mx-auto max-w-2xl text-base text-muted-foreground sm:text-base">
                         Connect with users who already need and want your product.
                     </p>
                 </div>

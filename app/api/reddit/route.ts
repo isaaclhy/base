@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RedditPost } from "@/lib/types";
+import { auth } from "@/auth";
+import { getValidAccessToken, refreshAccessToken } from "@/lib/reddit/auth";
 
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
@@ -27,9 +29,43 @@ export async function GET(request: NextRequest) {
 
         const [, subreddit, postId] = urlMatch;
         
-        // Call Reddit JSON API
+        // Try to use OAuth API if user is authenticated
+        const session = await auth();
+        if (session?.user?.email) {
+            try {
+                const accessToken = await refreshAccessToken(session.user.email);
+                const oauthUrl = `https://oauth.reddit.com/r/${subreddit}/comments/${postId}.json`;
+                
+                const response = await fetch(oauthUrl, {
+                    headers: {
+                        'User-Agent': 'reddit-comment-tool/0.1 by isaaclhy13',
+                        'Accept': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`,
+                    },
+                    cache: 'no-store'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const postData: RedditPost = data[0]?.data?.children[0]?.data;
+                    
+                    if (!postData) {
+                        return NextResponse.json(
+                            { error: "Post data not found" },
+                            { status: 404 }
+                        );
+                    }
+
+                    return NextResponse.json({ post: postData });
+                }
+            } catch (oauthError) {
+                console.error('OAuth API failed, falling back to public API:', oauthError);
+                // Fall through to public API attempt
+            }
+        }
+        
+        // Fallback to public JSON API (may be blocked by Reddit)
         // Reddit may block server-side requests from certain IPs (like Vercel)
-        // Try multiple approaches
         const apiUrl = `https://www.reddit.com/r/${subreddit}/comments/${postId}.json`;
         
         let response: Response;
