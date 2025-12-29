@@ -14,21 +14,25 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { link, productDescription, keywords, subreddits } = body;
+    const { link, productName, productDescription, keywords, subreddits } = body;
 
-    if (!link && !productDescription && keywords === undefined && subreddits === undefined) {
+    if (!link && !productName && !productDescription && keywords === undefined && subreddits === undefined) {
       return NextResponse.json(
-        { error: "At least one field (link, productDescription, keywords, or subreddits) is required" },
+        { error: "At least one field (link, productName, productDescription, keywords, or subreddits) is required" },
         { status: 400 }
       );
     }
 
     const email = session.user.email.toLowerCase();
     
-    const productDetails: { link?: string; productDescription?: string } = {};
+    const productDetails: { link?: string; productName?: string; productDescription?: string } = {};
     
     if (link !== undefined) {
       productDetails.link = link;
+    }
+    
+    if (productName !== undefined) {
+      productDetails.productName = productName;
     }
     
     if (productDescription !== undefined) {
@@ -96,7 +100,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      productDetails: user.productDetails || { link: undefined, productDescription: undefined },
+      productDetails: user.productDetails || { link: undefined, productName: undefined, productDescription: undefined },
       keywords: user.keywords || [],
       subreddits: user.subreddits || [],
     });

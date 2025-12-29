@@ -4,7 +4,7 @@ import { Clock, DollarSign, TrendingUp } from "lucide-react";
 
 export default function BenefitsSection() {
   return (
-    <section className="relative overflow-hidden pt-20 sm:pt-28 pb-6 sm:pb-10">
+    <section className="relative overflow-hidden pt-12 sm:pt-16 pb-6 sm:pb-10">
       <div
         className="pointer-events-none absolute left-[10%] top-16 h-48 w-48 -translate-x-1/2 rounded-full bg-[#ffd8c5]/40 blur-3xl"
         aria-hidden="true"
@@ -16,7 +16,7 @@ export default function BenefitsSection() {
       <div className="relative mx-auto flex w-full max-w-6xl flex-col px-4 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl space-y-3 text-center mb-12">
 
-          <h2 className="text-3xl font-semibold tracking-tight text-[#2d1510] sm:text-4xl">
+          <h2 className="text-3xl font-extrabold tracking-tight text-[#2d1510] sm:text-5xl">
             Save time and money while scaling your outreach
           </h2>
           <p className="text-base text-[#663826] sm:text-lg">

@@ -138,10 +138,12 @@ function PlaygroundContent() {
   const setActiveTab = useSetPlaygroundTab();
   const sidebarOpen = usePlaygroundSidebar();
   const refreshUsage = useRefreshUsage();
+  const [productName, setProductName] = useState("");
   const [website, setWebsite] = useState("");
   const [productDescription, setProductDescription] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
   const [originalProductDetails, setOriginalProductDetails] = useState<{
+    productName: string;
     website: string;
     productDescription: string;
     keywords: string[];
@@ -152,6 +154,7 @@ function PlaygroundContent() {
   const [subredditSuggestions, setSubredditSuggestions] = useState<Array<{ name: string; displayName: string; subscribers: number }>>([]);
   const [isLoadingSubreddits, setIsLoadingSubreddits] = useState(false);
   const [showSubredditDropdown, setShowSubredditDropdown] = useState(false);
+  const [subredditDropdownPosition, setSubredditDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
   const subredditInputRef = useRef<HTMLInputElement>(null);
   const subredditDropdownRef = useRef<HTMLDivElement>(null);
   const [callToAction, setCallToAction] = useState("");
@@ -201,6 +204,18 @@ function PlaygroundContent() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isPersonaDropdownOpen, showSubredditDropdown]);
+
+  // Update dropdown position based on input position
+  const updateSubredditDropdownPosition = useCallback(() => {
+    if (subredditInputRef.current) {
+      const rect = subredditInputRef.current.getBoundingClientRect();
+      setSubredditDropdownPosition({
+        top: rect.bottom + window.scrollY + 4, // 4px gap (mt-1)
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      });
+    }
+  }, []);
 
   // Fuzzy matching function for subreddits
   const fuzzyMatch = (query: string, text: string): number => {
@@ -258,7 +273,21 @@ function PlaygroundContent() {
           .slice(0, 10);
         
         setSubredditSuggestions(scored);
-        setShowSubredditDropdown(scored.length > 0);
+        const shouldShow = scored.length > 0;
+        if (shouldShow) {
+          // Use setTimeout to ensure DOM is updated
+          setTimeout(() => {
+            if (subredditInputRef.current) {
+              const rect = subredditInputRef.current.getBoundingClientRect();
+              setSubredditDropdownPosition({
+                top: rect.bottom + window.scrollY + 4,
+                left: rect.left + window.scrollX,
+                width: rect.width,
+              });
+            }
+          }, 0);
+        }
+        setShowSubredditDropdown(shouldShow);
       } catch (error) {
         console.error("Error searching subreddits:", error);
         setSubredditSuggestions([]);
@@ -329,7 +358,8 @@ function PlaygroundContent() {
   const [isSavingProductDetails, setIsSavingProductDetails] = useState(false);
   const [isLoadingProductDetails, setIsLoadingProductDetails] = useState(false);
   const [isGeneratingProductDescription, setIsGeneratingProductDescription] = useState(false);
-  const [productDetailsFromDb, setProductDetailsFromDb] = useState<{ link?: string; productDescription?: string; keywords?: string } | null>(null);
+  const [isGeneratingKeywords, setIsGeneratingKeywords] = useState(false);
+  const [productDetailsFromDb, setProductDetailsFromDb] = useState<{ link?: string; productName?: string; productDescription?: string; keywords?: string } | null>(null);
   const [userPlan, setUserPlan] = useState<"free" | "premium" | null>(null);
   const [leadsLinks, setLeadsLinks] = useState<Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>>>({});
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
@@ -444,7 +474,10 @@ function PlaygroundContent() {
             const data = await response.json();
             if (data.success && data.productDetails) {
               setProductDetailsFromDb(data.productDetails);
-              // Also set website and productDescription for Product tab
+              // Also set productName, website and productDescription for Product tab
+              if (data.productDetails.productName) {
+                setProductName(data.productDetails.productName);
+              }
               if (data.productDetails.link) {
                 setWebsite(data.productDetails.link);
               }
@@ -455,7 +488,13 @@ function PlaygroundContent() {
               let loadedKeywords: string[] = [];
               if (data.keywords && Array.isArray(data.keywords)) {
                 loadedKeywords = data.keywords;
-                setKeywords(loadedKeywords);
+                // Only update if different to prevent unnecessary re-renders and layout shifts
+                setKeywords((prev) => {
+                  if (JSON.stringify(prev) !== JSON.stringify(loadedKeywords)) {
+                    return loadedKeywords;
+                  }
+                  return prev;
+                });
               } else if (data.productDetails?.keywords) {
                 // Legacy: If keywords is a string, split by comma; if array, use as is
                 loadedKeywords = typeof data.productDetails.keywords === 'string'
@@ -463,16 +502,29 @@ function PlaygroundContent() {
                   : Array.isArray(data.productDetails.keywords)
                     ? data.productDetails.keywords
                     : [];
-                setKeywords(loadedKeywords);
+                // Only update if different to prevent unnecessary re-renders and layout shifts
+                setKeywords((prev) => {
+                  if (JSON.stringify(prev) !== JSON.stringify(loadedKeywords)) {
+                    return loadedKeywords;
+                  }
+                  return prev;
+                });
               }
               
               // Load subreddits from database
               if (data.subreddits && Array.isArray(data.subreddits)) {
-                setSubreddits(data.subreddits);
+                // Only update if different to prevent unnecessary re-renders and layout shifts
+                setSubreddits((prev) => {
+                  if (JSON.stringify(prev) !== JSON.stringify(data.subreddits)) {
+                    return data.subreddits;
+                  }
+                  return prev;
+                });
               }
               
               // Store original values for dirty checking
               setOriginalProductDetails({
+                productName: data.productDetails.productName || "",
                 website: data.productDetails.link || "",
                 productDescription: data.productDetails.productDescription || "",
                 keywords: loadedKeywords,
@@ -480,6 +532,7 @@ function PlaygroundContent() {
             } else {
               setProductDetailsFromDb(null);
               setOriginalProductDetails({
+                productName: "",
                 website: "",
                 productDescription: "",
                 keywords: [],
@@ -490,6 +543,7 @@ function PlaygroundContent() {
           console.error("Error loading product details:", error);
           setProductDetailsFromDb(null);
           setOriginalProductDetails({
+            productName: "",
             website: "",
             productDescription: "",
             keywords: [],
@@ -569,6 +623,9 @@ function PlaygroundContent() {
             const data = await response.json();
             if (data.success && data.productDetails) {
               setProductDetailsFromDb(data.productDetails);
+              if (data.productDetails.productName) {
+                setProductName(data.productDetails.productName);
+              }
               if (data.productDetails.link) {
                 setWebsite(data.productDetails.link);
               }
@@ -579,7 +636,13 @@ function PlaygroundContent() {
               let loadedKeywords: string[] = [];
               if (data.keywords && Array.isArray(data.keywords)) {
                 loadedKeywords = data.keywords;
-                setKeywords(loadedKeywords);
+                // Only update if different to prevent unnecessary re-renders and layout shifts
+                setKeywords((prev) => {
+                  if (JSON.stringify(prev) !== JSON.stringify(loadedKeywords)) {
+                    return loadedKeywords;
+                  }
+                  return prev;
+                });
               } else if (data.productDetails?.keywords) {
                 // Legacy: If keywords is a string, split by comma; if array, use as is
                 loadedKeywords = typeof data.productDetails.keywords === 'string'
@@ -587,22 +650,36 @@ function PlaygroundContent() {
                   : Array.isArray(data.productDetails.keywords)
                     ? data.productDetails.keywords
                     : [];
-                setKeywords(loadedKeywords);
+                // Only update if different to prevent unnecessary re-renders and layout shifts
+                setKeywords((prev) => {
+                  if (JSON.stringify(prev) !== JSON.stringify(loadedKeywords)) {
+                    return loadedKeywords;
+                  }
+                  return prev;
+                });
               }
               
               // Load subreddits from database
               if (data.subreddits && Array.isArray(data.subreddits)) {
-                setSubreddits(data.subreddits);
+                // Only update if different to prevent unnecessary re-renders and layout shifts
+                setSubreddits((prev) => {
+                  if (JSON.stringify(prev) !== JSON.stringify(data.subreddits)) {
+                    return data.subreddits;
+                  }
+                  return prev;
+                });
               }
               
               // Store original values for dirty checking
               setOriginalProductDetails({
+                productName: data.productDetails.productName || "",
                 website: data.productDetails.link || "",
                 productDescription: data.productDetails.productDescription || "",
                 keywords: loadedKeywords,
               });
             } else {
               setOriginalProductDetails({
+                productName: "",
                 website: "",
                 productDescription: "",
                 keywords: [],
@@ -612,6 +689,7 @@ function PlaygroundContent() {
         } catch (error) {
           console.error("Error loading product details:", error);
           setOriginalProductDetails({
+            productName: "",
             website: "",
             productDescription: "",
             keywords: [],
@@ -1362,6 +1440,86 @@ function PlaygroundContent() {
     }
   };
 
+  // Fetch leads from subreddits for a keyword
+  const fetchLeadsFromSubreddits = async (keyword: string, subredditsList: string[]) => {
+    if (!subredditsList || subredditsList.length === 0) {
+      return;
+    }
+
+    const subredditPromises = subredditsList.map(async (subreddit) => {
+      try {
+        const response = await fetch("/api/reddit/search-posts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            keyword: keyword,
+            subreddit: subreddit,
+            limit: 15,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error(`Error fetching posts from r/${subreddit} for keyword "${keyword}":`, errorData.error);
+          return [];
+        }
+
+        const data = await response.json();
+        if (data.results && Array.isArray(data.results)) {
+          console.log(`[SUBREDDIT SEARCH] Keyword: "${keyword}" | Subreddit: r/${subreddit} | Results: ${data.results.length}`);
+          
+          // Read current leads state
+          let currentLeadsState: Record<string, Array<any>> = {};
+          try {
+            const saved = localStorage.getItem("leadsLinks");
+            if (saved) {
+              currentLeadsState = JSON.parse(saved);
+            }
+          } catch (e) {
+            console.error("Error reading from localStorage in fetchLeadsFromSubreddits:", e);
+          }
+
+          // Create a unique key for subreddit-based leads: "keyword:subreddit"
+          const keywordSubredditKey = `${keyword}:${subreddit}`;
+          const existingLinksForKey = currentLeadsState[keywordSubredditKey] || [];
+          const existingLinkUrls = new Set(existingLinksForKey.map((link: any) => link.link).filter(Boolean));
+
+          // Only add new links that don't already exist
+          const newLinks = data.results.filter((link: any) => link.link && !existingLinkUrls.has(link.link));
+
+          const mergedLinks = [...existingLinksForKey, ...newLinks];
+
+          const updated = {
+            ...currentLeadsState,
+            [keywordSubredditKey]: mergedLinks,
+          };
+
+          // Save to localStorage
+          safeSetLocalStorage("leadsLinks", updated);
+          if (session?.user?.email) {
+            try {
+              localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
+            } catch (e) {
+              console.error("Error saving leadsLinksUserEmail:", e);
+            }
+          }
+          setLeadsLinks(updated);
+
+          console.log(`[SUBREDDIT SUMMARY] Keyword: "${keyword}" | Subreddit: r/${subreddit} | Total: ${mergedLinks.length} | New: ${newLinks.length}`);
+          return newLinks;
+        }
+        return [];
+      } catch (error) {
+        console.error(`Error fetching leads from r/${subreddit} for keyword "${keyword}":`, error);
+        return [];
+      }
+    });
+
+    await Promise.all(subredditPromises);
+  };
+
   // Handle leads search
   const handleLeadsSearch = async () => {
     if (!keywords || keywords.length === 0) {
@@ -1373,12 +1531,21 @@ function PlaygroundContent() {
     setLeadsPage(1);
 
     try {
-      // Fetch Reddit links for each keyword in parallel
-      const linkPromises = keywords.map((keyword) => {
+      // Fetch Reddit links for each keyword via Google Search (existing functionality)
+      const googleSearchPromises = keywords.map((keyword) => {
         return fetchLeadsForKeyword(keyword, 20); // Top 20 results per keyword
       });
 
-      await Promise.all(linkPromises);
+      // Fetch Reddit links from subreddits for each keyword (new functionality)
+      const subredditSearchPromises: Promise<void>[] = [];
+      if (subreddits && subreddits.length > 0) {
+        keywords.forEach((keyword) => {
+          subredditSearchPromises.push(fetchLeadsFromSubreddits(keyword, subreddits));
+        });
+      }
+
+      // Run both Google search and subreddit search in parallel
+      await Promise.all([...googleSearchPromises, ...subredditSearchPromises]);
 
       // Small delay to ensure all links are saved
       setTimeout(async () => {
@@ -1397,25 +1564,33 @@ function PlaygroundContent() {
     let globalIndex = 0;
     const allLinksWithKeyword = Object.entries(leadsLinks)
       .reverse()
-      .flatMap(([keyword, links]) =>
-        [...links].reverse().map((link, linkIndex) => {
-          const uniqueKey = `leads-${keyword}-${link.link || "no-link"}-${linkIndex}-${globalIndex}`;
+      .flatMap(([key, links]) => {
+        // Extract keyword from key (handles both "keyword" and "keyword:subreddit" formats)
+        const keyword = key.includes(':') ? key.split(':')[0] : key;
+        const subreddit = key.includes(':') ? key.split(':')[1] : null;
+        
+        return [...links].reverse().map((link, linkIndex) => {
+          const uniqueKey = `leads-${key}-${link.link || "no-link"}-${linkIndex}-${globalIndex}`;
           const item = {
             ...link,
-            query: keyword,
+            query: subreddit ? `${keyword} (r/${subreddit})` : keyword,
+            keyword: keyword, // Store original keyword for reference
+            subreddit: subreddit, // Store subreddit if applicable
             linkIndex,
             uniqueKey,
             order: globalIndex,
           } as typeof link & {
             query: string;
+            keyword: string;
+            subreddit: string | null;
             linkIndex: number;
             uniqueKey: string;
             order: number;
           };
           globalIndex += 1;
           return item;
-        })
-      );
+        });
+      });
 
     const sortedLinks = [...allLinksWithKeyword].sort((a, b) => {
       if (leadsSortBy === "date-desc" || leadsSortBy === "date-asc") {
@@ -3631,6 +3806,56 @@ function PlaygroundContent() {
   };
 
   // Auto-save keywords when added
+  const generateKeywords = async () => {
+    if (!productDescription || !productDescription.trim()) {
+      showToast("Please fill in the product description first", { variant: "error" });
+      return;
+    }
+
+    setIsGeneratingKeywords(true);
+    try {
+      const response = await fetch("/api/openai/keywords", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          productDescription: productDescription,
+          numKeywords: 15,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to generate keywords");
+      }
+
+      const data = await response.json();
+      if (data.success && data.keywords && Array.isArray(data.keywords)) {
+        // Merge with existing keywords, avoiding duplicates
+        const existingKeywordsSet = new Set(keywords.map((k: string) => k.toLowerCase()));
+        const newKeywords = data.keywords.filter((k: string) => {
+          const lower = k.toLowerCase().trim();
+          return lower && !existingKeywordsSet.has(lower);
+        });
+        
+        // Limit to 20 total keywords
+        const combined = [...keywords, ...newKeywords].slice(0, 20);
+        setKeywords(combined);
+        // Auto-save the generated keywords
+        await saveKeywords(combined);
+        showToast(`Generated ${newKeywords.length} keywords!`, { variant: "success" });
+      } else {
+        throw new Error("No keywords received from API");
+      }
+    } catch (error) {
+      console.error("Error generating keywords:", error);
+      showToast(error instanceof Error ? error.message : "Failed to generate keywords", { variant: "error" });
+    } finally {
+      setIsGeneratingKeywords(false);
+    }
+  };
+
   const saveKeywords = async (newKeywords: string[]) => {
     try {
       const response = await fetch("/api/user/product-details", {
@@ -3716,6 +3941,7 @@ function PlaygroundContent() {
                             "Content-Type": "application/json",
                           },
                           body: JSON.stringify({
+                            productName: productName || undefined,
                             link: website || undefined,
                             productDescription: productDescription || undefined,
                             keywords: keywords.length > 0 ? keywords : undefined,
@@ -3731,6 +3957,7 @@ function PlaygroundContent() {
                         if (data.success) {
                           // Update original values after successful save
                           setOriginalProductDetails({
+                            productName: productName || "",
                             website: website || "",
                             productDescription: productDescription || "",
                             keywords: keywords,
@@ -3749,7 +3976,8 @@ function PlaygroundContent() {
                       isSavingProductDetails || 
                       isLoadingProductDetails || 
                       !originalProductDetails ||
-                      (originalProductDetails.website === (website || "") &&
+                      (originalProductDetails.productName === (productName || "") &&
+                       originalProductDetails.website === (website || "") &&
                        originalProductDetails.productDescription === (productDescription || "") &&
                        JSON.stringify(originalProductDetails.keywords.sort()) === JSON.stringify([...keywords].sort()))
                     }
@@ -3770,6 +3998,19 @@ function PlaygroundContent() {
                   {/* Left Column */}
                   <div className="space-y-4">
               <div>
+                      <label htmlFor="product-name" className="block text-sm font-medium text-foreground mb-1">
+                        Product Name
+                      </label>
+                      <Input
+                        id="product-name"
+                        type="text"
+                        value={productName}
+                        onChange={(e) => setProductName(e.target.value)}
+                        placeholder="Enter your product name"
+                        className="w-full"
+                      />
+              </div>
+                    <div>
                       <label htmlFor="product-website" className="block text-sm font-medium text-foreground mb-1">
                         Product Website
                       </label>
@@ -3859,38 +4100,65 @@ function PlaygroundContent() {
                   {/* Right Column */}
                   <div className="space-y-6">
                   <div>
-                      <label htmlFor="product-keywords" className="block text-sm font-medium text-foreground mb-1">
-                        Keywords
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label htmlFor="product-keywords" className="block text-sm font-medium text-foreground">
+                          Keywords
+                        </label>
+                    <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={generateKeywords}
+                          disabled={isGeneratingKeywords || !productDescription || !productDescription.trim()}
+                          className="text-xs h-7"
+                        >
+                          {isGeneratingKeywords ? (
+                            <>
+                              <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
+                              Generating...
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="h-3 w-3 mr-1.5" />
+                              AI Generate
+                            </>
+                          )}
+                        </Button>
+                      </div>
                       <p className="text-xs text-muted-foreground mb-2">
                         Add keywords related to your product niche {keywords.length > 0 && `(${keywords.length}/20)`}
                       </p>
                       <div className="w-full space-y-1">
-                        <div className="min-h-[40px] flex flex-wrap gap-2 items-start py-1">
-                          {keywords.length === 0 ? (
-                            <p className="text-sm text-muted-foreground italic">No keywords added. Enter keywords related to your product niche.</p>
-                          ) : (
-                            keywords.map((keyword, index) => (
-                              <div
-                                key={index}
-                                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-3 py-1 text-sm text-foreground"
-                              >
-                                <span>{keyword}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const newKeywords = keywords.filter((_, i) => i !== index);
-                                    setKeywords(newKeywords);
-                                    // Auto-save keywords when removed
-                                    saveKeywords(newKeywords);
-                                  }}
-                                  className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5 transition-colors"
-                                  aria-label={`Remove ${keyword}`}
+                        <div className="relative">
+                          <div className="min-h-[40px] max-h-[180px] overflow-y-auto flex flex-wrap gap-2 items-start py-1 pb-10" style={{ minHeight: keywords.length > 0 ? 'auto' : '40px' }}>
+                            {keywords.length === 0 ? (
+                              <p className="text-sm text-muted-foreground italic">No keywords added. Enter keywords related to your product niche.</p>
+                            ) : (
+                              keywords.map((keyword, index) => (
+                                <div
+                                  key={index}
+                                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-3 py-1 text-sm text-foreground"
                                 >
-                                  <X className="h-3 w-3" />
-                                </button>
-                              </div>
-                            ))
+                                  <span>{keyword}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newKeywords = keywords.filter((_, i) => i !== index);
+                                      setKeywords(newKeywords);
+                                      // Auto-save keywords when removed
+                                      saveKeywords(newKeywords);
+                                    }}
+                                    className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5 transition-colors"
+                                    aria-label={`Remove ${keyword}`}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                          {keywords.length > 0 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-8 pointer-events-none bg-gradient-to-t from-background to-transparent" />
                           )}
                         </div>
                         <div className="flex gap-2 pt-1">
@@ -3949,35 +4217,40 @@ function PlaygroundContent() {
                         Target Subreddits
                       </label>
                       <div className="w-full space-y-1">
-                        <div className="min-h-[40px] flex flex-wrap gap-2 items-start py-1">
-                          {subreddits.length === 0 ? (
-                            <p className="text-sm text-muted-foreground italic">No subreddits selected. Search and add subreddits to get started.</p>
-                          ) : (
-                            subreddits.map((subreddit, index) => (
-                              <div
-                                key={index}
-                                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-3 py-1 text-sm text-foreground"
-                              >
-                                <span>r/{subreddit}</span>
-                                <button
-                                  type="button"
-                                onClick={() => {
-                                  const newSubreddits = subreddits.filter((_, i) => i !== index);
-                                  setSubreddits(newSubreddits);
-                                  // Auto-save subreddits when removed
-                                  saveSubreddits(newSubreddits);
-                                }}
-                                  className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5 transition-colors"
-                                  aria-label={`Remove ${subreddit}`}
+                        <div className="relative">
+                          <div className="min-h-[40px] max-h-[180px] overflow-y-auto flex flex-wrap gap-2 items-start py-1 pb-10" style={{ minHeight: subreddits.length > 0 ? 'auto' : '40px' }}>
+                            {subreddits.length === 0 ? (
+                              <p className="text-sm text-muted-foreground italic">No subreddits selected. Search and add subreddits to get started.</p>
+                            ) : (
+                              subreddits.map((subreddit, index) => (
+                                <div
+                                  key={index}
+                                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-3 py-1 text-sm text-foreground"
                                 >
-                                  <X className="h-3 w-3" />
-                                </button>
-                              </div>
-                            ))
+                                  <span>r/{subreddit}</span>
+                                  <button
+                                    type="button"
+                                  onClick={() => {
+                                    const newSubreddits = subreddits.filter((_, i) => i !== index);
+                                    setSubreddits(newSubreddits);
+                                    // Auto-save subreddits when removed
+                                    saveSubreddits(newSubreddits);
+                                  }}
+                                    className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5 transition-colors"
+                                    aria-label={`Remove ${subreddit}`}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                          {subreddits.length > 0 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-8 pointer-events-none bg-gradient-to-t from-background to-transparent" />
                           )}
                         </div>
                         <div className="relative flex gap-2 pt-1">
-                          <div className="relative flex-1">
+                          <div className="relative flex-1" style={{ zIndex: 100 }}>
                             <Input
                               ref={subredditInputRef}
                               id="product-subreddits"
@@ -3985,9 +4258,29 @@ function PlaygroundContent() {
                               value={subredditInput}
                               onChange={(e) => {
                                 setSubredditInput(e.target.value);
+                                setTimeout(() => {
+                                  if (subredditInputRef.current) {
+                                    const rect = subredditInputRef.current.getBoundingClientRect();
+                                    setSubredditDropdownPosition({
+                                      top: rect.bottom + window.scrollY + 4,
+                                      left: rect.left + window.scrollX,
+                                      width: rect.width,
+                                    });
+                                  }
+                                }, 0);
                                 setShowSubredditDropdown(true);
                               }}
                               onFocus={() => {
+                                setTimeout(() => {
+                                  if (subredditInputRef.current) {
+                                    const rect = subredditInputRef.current.getBoundingClientRect();
+                                    setSubredditDropdownPosition({
+                                      top: rect.bottom + window.scrollY + 4,
+                                      left: rect.left + window.scrollX,
+                                      width: rect.width,
+                                    });
+                                  }
+                                }, 0);
                                 if (subredditSuggestions.length > 0) {
                                   setShowSubredditDropdown(true);
                                 }
@@ -4020,10 +4313,15 @@ function PlaygroundContent() {
                                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                               </div>
                             )}
-                            {showSubredditDropdown && subredditSuggestions.length > 0 && (
+                            {showSubredditDropdown && subredditSuggestions.length > 0 && subredditDropdownPosition && (
                               <div
                                 ref={subredditDropdownRef}
-                                className="absolute z-50 w-full mt-1 bg-background border border-border rounded-md shadow-lg max-h-60 overflow-y-auto"
+                                className="fixed z-[100] bg-background border border-border rounded-md shadow-lg max-h-60 overflow-y-auto"
+                                style={{
+                                  top: `${subredditDropdownPosition.top}px`,
+                                  left: `${subredditDropdownPosition.left}px`,
+                                  width: `${subredditDropdownPosition.width}px`,
+                                }}
                               >
                                 {subredditSuggestions.map((sub, index) => (
                                   <button

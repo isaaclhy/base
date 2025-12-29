@@ -125,7 +125,7 @@ export default function Hero() {
         <section id="hero" className="relative flex min-h-screen flex-col items-center overflow-hidden px-4 py-20 sm:px-6 lg:px-8">
             <div className="mx-auto w-full max-w-6xl text-center relative z-10">
                 <div className="space-y-3 mb-12">
-                    <h1 className="text-3xl font-bold sm:text-6xl lg:text-6xl">
+                    <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl">
                         Find <span className="underline" style={{ textDecorationColor: 'oklch(0.65 0.22 30)', color: 'oklch(0.65 0.22 30)' }}>desperate users</span> on
                         <span className="block text-primary">Reddit in seconds</span>
                     </h1>

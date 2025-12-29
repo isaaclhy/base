@@ -25,6 +25,7 @@ export interface User {
   // Product details
   productDetails?: {
     link?: string;
+    productName?: string;
     productDescription?: string;
     keywords?: string;
   };
@@ -336,6 +337,7 @@ export async function updateUserProductDetails(
   email: string,
   productDetails: {
     link?: string;
+    productName?: string;
     productDescription?: string;
     keywords?: string;
   }

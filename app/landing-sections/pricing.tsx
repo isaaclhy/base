@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useSession, signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Check } from "lucide-react";
 
 const features = {
   free: [
@@ -88,82 +89,104 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
       <div className="mx-auto flex w-full max-w-5xl flex-col items-center px-4 text-center">
         <div className={cn("space-y-4 mb-6", showCTAButtons && "mb-4")}>
           <h2 className={cn(
-            "font-bold tracking-tight text-foreground",
-            showCTAButtons ? "text-2xl" : "text-3xl sm:text-4xl"
+            "font-extrabold tracking-tight text-foreground",
+            showCTAButtons ? "text-2xl" : "text-3xl sm:text-5xl"
           )}>
-            Simple pricing for growing teams
+            {showCTAButtons ? "Simple pricing for growing teams" : "Start getting customers from Reddit"}
           </h2>
           {!showCTAButtons && (
             <p className="max-w-2xl my-4 text-base text-muted-foreground">
-              Start free and upgrade when you need more.
+              Find the perfect conversations from Reddit to promote your product.
             </p>
           )}
         </div>
 
-        <div className="grid w-full gap-4 md:grid-cols-2">
+        <div className="grid w-full gap-6 md:grid-cols-2 max-w-4xl mx-auto">
           <div className={cn(
-            "flex h-full flex-col rounded-2xl border border-border text-left shadow-sm",
+            "relative flex h-full flex-col rounded-2xl border border-border bg-background text-left transition-all hover:shadow-lg",
             showCTAButtons ? "gap-4 p-6" : "gap-6 p-8"
           )}>
-            <div>
-              <h3 className={cn("font-semibold text-foreground", showCTAButtons ? "text-2xl" : "text-3xl")}>Free</h3>
-              <p className={cn("text-muted-foreground mt-1", showCTAButtons ? "text-sm" : "text-base")}>$0 • No credit card required</p>
+            <div className="space-y-4">
+              <div>
+                <h3 className={cn("font-extrabold text-foreground", showCTAButtons ? "text-2xl" : "text-2xl")}>Free</h3>
+                <div className="mt-2">
+                  <span className="text-3xl font-extrabold text-foreground">$0</span>
+                  <span className="text-muted-foreground ml-1">/month</span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">Perfect for getting started with Reddit marketing</p>
+              </div>
+              
+              <ul className={cn("space-y-3", showCTAButtons ? "text-sm" : "text-sm")}>
+                {features.free.map((feature) => (
+                  <li key={feature} className="flex items-start gap-3">
+                    <Check className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                    <span className="text-foreground">{feature}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <ul className={cn("text-sm text-muted-foreground", showCTAButtons ? "space-y-2" : "space-y-3")}>
-              {features.free.map((feature) => (
-                <li key={feature} className="flex items-start gap-2">
-                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                  <span>{feature}</span>
-                </li>
-              ))}
-            </ul>
+            
             {showCTAButtons && (
-              <Button variant="outline" size={showCTAButtons ? "default" : "lg"} disabled className="mt-auto cursor-default">
+              <Button variant="outline" size="lg" disabled className="mt-auto w-full cursor-default">
                 Included in your account
+              </Button>
+            )}
+            {!showCTAButtons && (
+              <Button variant="outline" size="lg" className="mt-auto w-full" disabled>
+                Current plan
               </Button>
             )}
           </div>
 
           <div className={cn(
-            "relative flex h-full flex-col rounded-2xl border border-[#ff4500]/60 text-left shadow-[0_0_35px_-12px_rgba(255,69,0,0.65)]",
+            "relative flex h-full flex-col rounded-2xl border-2 border-[#ff4500] bg-background text-left shadow-lg transition-all hover:shadow-xl",
             showCTAButtons ? "gap-4 p-6" : "gap-6 p-8"
           )}>
             <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-[#ff4500] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">
               Popular
             </span>
-            <div>
-              <h3 className={cn("font-semibold text-[#2d1510]", showCTAButtons ? "text-2xl" : "text-3xl")}>Premium</h3>
-              <p className={cn("text-[#72341e] mt-1", showCTAButtons ? "text-sm" : "text-base")}>$13.99 per month • Cancel anytime</p>
+            
+            <div className="space-y-4">
+              <div>
+                <h3 className={cn("font-extrabold text-foreground", showCTAButtons ? "text-2xl" : "text-2xl")}>Premium</h3>
+                <div className="mt-2">
+                  <span className="text-3xl font-extrabold text-foreground">$13.99</span>
+                  <span className="text-muted-foreground ml-1">/month</span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">For growing startups with multiple products to monitor</p>
+              </div>
+              
+              <ul className={cn("space-y-3", showCTAButtons ? "text-sm" : "text-sm")}>
+                {features.premium.map((feature) => (
+                  <li key={feature} className="flex items-start gap-3">
+                    <Check className="h-5 w-5 text-[#ff4500] flex-shrink-0 mt-0.5" />
+                    <span className="text-foreground">{feature}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <ul className={cn("text-sm text-muted-foreground", showCTAButtons ? "space-y-2" : "space-y-3")}>
-              {features.premium.map((feature) => (
-                <li key={feature} className="flex items-start gap-2">
-                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                  <span>{feature}</span>
-                </li>
-              ))}
-            </ul>
+            
             {showCTAButtons && (
               status === "loading" ? (
-                <Button disabled size="default" className="mt-auto opacity-70">
+                <Button disabled size="lg" className="mt-auto w-full opacity-70">
                   Checking your plan...
                 </Button>
               ) : isPremium ? (
                 <Button
-                  size="default"
+                  size="lg"
                   variant="default"
                   onClick={handleManageBilling}
                   disabled={isPortalLoading}
-                  className="mt-auto"
+                  className="mt-auto w-full bg-[#ff4500] hover:bg-[#ff4500]/90 text-white"
                 >
                   {isPortalLoading ? "Opening portal..." : "Manage billing"}
                 </Button>
               ) : (
                 <Button
-                  size="default"
+                  size="lg"
                   onClick={handleCheckout}
                   disabled={isCheckoutLoading}
-                  className="mt-auto"
+                  className="mt-auto w-full bg-[#ff4500] hover:bg-[#ff4500]/90 text-white"
                 >
                   {isCheckoutLoading ? "Redirecting..." : "Upgrade to Premium"}
                 </Button>

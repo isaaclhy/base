@@ -36,7 +36,7 @@ const AnimatedLeadsTable = () => {
     }, [nextRowIndex]);
 
     return (
-        <div className="relative h-48 w-full rounded-xl border border-border bg-background p-3 shadow-lg overflow-hidden">
+        <div className="relative h-48 w-full max-w-full rounded-xl border border-border bg-background p-3 shadow-lg overflow-hidden">
             <style dangerouslySetInnerHTML={{__html: `
                 @keyframes fadeInSlide {
                     from {
@@ -104,7 +104,7 @@ const mainBenefits = [
         description: "Generate customized, context-aware comments for each post that feel natural and help you soft-sell your product effectively.",
         icon: MessageSquare,
         infographic: (
-            <div className="relative h-48 w-full rounded-xl border border-[#1e1f20] bg-[#101216] p-3 shadow-lg overflow-hidden">
+            <div className="relative h-48 w-full max-w-full rounded-xl border border-[#1e1f20] bg-[#101216] p-3 shadow-lg overflow-hidden">
                 <div className="space-y-2 h-full flex flex-col">
                     {/* Reddit Post */}
                     <div className="flex-1 space-y-1.5 overflow-y-auto">
@@ -160,10 +160,10 @@ const mainBenefits = [
         description: "Track comment interactions and automate replies to keep conversations going and maximize your engagement opportunities.",
         icon: BarChart3,
         infographic: (
-            <div className="relative h-48 w-full rounded-xl border border-border bg-background p-3 shadow-lg overflow-hidden">
+            <div className="relative h-48 w-full max-w-full rounded-xl border border-border bg-background p-3 shadow-lg overflow-hidden">
                 <div className="space-y-2 h-full flex flex-col">
                     {/* Table header */}
-                    <div className="grid grid-cols-[90px_1fr_120px] gap-2 text-[10px] font-semibold text-muted-foreground border-b border-border pb-1 flex-shrink-0">
+                    <div className="grid grid-cols-[90px_1fr_120px] gap-2 text-[10px] font-semibold text-muted-foreground border-b border-border pb-1 flex-shrink-0 min-w-0">
                         <div>Status</div>
                         <div>Title</div>
                         <div>Engagement</div>
@@ -252,7 +252,7 @@ const mainBenefits = [
         description: "Get notified via email when high-potential posts are discovered, so you never miss a valuable opportunity to connect.",
         icon: Bell,
         infographic: (
-            <div className="relative h-48 w-full rounded-xl border border-border bg-[#101216] p-4 shadow-lg">
+            <div className="relative h-48 w-full max-w-full rounded-xl border border-border bg-[#101216] p-4 shadow-lg overflow-hidden">
                 <div className="space-y-3">
                     <div className="flex items-center gap-2">
                         <Bell className="h-4 w-4 text-primary" />
@@ -294,7 +294,7 @@ export default function MainBenefits() {
                 <span className="inline-flex items-center rounded-full bg-[#ff4500]/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#ff4500]">
             Why founders choose us
           </span>
-                    <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+                    <h2 className="text-3xl font-extrabold tracking-tight text-foreground sm:text-5xl">
                         Automate leads, sales and engagements effortlessly
                     </h2>
                     <p className="text-base text-muted-foreground sm:text-lg">
@@ -308,7 +308,7 @@ export default function MainBenefits() {
                         return (
                             <div
                                 key={benefit.title}
-                                className="group relative flex flex-col gap-4 rounded-2xl p-6 transition-all"
+                                className="group relative flex flex-col gap-4 rounded-2xl p-4 sm:p-6 transition-all overflow-hidden"
                             >
                                 <div className="flex-1 space-y-4">
                                     <div className="space-y-2">
@@ -316,7 +316,7 @@ export default function MainBenefits() {
                                             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ff4500]/10 text-[#ff4500] transition-colors group-hover:bg-[#ff4500]/20 flex-shrink-0">
                                                 <Icon className="h-5 w-5" />
                                             </div>
-                                            <h3 className="text-xl font-semibold text-foreground">
+                                            <h3 className="text-xl font-extrabold text-foreground">
                                                 {benefit.title}
                                             </h3>
                                         </div>

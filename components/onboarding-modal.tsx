@@ -185,6 +185,7 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           link: productLink,
+          productName: productName,
           productDescription: productDescription,
         }),
       });
