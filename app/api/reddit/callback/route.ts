@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
     }
     
     console.log("State validation passed:", {
-      state: state.substring(0, 20) + "...",
+      state: state?.substring(0, 20) + "...",
       hasStoredState: !!storedState,
     });
 
