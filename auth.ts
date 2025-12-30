@@ -54,4 +54,44 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     strategy: "jwt",
   },
   secret: process.env.NEXTAUTH_SECRET,
+  trustHost: true, // Required for Vercel and mobile browsers
+  // Mobile-friendly cookie configuration
+  cookies: {
+    pkceCodeVerifier: {
+      name: `next-auth.pkce.code_verifier`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax", // Use "lax" instead of "none" for better mobile compatibility
+        path: "/",
+        secure: process.env.NODE_ENV === "production", // Secure cookies in production
+      },
+    },
+    sessionToken: {
+      name: `next-auth.session_token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax", // Better mobile browser support
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+    callbackUrl: {
+      name: `next-auth.callback-url`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+    csrfToken: {
+      name: `next-auth.csrf-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+  },
 });
