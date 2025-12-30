@@ -61,5 +61,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   secret: process.env.NEXTAUTH_SECRET,
   trustHost: true, // Required for Vercel and similar platforms to handle PKCE correctly
+  useSecureCookies: process.env.NODE_ENV === "production",
+  // Ensure cookies work properly on Vercel
+  session: {
+    strategy: "jwt",
+  },
 });
 

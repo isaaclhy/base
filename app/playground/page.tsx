@@ -824,14 +824,22 @@ function PlaygroundContent() {
         console.log("Clearing leads data from before email tracking was implemented");
         localStorage.removeItem("leadsLinks");
         setLeadsLinks({});
-      } else if (savedLeadsUserEmail === currentUserEmail || (!savedLeadsUserEmail && !currentUserEmail)) {
-        // Load the data if emails match, or if both are null (not authenticated yet)
-        try {
-          const leads = JSON.parse(savedLeadsLinks);
-          setLeadsLinks(leads);
-        } catch (e) {
-          console.error("Failed to parse saved leads links:", e);
+      } else {
+        // Load the data if:
+        // 1. Emails match
+        // 2. Both are null/undefined (not authenticated yet or session not loaded)
+        // 3. We have saved email but current email is not yet loaded (session loading) - wait for session to load
+        if (savedLeadsUserEmail === currentUserEmail || (!savedLeadsUserEmail && !currentUserEmail)) {
+          try {
+            const leads = JSON.parse(savedLeadsLinks);
+            console.log(`[LEADS LOAD] Loading ${Object.keys(leads).length} keyword entries from localStorage`);
+            setLeadsLinks(leads);
+          } catch (e) {
+            console.error("Failed to parse saved leads links:", e);
+          }
         }
+        // If savedLeadsUserEmail exists but currentUserEmail is undefined, we'll wait for session to load
+        // The useEffect will re-run when session?.user?.email changes
       }
     }
     
@@ -1176,7 +1184,7 @@ function PlaygroundContent() {
         // Use functional state update to avoid race conditions when multiple fetches run in parallel
         setLeadsLinks((prev) => {
           // Always use prev (most up-to-date React state) for merging
-          // Only fallback to localStorage state if prev is completely empty (shouldn't happen normally)
+          // Only fallback to localStorage state if prev is completely empty (initial state)
           const currentState = Object.keys(prev).length > 0 ? prev : currentLeadsState;
           
           // Merge new results with existing results for this keyword, avoiding duplicates
@@ -1500,7 +1508,7 @@ function PlaygroundContent() {
           // Use functional state update to avoid race conditions when multiple fetches run in parallel
           setLeadsLinks((prev) => {
             // Always use prev (most up-to-date React state) for merging
-            // Only fallback to localStorage state if prev is completely empty (shouldn't happen normally)
+            // Only fallback to localStorage state if prev is completely empty (initial state)
             const currentState = Object.keys(prev).length > 0 ? prev : currentLeadsState;
             
             const currentExistingLinks = currentState[keywordSubredditKey] || [];
