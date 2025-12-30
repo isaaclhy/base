@@ -169,7 +169,7 @@ const mainBenefits = [
                         <div>Engagement</div>
                     </div>
                     {/* Table rows */}
-                    <div className="space-y-1.5 flex-1 overflow-y-auto">
+                    <div className="space-y-1.5 flex-1">
                         <div className="grid grid-cols-[90px_1fr_120px] gap-2 items-center py-1.5 border-b border-border/50">
                             <div>
                                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-medium bg-emerald-500/10 text-emerald-500">

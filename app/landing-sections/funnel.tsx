@@ -5,12 +5,12 @@ import { ArrowRight } from "lucide-react";
 
 export default function FunnelSection() {
   const posts = [
-    { subreddit: "r/startups", title: "How did you get your first 100 users?", time: "2m", upvotes: "2", color: "#ff4500" },
-    { subreddit: "r/entrepreneur", title: "Best tools for early stage founders", time: "5h", upvotes: "1.2k", color: "#7193ff" },
-    { subreddit: "r/SaaS", title: "Looking for SaaS recommendations", time: "1d", upvotes: "850", color: "#6de0af" },
-    { subreddit: "r/indiebiz", title: "What marketing channels worked best for you?", time: "3h", upvotes: "450", color: "#ff6b9d" },
-    { subreddit: "r/smallbusiness", title: "Need advice on customer acquisition", time: "6h", upvotes: "320", color: "#ffa500" },
-    { subreddit: "r/growmybusiness", title: "How to find product-market fit?", time: "8h", upvotes: "280", color: "#9b59b6" },
+    { subreddit: "r/startups", title: "How did you get your first 100 users?", time: "2m", upvotes: "2", color: "#ff4500", highPotential: true },
+    { subreddit: "r/entrepreneur", title: "Best tools for early stage founders", time: "5h", upvotes: "1.2k", color: "#7193ff", highPotential: true },
+    { subreddit: "r/SaaS", title: "Looking for SaaS recommendations", time: "1d", upvotes: "850", color: "#6de0af", highPotential: false },
+    { subreddit: "r/indiebiz", title: "What marketing channels worked best for you?", time: "3h", upvotes: "450", color: "#ff6b9d", highPotential: true },
+    { subreddit: "r/smallbusiness", title: "Need advice on customer acquisition", time: "6h", upvotes: "320", color: "#ffa500", highPotential: false },
+    { subreddit: "r/growmybusiness", title: "How to find product-market fit?", time: "8h", upvotes: "280", color: "#9b59b6", highPotential: true },
   ];
 
   const tableRows = [
@@ -57,10 +57,10 @@ export default function FunnelSection() {
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
           <h2 className="text-3xl font-extrabold tracking-tight text-foreground sm:text-5xl">
-            From scattered posts to organized opportunities
+            High-potential posts are everywhere, but scattered
           </h2>
-          <p className="mt-4 text-base text-muted-foreground sm:text-lg max-w-2xl mx-auto">
-            SignalScouter monitors multiple subreddits and unifies all relevant posts into one easy-to-manage table.
+          <p className="mt-4 text-sm text-muted-foreground sm:text-base max-w-2xl mx-auto">
+            We find them, organize them in one table, and generate comments to help you engage.
           </p>
         </div>
 
@@ -75,6 +75,9 @@ export default function FunnelSection() {
                   <div className="space-y-2">
                     {posts.map((post, idx) => (
                       <div key={`post-left-1-${idx}`} className="relative rounded-lg border border-border bg-card p-2.5 shadow-sm">
+                        {post.highPotential && (
+                          <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-[#ff4500] animate-pulse"></div>
+                        )}
                         <div className="flex items-center gap-1.5 mb-1.5">
                           <div className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: post.color }}></div>
                           <span className="text-xs font-medium text-foreground">{post.subreddit}</span>
@@ -90,6 +93,9 @@ export default function FunnelSection() {
                   <div className="space-y-2 mt-2">
                     {posts.map((post, idx) => (
                       <div key={`post-left-2-${idx}`} className="relative rounded-lg border border-border bg-card p-2.5 shadow-sm">
+                        {post.highPotential && (
+                          <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-[#ff4500] animate-pulse"></div>
+                        )}
                         <div className="flex items-center gap-1.5 mb-1.5">
                           <div className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: post.color }}></div>
                           <span className="text-xs font-medium text-foreground">{post.subreddit}</span>
@@ -111,6 +117,9 @@ export default function FunnelSection() {
                   <div className="space-y-2">
                     {posts.map((post, idx) => (
                       <div key={`post-right-1-${idx}`} className="relative rounded-lg border border-border bg-card p-2.5 shadow-sm">
+                        {post.highPotential && (
+                          <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-[#ff4500] animate-pulse"></div>
+                        )}
                         <div className="flex items-center gap-1.5 mb-1.5">
                           <div className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: post.color }}></div>
                           <span className="text-xs font-medium text-foreground">{post.subreddit}</span>
@@ -126,6 +135,9 @@ export default function FunnelSection() {
                   <div className="space-y-2 mt-2">
                     {posts.map((post, idx) => (
                       <div key={`post-right-2-${idx}`} className="relative rounded-lg border border-border bg-card p-2.5 shadow-sm">
+                        {post.highPotential && (
+                          <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-[#ff4500] animate-pulse"></div>
+                        )}
                         <div className="flex items-center gap-1.5 mb-1.5">
                           <div className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: post.color }}></div>
                           <span className="text-xs font-medium text-foreground">{post.subreddit}</span>
@@ -178,7 +190,7 @@ export default function FunnelSection() {
               </div>
 
               {/* Table Rows */}
-              <div className="divide-y divide-border overflow-y-auto flex-1">
+              <div className="divide-y divide-border flex-1">
                 {tableRows.map((row, idx) => (
                   <div key={`row-${idx}`} className="grid grid-cols-[60px_1fr_100px_120px] gap-2 items-center px-3 py-2.5 hover:bg-muted/30 transition-colors">
                     <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
