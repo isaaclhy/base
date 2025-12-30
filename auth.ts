@@ -55,24 +55,35 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   secret: process.env.NEXTAUTH_SECRET,
   trustHost: true, // Required for Vercel and mobile browsers
-  // Mobile-friendly cookie configuration
+  // Get base domain from NEXTAUTH_URL (remove protocol and path)
+  // This allows cookies to work across both www and non-www subdomains
+  basePath: "/api/auth",
+  // Mobile-friendly cookie configuration with domain support
   cookies: {
     pkceCodeVerifier: {
       name: `next-auth.pkce.code_verifier`,
       options: {
         httpOnly: true,
-        sameSite: "lax", // Use "lax" instead of "none" for better mobile compatibility
+        sameSite: "lax",
         path: "/",
-        secure: process.env.NODE_ENV === "production", // Secure cookies in production
+        secure: process.env.NODE_ENV === "production",
+        // Set domain to work across www and non-www
+        // Extract domain from NEXTAUTH_URL if set
+        ...(process.env.NEXTAUTH_URL && process.env.NODE_ENV === "production" 
+          ? { domain: getCookieDomain(process.env.NEXTAUTH_URL) }
+          : {}),
       },
     },
     sessionToken: {
       name: `next-auth.session_token`,
       options: {
         httpOnly: true,
-        sameSite: "lax", // Better mobile browser support
+        sameSite: "lax",
         path: "/",
         secure: process.env.NODE_ENV === "production",
+        ...(process.env.NEXTAUTH_URL && process.env.NODE_ENV === "production"
+          ? { domain: getCookieDomain(process.env.NEXTAUTH_URL) }
+          : {}),
       },
     },
     callbackUrl: {
@@ -82,6 +93,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         sameSite: "lax",
         path: "/",
         secure: process.env.NODE_ENV === "production",
+        ...(process.env.NEXTAUTH_URL && process.env.NODE_ENV === "production"
+          ? { domain: getCookieDomain(process.env.NEXTAUTH_URL) }
+          : {}),
       },
     },
     csrfToken: {
@@ -91,7 +105,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         sameSite: "lax",
         path: "/",
         secure: process.env.NODE_ENV === "production",
+        ...(process.env.NEXTAUTH_URL && process.env.NODE_ENV === "production"
+          ? { domain: getCookieDomain(process.env.NEXTAUTH_URL) }
+          : {}),
       },
     },
   },
 });
+
+// Helper function to extract domain from URL and make it work for both www and non-www
+function getCookieDomain(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    
+    // Remove 'www.' if present and return the base domain with leading dot
+    // This allows cookies to work on both www.example.com and example.com
+    const baseDomain = hostname.replace(/^www\./, '');
+    
+    // Return with leading dot to make it work for subdomains
+    return `.${baseDomain}`;
+  } catch {
+    return '';
+  }
+}
