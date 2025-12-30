@@ -364,6 +364,7 @@ function PlaygroundContent() {
   const [leadsLinks, setLeadsLinks] = useState<Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>>>({});
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
   const [isLoadingLeadsLinks, setIsLoadingLeadsLinks] = useState<Record<string, boolean>>({});
+  const distinctLeadsLinksRef = useRef<Array<any>>([]);
   const [leadsPage, setLeadsPage] = useState(1);
   const [leadsSortBy, setLeadsSortBy] = useState<"date-desc" | "date-asc" | "upvotes-desc" | "upvotes-asc" | "comments-desc" | "comments-asc" | "title-asc" | "title-desc">("date-desc");
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
@@ -375,6 +376,7 @@ function PlaygroundContent() {
   const [bulkOperationStatus, setBulkOperationStatus] = useState<Record<string, "haven't started" | "generating" | "posting" | "completed" | "error">>({});
   const [bulkGeneratedComments, setBulkGeneratedComments] = useState<Record<string, string>>({});
   const [bulkModalLeads, setBulkModalLeads] = useState<Array<typeof distinctLeadsLinks[number]>>([]);
+  const [bulkModalInitialCount, setBulkModalInitialCount] = useState(0);
   const LEADS_ITEMS_PER_PAGE = 20;
 
   const analyticsUrlSet = useMemo(() => {
@@ -1171,39 +1173,45 @@ function PlaygroundContent() {
           console.error("Error reading from localStorage in fetchLeadsForKeyword:", e);
         }
 
-        // Merge new results with existing results for this keyword, avoiding duplicates
-        const existingLinksForKeyword = currentLeadsState[keyword] || [];
-        const existingLinkUrls = new Set(existingLinksForKeyword.map((link: any) => link.link).filter(Boolean));
+        // Use functional state update to avoid race conditions when multiple fetches run in parallel
+        setLeadsLinks((prev) => {
+          // Always use prev (most up-to-date React state) for merging
+          // Only fallback to localStorage state if prev is completely empty (shouldn't happen normally)
+          const currentState = Object.keys(prev).length > 0 ? prev : currentLeadsState;
+          
+          // Merge new results with existing results for this keyword, avoiding duplicates
+          const existingLinksForKeyword = currentState[keyword] || [];
+          const existingLinkUrls = new Set(existingLinksForKeyword.map((link: any) => link.link).filter(Boolean));
 
-        // Only add new links that don't already exist (by URL)
-        const newLinks = data.results.filter((link: any) => link.link && !existingLinkUrls.has(link.link));
+          // Only add new links that don't already exist (by URL)
+          const newLinks = data.results.filter((link: any) => link.link && !existingLinkUrls.has(link.link));
 
-        // Log each lead with its keyword
-        newLinks.forEach((link: any) => {
-          console.log(`[LEAD] Keyword: "${keyword}" | Title: "${link.title || 'N/A'}" | URL: ${link.link}`);
-        });
+          // Log each lead with its keyword
+          newLinks.forEach((link: any) => {
+            console.log(`[LEAD] Keyword: "${keyword}" | Title: "${link.title || 'N/A'}" | URL: ${link.link}`);
+          });
 
-        const mergedLinksForKeyword = [...existingLinksForKeyword, ...newLinks];
+          const mergedLinksForKeyword = [...existingLinksForKeyword, ...newLinks];
 
-        const updated = {
-          ...currentLeadsState,
-          [keyword]: mergedLinksForKeyword,
-        };
+          const updated = {
+            ...currentState,
+            [keyword]: mergedLinksForKeyword,
+          };
 
-        // Save to localStorage using safe function
-        safeSetLocalStorage("leadsLinks", updated);
-        // Also save the current user's email to associate leads data with the user
-        if (session?.user?.email) {
-          try {
-            localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
-          } catch (e) {
-            console.error("Error saving leadsLinksUserEmail:", e);
+          // Save to localStorage using safe function
+          safeSetLocalStorage("leadsLinks", updated);
+          // Also save the current user's email to associate leads data with the user
+          if (session?.user?.email) {
+            try {
+              localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
+            } catch (e) {
+              console.error("Error saving leadsLinksUserEmail:", e);
+            }
           }
-        }
-        setLeadsLinks(updated);
-
-        // Log summary for this keyword
-        console.log(`[LEAD SUMMARY] Keyword: "${keyword}" | Total leads found: ${mergedLinksForKeyword.length} | New leads: ${newLinks.length}`);
+          // Log summary for this keyword
+          console.log(`[LEAD SUMMARY] Keyword: "${keyword}" | Total leads found: ${mergedLinksForKeyword.length} | New leads: ${newLinks.length}`);
+          return updated;
+        });
       }
     } catch (err) {
       console.error(`Error fetching leads for keyword "${keyword}":`, err);
@@ -1483,31 +1491,44 @@ function PlaygroundContent() {
 
           // Create a unique key for subreddit-based leads: "keyword:subreddit"
           const keywordSubredditKey = `${keyword}:${subreddit}`;
+          
+          // Compute newLinks for return value (using localStorage state - may be slightly stale but acceptable for return value)
           const existingLinksForKey = currentLeadsState[keywordSubredditKey] || [];
           const existingLinkUrls = new Set(existingLinksForKey.map((link: any) => link.link).filter(Boolean));
-
-          // Only add new links that don't already exist
           const newLinks = data.results.filter((link: any) => link.link && !existingLinkUrls.has(link.link));
+          
+          // Use functional state update to avoid race conditions when multiple fetches run in parallel
+          setLeadsLinks((prev) => {
+            // Always use prev (most up-to-date React state) for merging
+            // Only fallback to localStorage state if prev is completely empty (shouldn't happen normally)
+            const currentState = Object.keys(prev).length > 0 ? prev : currentLeadsState;
+            
+            const currentExistingLinks = currentState[keywordSubredditKey] || [];
+            const currentExistingLinkUrls = new Set(currentExistingLinks.map((link: any) => link.link).filter(Boolean));
 
-          const mergedLinks = [...existingLinksForKey, ...newLinks];
+            // Only add new links that don't already exist (recompute with latest state)
+            const latestNewLinks = data.results.filter((link: any) => link.link && !currentExistingLinkUrls.has(link.link));
 
-          const updated = {
-            ...currentLeadsState,
-            [keywordSubredditKey]: mergedLinks,
-          };
+            const mergedLinks = [...currentExistingLinks, ...latestNewLinks];
 
-          // Save to localStorage
-          safeSetLocalStorage("leadsLinks", updated);
-          if (session?.user?.email) {
-            try {
-              localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
-            } catch (e) {
-              console.error("Error saving leadsLinksUserEmail:", e);
+            const updated = {
+              ...currentState,
+              [keywordSubredditKey]: mergedLinks,
+            };
+
+            // Save to localStorage
+            safeSetLocalStorage("leadsLinks", updated);
+            if (session?.user?.email) {
+              try {
+                localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
+              } catch (e) {
+                console.error("Error saving leadsLinksUserEmail:", e);
+              }
             }
-          }
-          setLeadsLinks(updated);
-
-          console.log(`[SUBREDDIT SUMMARY] Keyword: "${keyword}" | Subreddit: r/${subreddit} | Total: ${mergedLinks.length} | New: ${newLinks.length}`);
+            // Log summary for this subreddit
+            console.log(`[SUBREDDIT SUMMARY] Keyword: "${keyword}" | Subreddit: r/${subreddit} | Total: ${mergedLinks.length} | New: ${latestNewLinks.length}`);
+            return updated;
+          });
           return newLinks;
         }
         return [];
@@ -1529,6 +1550,9 @@ function PlaygroundContent() {
 
     setIsLoadingLeads(true);
     setLeadsPage(1);
+
+    // Store the current leadsLinks state to prevent count jumping during refresh
+    const leadsLinksSnapshot = { ...leadsLinks };
 
     try {
       // Fetch Reddit links for each keyword via Google Search (existing functionality)
@@ -1560,7 +1584,13 @@ function PlaygroundContent() {
   };
 
   // Compute distinct leads links (similar to distinctLinks)
+  // Freeze the count during loading to prevent count jumping
   const distinctLeadsLinks = useMemo(() => {
+    // If loading, return previous result to prevent count jumping
+    if (isLoadingLeads) {
+      return distinctLeadsLinksRef.current;
+    }
+    
     let globalIndex = 0;
     const allLinksWithKeyword = Object.entries(leadsLinks)
       .reverse()
@@ -1658,8 +1688,10 @@ function PlaygroundContent() {
       results.push(linkItem);
     }
 
+    // Store the result in ref for use during loading
+    distinctLeadsLinksRef.current = results;
     return results;
-  }, [leadsLinks, analyticsUrlSet, leadsSortBy]);
+  }, [leadsLinks, analyticsUrlSet, leadsSortBy, isLoadingLeads]);
 
   // Paginated leads links
   const paginatedLeadsLinks = useMemo(() => {
@@ -3361,6 +3393,9 @@ function PlaygroundContent() {
       return;
     }
 
+    // Set posting state to true
+    setIsBulkPosting(true);
+
     // Use the stored modal leads (they persist even if filtered out from distinctLeadsLinks)
     const selectedLeadItems = bulkModalLeads;
     
@@ -3488,6 +3523,9 @@ function PlaygroundContent() {
     
     // Clear selected leads after bulk operation completes
     setSelectedLeads(new Set());
+    
+    // Set posting state to false when all operations complete
+    setIsBulkPosting(false);
   };
 
   // Handler for Skip button
@@ -4010,7 +4048,7 @@ function PlaygroundContent() {
                         className="w-full"
                       />
               </div>
-                    <div>
+              <div>
                       <label htmlFor="product-website" className="block text-sm font-medium text-foreground mb-1">
                         Product Website
                       </label>
@@ -5310,10 +5348,12 @@ function PlaygroundContent() {
                             // Store the selected lead items before opening modal
                             const selectedLeadItems = distinctLeadsLinks.filter(link => selectedLeads.has(link.uniqueKey));
                             setBulkModalLeads(selectedLeadItems);
+                            setBulkModalInitialCount(selectedLeads.size);
                             setIsBulkOperationsModalOpen(true);
                             // Reset status when opening modal
                             setBulkOperationStatus({});
                             setBulkGeneratedComments({});
+                            setIsBulkPosting(false);
                           }}
                         >
                           Bulk Operations
@@ -5473,8 +5513,8 @@ function PlaygroundContent() {
                         <div className="overflow-x-auto flex-1 overflow-y-auto min-h-0">
                           <table className="w-full border-collapse table-fixed">
                             <thead className="sticky top-0 z-20">
-                              <tr className="border-b border-border bg-muted/50">
-                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[40px]">
+                              <tr className="border-b border-border bg-muted">
+                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted w-[40px]">
                                   <div
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -5496,10 +5536,10 @@ function PlaygroundContent() {
                                     )}
                                   </div>
                                 </th>
-                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[70px]">Stats</th>
-                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[250px]">Title</th>
-                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[120px]">Subreddit</th>
-                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[120px]">Date</th>
+                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted w-[70px]">Stats</th>
+                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted w-[250px]">Title</th>
+                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted w-[120px]">Subreddit</th>
+                                <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted w-[120px]">Date</th>
                                 <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[80px]">Actions</th>
                               </tr>
                             </thead>
@@ -6197,7 +6237,7 @@ function PlaygroundContent() {
             <div className="w-full max-w-2xl rounded-lg border border-border bg-card shadow-lg">
               <div className="border-b border-border px-6 py-4 flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-foreground">
-                  Bulk Commenting <span className="text-sm text-muted-foreground font-normal">({selectedLeads.size} selected)</span>
+                  Bulk Commenting <span className="text-sm text-muted-foreground font-normal">({bulkModalInitialCount} selected)</span>
                 </h3>
                 <button
                   onClick={() => setIsBulkOperationsModalOpen(false)}
@@ -6304,13 +6344,49 @@ function PlaygroundContent() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
+              <div className="flex items-center justify-between gap-3 border-t border-border px-6 py-4">
+                <div className="text-sm text-muted-foreground">
+                  {(() => {
+                    const completedCount = Object.values(bulkOperationStatus).filter(status => status === "completed").length;
+                    const totalCount = bulkModalLeads.length;
+                    if (isBulkPosting || completedCount > 0) {
+                      return `${completedCount} / ${totalCount} posted`;
+                    }
+                    return null;
+                  })()}
+                </div>
                 <Button
                   variant="default"
-                  onClick={handleBulkComment}
-                  disabled={Object.values(bulkOperationStatus).some(status => status === "generating" || status === "posting")}
+                  onClick={() => {
+                    if (isBulkPosting) {
+                      // If posting is in progress, do nothing (button is disabled)
+                      return;
+                    }
+                    const allCompleted = Object.values(bulkOperationStatus).every(status => status === "completed" || status === "error");
+                    if (allCompleted && Object.keys(bulkOperationStatus).length > 0) {
+                      // Close modal if all are completed
+                      setIsBulkOperationsModalOpen(false);
+                      // Reset states
+                      setBulkOperationStatus({});
+                      setBulkGeneratedComments({});
+                      setIsBulkPosting(false);
+                    } else {
+                      // Start posting
+                      handleBulkComment();
+                    }
+                  }}
+                  disabled={isBulkPosting}
                 >
-                  Post Comment
+                  {(() => {
+                    const allCompleted = Object.values(bulkOperationStatus).every(status => status === "completed" || status === "error");
+                    if (allCompleted && Object.keys(bulkOperationStatus).length > 0) {
+                      return "Close";
+                    }
+                    if (isBulkPosting) {
+                      return "Posting...";
+                    }
+                    return "Post Comment";
+                  })()}
                 </Button>
               </div>
             </div>
