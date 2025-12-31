@@ -1493,11 +1493,12 @@ function PlaygroundContent() {
                   // Cache the full post (for on-demand fetching when drawer opens)
                   cachePost(url, { selftext: post.selftext || null, postData: post });
 
-                  // Only save minimal stats to state (ups, num_comments, created_utc)
+                  // Only save minimal stats to state (ups, num_comments, created_utc, name)
                   const minimalPostData = {
                     ups: post.ups || 0,
                     num_comments: post.num_comments || 0,
                     created_utc: post.created_utc || null,
+                    name: post.name || null,
                   };
 
                   // Update state with minimal stats only
@@ -1549,6 +1550,7 @@ function PlaygroundContent() {
                   ups: post.ups || 0,
                   num_comments: post.num_comments || 0,
                   created_utc: post.created_utc || null,
+                  name: post.name || null,
                 };
 
                 setLeadsLinks((prev) => {

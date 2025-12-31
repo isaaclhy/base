@@ -25,14 +25,14 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || "https://www.signalscouter.com"),
   alternates: {
     canonical: "/",
   },
   openGraph: {
     title: "SignalScouter - Automate Your Reddit Engagement",
     description: "Find related Reddit posts automatically, generate tailor-made comments, and post comments automatically. Grow your audience on Reddit with AI-powered engagement.",
-    url: "/",
+    url: "https://www.signalscouter.com",
     siteName: "SignalScouter",
     images: [
       {
