@@ -14,6 +14,7 @@ import {
   X,
   Plus,
   Users,
+  Heart,
 } from "lucide-react";
 import { UserInfoCard } from "@/components/auth/user-info-card";
 import { UsageProgress } from "@/components/usage/usage-progress";
@@ -23,7 +24,7 @@ interface PlaygroundLayoutProps {
   children: React.ReactNode;
 }
 
-type TabId = "product" | "dashboard" | "analytics" | "feedback" | "pricing" | "create" | "leads";
+type TabId = "product" | "dashboard" | "analytics" | "feedback" | "pricing" | "create" | "leads" | "engagement";
 
 const PlaygroundTabContext = createContext<{
   activeTab: TabId;
@@ -68,6 +69,7 @@ const tabs: Tab[] = [
   // { id: "dashboard", label: "Discovery", icon: LayoutDashboard },
   { id: "leads", label: "Leads", icon: Users },
   { id: "create", label: "Create", icon: Plus },
+  // { id: "engagement", label: "Engagement", icon: Heart },
   { id: "analytics", label: "History", icon: BarChart3 },
   { id: "pricing", label: "Pricing", icon: CreditCard },
 ];

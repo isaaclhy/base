@@ -380,6 +380,9 @@ function PlaygroundContent() {
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [selectedDiscoveryPost, setSelectedDiscoveryPost] = useState<typeof distinctLinks[0] | null>(null);
+  const [inboxMessages, setInboxMessages] = useState<any[]>([]);
+  const [isLoadingInbox, setIsLoadingInbox] = useState(false);
+  const [engagementFilter, setEngagementFilter] = useState<"all" | "notifications" | "messages">("all");
   const [isDiscoveryDrawerVisible, setIsDiscoveryDrawerVisible] = useState(false);
   const [drawerPersona, setDrawerPersona] = useState<"Founder" | "User">("Founder");
   const [discoveryPage, setDiscoveryPage] = useState(1);
@@ -670,6 +673,37 @@ function PlaygroundContent() {
       checkOnboardingStatus();
     }
   }, [status, session]);
+
+  // Load inbox messages when Engagement tab is active
+  useEffect(() => {
+    if (status === "authenticated" && session?.user?.email && activeTab === "engagement") {
+      setIsLoadingInbox(true);
+      const loadInbox = async () => {
+        try {
+          const response = await fetch("/api/reddit/inbox");
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.data?.data?.children) {
+              setInboxMessages(data.data.data.children);
+            } else {
+              setInboxMessages([]);
+            }
+          } else {
+            setInboxMessages([]);
+          }
+        } catch (error) {
+          console.error("Error loading inbox:", error);
+          setInboxMessages([]);
+        } finally {
+          setIsLoadingInbox(false);
+        }
+      };
+      
+      loadInbox();
+    } else {
+      setInboxMessages([]);
+    }
+  }, [status, session, activeTab]);
 
   // Load product details when Product tab is active (to refresh)
   useEffect(() => {
@@ -2410,8 +2444,8 @@ function PlaygroundContent() {
   // Handle tab query parameter to set active tab
   useEffect(() => {
     const tabParam = searchParams?.get("tab");
-    if (tabParam && ["product", "dashboard", "analytics", "feedback", "pricing"].includes(tabParam)) {
-      setActiveTab(tabParam as "product" | "dashboard" | "analytics" | "feedback" | "pricing");
+    if (tabParam && ["product", "dashboard", "analytics", "feedback", "pricing", "engagement"].includes(tabParam)) {
+      setActiveTab(tabParam as "product" | "dashboard" | "analytics" | "feedback" | "pricing" | "engagement");
       // Clean up the tab parameter from URL after setting it
       const params = new URLSearchParams(searchParams.toString());
       params.delete("tab");
@@ -6132,12 +6166,13 @@ function PlaygroundContent() {
                       </Button>
                       )}
                           <div className="flex items-center gap-3">
-                            <div title="Coming soon" className="inline-block">
+                            <div title="Coming soon">
                               <Button
+                                onClick={handleAutoPilot}
+                                disabled={true}
                                 size="sm"
                                 variant="outline"
-                                disabled={true}
-                                className="cursor-not-allowed"
+                                className="text-[#FF4500] font-bold cursor-not-allowed"
                               >
                                 Auto-pilot
                               </Button>
@@ -6549,6 +6584,216 @@ function PlaygroundContent() {
                 )}
               </div>
             </div>
+            </div>
+          </div>
+        );
+      case "engagement":
+        return (
+          <div className="flex h-full flex-col">
+            {/* Main content area - scrollable */}
+            <div className={cn(
+              "flex h-full flex-col",
+              !sidebarOpen && "pl-2"
+            )}>
+              {/* Fixed header with title */}
+              <div className={cn(
+                "sticky top-0 z-10 bg-background pb-2",
+                !sidebarOpen && "pl-14"
+              )}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="text-lg font-semibold">
+                    Engagement
+                  </h3>
+                </div>
+                
+                {/* Filter tabs */}
+                {(() => {
+                  // Calculate counts for each category
+                  const notifications = inboxMessages.filter((item) => {
+                    const msg = item.data;
+                    return msg.kind === "t1" || msg.kind === "t3";
+                  });
+                  const messages = inboxMessages.filter((item) => {
+                    return item.data.kind === "t4";
+                  });
+                  
+                  return (
+                    <div className="flex items-center gap-2 mt-3 border-b border-border">
+                      <button
+                        onClick={() => setEngagementFilter("all")}
+                        className={cn(
+                          "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
+                          engagementFilter === "all"
+                            ? "border-primary text-primary"
+                            : "border-transparent text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        All {inboxMessages.length > 0 && `(${inboxMessages.length})`}
+                      </button>
+                      <button
+                        onClick={() => setEngagementFilter("notifications")}
+                        className={cn(
+                          "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
+                          engagementFilter === "notifications"
+                            ? "border-primary text-primary"
+                            : "border-transparent text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        Notifications {notifications.length > 0 && `(${notifications.length})`}
+                      </button>
+                      <button
+                        onClick={() => setEngagementFilter("messages")}
+                        className={cn(
+                          "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
+                          engagementFilter === "messages"
+                            ? "border-primary text-primary"
+                            : "border-transparent text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        Messages {messages.length > 0 && `(${messages.length})`}
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
+              
+              {/* Content area that spans remaining space */}
+              <div className={cn(
+                "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
+                !sidebarOpen && "pl-14"
+              )}>
+                <div className="flex-1 overflow-y-auto px-1">
+                  {isLoadingInbox ? (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        <p className="text-muted-foreground">Loading messages...</p>
+                      </div>
+                    </div>
+                  ) : (() => {
+                    // Organize messages by type
+                    const notifications: any[] = [];
+                    const messages: any[] = [];
+                    
+                    inboxMessages.forEach((item) => {
+                      const message = item.data;
+                      // t1 = comment reply, t3 = post reply (notifications)
+                      // t4 = private message
+                      if (message.kind === "t1" || message.kind === "t3") {
+                        notifications.push(item);
+                      } else if (message.kind === "t4") {
+                        messages.push(item);
+                      } else {
+                        // Other types go to notifications by default
+                        notifications.push(item);
+                      }
+                    });
+                    
+                    const filteredMessages = engagementFilter === "all" 
+                      ? inboxMessages 
+                      : engagementFilter === "notifications" 
+                        ? notifications 
+                        : messages;
+                    
+                    if (filteredMessages.length === 0) {
+                      return (
+                        <div className="flex items-center justify-center h-full">
+                          <div className="text-center">
+                            <p className="text-muted-foreground">
+                              {engagementFilter === "all" 
+                                ? "No messages in your inbox" 
+                                : engagementFilter === "notifications"
+                                  ? "No notifications"
+                                  : "No private messages"}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    return (
+                      <div className="space-y-3">
+                        {filteredMessages.map((item, index) => {
+                          const message = item.data;
+                          const isComment = message.kind === "t1";
+                          const isPostReply = message.kind === "t3";
+                          const isPrivateMessage = message.kind === "t4";
+                          
+                          // Determine message type label
+                          let messageType = "Message";
+                          let messageIcon = MessageSquare;
+                          if (isComment) {
+                            messageType = "Comment Reply";
+                          } else if (isPostReply) {
+                            messageType = "Post Reply";
+                          } else if (isPrivateMessage) {
+                            messageType = "Private Message";
+                          }
+                          
+                          return (
+                            <div
+                              key={message.id || index}
+                              className="rounded-lg border border-border bg-card p-4 hover:bg-accent/50 transition-colors"
+                            >
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <MessageSquare className="h-4 w-4 text-muted-foreground shrink-0" />
+                                    <span className="text-sm font-medium text-foreground">
+                                      {messageType}
+                                    </span>
+                                    {message.new && (
+                                      <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                                        New
+                                      </span>
+                                    )}
+                                  </div>
+                                  
+                                  {message.subject && (
+                                    <h4 className="text-sm font-semibold text-foreground mb-1 truncate">
+                                      {message.subject}
+                                    </h4>
+                                  )}
+                                  
+                                  {message.body && (
+                                    <p className="text-sm text-muted-foreground line-clamp-3 mb-2">
+                                      {message.body}
+                                    </p>
+                                  )}
+                                  
+                                  {message.author && (
+                                    <p className="text-xs text-muted-foreground mb-1">
+                                      From: <span className="font-medium">u/{message.author}</span>
+                                    </p>
+                                  )}
+                                  
+                                  {message.created_utc && (
+                                    <p className="text-xs text-muted-foreground">
+                                      {new Date(message.created_utc * 1000).toLocaleString()}
+                                    </p>
+                                  )}
+                                  
+                                  {message.context && (
+                                    <a
+                                      href={`https://www.reddit.com${message.context}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs text-primary hover:underline inline-flex items-center gap-1 mt-2"
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                      View Context
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
             </div>
           </div>
         );

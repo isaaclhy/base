@@ -1,0 +1,22 @@
+name: Auto-pilot Cron Job
+
+on:
+  schedule:
+    # Run every 2 hours
+    - cron: '0 */2 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  auto-pilot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Auto-pilot Endpoint
+        run: |
+          curl -X POST ${{ secrets.APP_URL }}/api/cron/auto-pilot \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.CRON_API_KEY }}" \
+            -d '{
+              "userEmail": "${{ secrets.CRON_USER_EMAIL }}",
+              "apiKey": "${{ secrets.CRON_API_KEY }}"
+            }'
+
