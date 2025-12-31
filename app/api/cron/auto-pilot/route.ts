@@ -180,10 +180,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
 async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
   try {
+    console.log(`[Auto-pilot] ============================================`);
     console.log(`[Auto-pilot] Starting auto-pilot for user: ${email}`);
+    console.log(`[Auto-pilot] Timestamp: ${new Date().toISOString()}`);
 
     const dbUser = await getUserByEmail(email);
     if (!dbUser) {
+      console.error(`[Auto-pilot] User not found: ${email}`);
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
@@ -192,7 +195,14 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
     const subreddits = dbUser.subreddits || [];
     const productIdea = dbUser.productDetails?.productDescription;
 
+    console.log(`[Auto-pilot] User configuration:`);
+    console.log(`[Auto-pilot]   - Keywords: ${keywords.length} (${keywords.join(', ')})`);
+    console.log(`[Auto-pilot]   - Subreddits: ${subreddits.length} (${subreddits.join(', ')})`);
+    console.log(`[Auto-pilot]   - Product idea present: ${!!productIdea}`);
+    console.log(`[Auto-pilot]   - Product idea length: ${productIdea?.length || 0} characters`);
+
     if (keywords.length === 0) {
+      console.error(`[Auto-pilot] No keywords found for user ${email}`);
       return NextResponse.json(
         { error: "No keywords found. Please add keywords in the Product tab." },
         { status: 400 }
@@ -200,6 +210,7 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
     }
 
     if (!productIdea) {
+      console.error(`[Auto-pilot] No product description found for user ${email}`);
       return NextResponse.json(
         { error: "No product description found. Please add product details in the Product tab." },
         { status: 400 }
@@ -210,20 +221,31 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
     let redditAccessToken: string | undefined;
     try {
       if (dbUser.redditAccessToken) {
+        console.log(`[Auto-pilot] Getting valid Reddit access token...`);
         redditAccessToken = await getValidAccessToken(email);
+        console.log(`[Auto-pilot] Reddit access token obtained: ${redditAccessToken ? 'YES' : 'NO'}`);
+      } else {
+        console.log(`[Auto-pilot] User has no Reddit access token stored`);
       }
     } catch (tokenError) {
       console.error(`[Auto-pilot] Error getting Reddit access token:`, tokenError);
     }
 
     if (!redditAccessToken) {
+      console.error(`[Auto-pilot] Reddit account not connected for user ${email}`);
       return NextResponse.json(
         { error: "Reddit account not connected. Please connect your Reddit account." },
         { status: 400 }
       );
     }
 
-    const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60);
+    const now = Date.now();
+    const twoHoursAgo = Math.floor(now / 1000) - (2 * 60 * 60);
+    const twoHoursAgoMs = now - (2 * 60 * 60 * 1000);
+    
+    console.log(`[Auto-pilot] Time window: ${new Date(twoHoursAgoMs).toISOString()} to ${new Date(now).toISOString()}`);
+    console.log(`[Auto-pilot] Unix timestamp threshold: ${twoHoursAgo} (2 hours ago)`);
+    
     const allPosts: Array<{
       title?: string | null;
       link?: string | null;
@@ -234,11 +256,13 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
     }> = [];
 
     // Step 1: Fetch leads for keywords via Google Search
-    console.log(`[Auto-pilot] Fetching leads for ${keywords.length} keywords...`);
+    console.log(`[Auto-pilot] Fetching leads for ${keywords.length} keywords:`, keywords);
     for (const keyword of keywords) {
       try {
+        console.log(`[Auto-pilot] Fetching Google Search results for keyword: "${keyword}"`);
         const googleDataArray = await fetchGoogleCustomSearch(keyword, 50);
         const allItems = googleDataArray.flatMap((googleData) => googleData.items || []);
+        console.log(`[Auto-pilot] Google Search returned ${allItems.length} total items for keyword "${keyword}"`);
 
         const redditPosts = allItems
           .filter((data) => isRedditPostUrl(data.link ?? ""))
@@ -250,14 +274,24 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
             keyword,
           }));
 
+        console.log(`[Auto-pilot] Found ${redditPosts.length} Reddit posts from Google Search for keyword "${keyword}"`);
+
         if (redditAccessToken && redditPosts.length > 0) {
           const postLinks = redditPosts.filter(p => p.link).map(p => p.link!);
+          console.log(`[Auto-pilot] Fetching Reddit post data for ${postLinks.length} posts...`);
           const postDataMap = await fetchRedditPostsBatch(postLinks, redditAccessToken);
+          console.log(`[Auto-pilot] Successfully fetched Reddit data for ${postDataMap.size} posts`);
           
           for (const post of redditPosts) {
             if (post.link) {
               const postContent = postDataMap.get(post.link);
               if (postContent) {
+                const createdUtc = postContent.created_utc;
+                const createdDate = createdUtc ? new Date(createdUtc * 1000).toISOString() : 'unknown';
+                const isWithinWindow = createdUtc && typeof createdUtc === 'number' && createdUtc >= twoHoursAgo;
+                
+                console.log(`[Auto-pilot] Post: "${post.title}" | Created: ${createdDate} (${createdUtc}) | Within 2h: ${isWithinWindow} | URL: ${post.link}`);
+                
                 allPosts.push({
                   ...post,
                   selftext: postContent.selftext || null,
@@ -268,37 +302,80 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
                     name: postContent.name,
                   },
                 });
+              } else {
+                console.log(`[Auto-pilot] No Reddit data found for post: ${post.link}`);
               }
             }
           }
+        } else if (!redditAccessToken) {
+          console.log(`[Auto-pilot] Skipping Reddit data fetch - no access token`);
         }
       } catch (error) {
         console.error(`[Auto-pilot] Error fetching leads for keyword "${keyword}":`, error);
       }
     }
 
+    console.log(`[Auto-pilot] Total posts fetched from all keywords: ${allPosts.length}`);
+
     // Step 2: Fetch leads from subreddits (if available)
     if (subreddits.length > 0 && redditAccessToken) {
-      console.log(`[Auto-pilot] Fetching leads from ${subreddits.length} subreddits...`);
+      console.log(`[Auto-pilot] Subreddit fetching not yet implemented. Skipping ${subreddits.length} subreddits.`);
       // Note: Reddit API subreddit search would go here if needed
       // For now, skipping as it requires additional implementation
+    } else if (subreddits.length === 0) {
+      console.log(`[Auto-pilot] No subreddits configured, skipping subreddit fetching`);
+    } else {
+      console.log(`[Auto-pilot] No Reddit access token, skipping subreddit fetching`);
     }
 
     // Step 3: Filter by time (2 hours)
+    console.log(`[Auto-pilot] Filtering ${allPosts.length} posts by time (last 2 hours)...`);
     const timeFiltered = allPosts.filter((post) => {
       if (post.postData && typeof post.postData.created_utc === 'number') {
-        return post.postData.created_utc >= twoHoursAgo;
+        const isWithinWindow = post.postData.created_utc >= twoHoursAgo;
+        if (!isWithinWindow) {
+          const createdDate = new Date(post.postData.created_utc * 1000).toISOString();
+          const hoursAgo = ((now / 1000) - post.postData.created_utc) / 3600;
+          console.log(`[Auto-pilot] Filtered out: "${post.title}" | Created: ${createdDate} (${hoursAgo.toFixed(2)} hours ago)`);
+        }
+        return isWithinWindow;
+      } else {
+        console.log(`[Auto-pilot] Filtered out: "${post.title}" | Missing or invalid created_utc: ${post.postData?.created_utc}`);
+        return false;
       }
-      return false;
     });
 
-    console.log(`[Auto-pilot] ${timeFiltered.length} posts remaining after 2-hour filter`);
+    console.log(`[Auto-pilot] ${timeFiltered.length} posts remaining after 2-hour filter (out of ${allPosts.length} total)`);
+    
+    if (timeFiltered.length > 0) {
+      console.log(`[Auto-pilot] Time-filtered posts:`, timeFiltered.map(p => ({
+        title: p.title,
+        created_utc: p.postData?.created_utc,
+        created_date: p.postData?.created_utc ? new Date(p.postData.created_utc * 1000).toISOString() : 'unknown',
+        link: p.link
+      })));
+    }
 
     if (timeFiltered.length === 0) {
+      console.log(`[Auto-pilot] No posts found within the last 2 hours. Returning empty results.`);
       return NextResponse.json({
         success: true,
         message: "No posts found within the last 2 hours",
         posts: [],
+        totalFound: allPosts.length,
+        afterTimeFilter: 0,
+        debug: {
+          totalPosts: allPosts.length,
+          timeThreshold: twoHoursAgo,
+          timeThresholdISO: new Date(twoHoursAgo * 1000).toISOString(),
+          nowISO: new Date(now).toISOString(),
+          postsWithTimestamps: allPosts.map(p => ({
+            title: p.title,
+            created_utc: p.postData?.created_utc,
+            created_date: p.postData?.created_utc ? new Date(p.postData.created_utc * 1000).toISOString() : 'missing',
+            link: p.link
+          }))
+        }
       });
     }
 
@@ -309,7 +386,11 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
         content: post.selftext || post.snippet || "",
       }));
 
-      const filterResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/openai/filter-posts`, {
+      console.log(`[Auto-pilot] Sending ${postsForFilter.length} posts to AI filter API`);
+      const filterApiUrl = `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/openai/filter-posts`;
+      console.log(`[Auto-pilot] Filter API URL: ${filterApiUrl}`);
+      
+      const filterResponse = await fetch(filterApiUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -319,17 +400,24 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
           idea: productIdea,
         }),
       });
+      
+      console.log(`[Auto-pilot] Filter API response status: ${filterResponse.status}`);
 
       if (filterResponse.ok) {
         const filterData = await filterResponse.json();
         const filterResults = filterData.results || [];
+        console.log(`[Auto-pilot] Filter API returned ${filterResults.length} results:`, filterResults);
         
         const aiFiltered = timeFiltered.filter((post, index) => {
           const result = filterResults[index]?.toUpperCase();
-          return result && result !== 'NO';
+          const isKept = result && result !== 'NO';
+          if (!isKept) {
+            console.log(`[Auto-pilot] AI filter removed: "${post.title}" | Result: ${result}`);
+          }
+          return isKept;
         });
 
-        console.log(`[Auto-pilot] ${aiFiltered.length} posts remaining after AI filter`);
+        console.log(`[Auto-pilot] ${aiFiltered.length} posts remaining after AI filter (out of ${timeFiltered.length} time-filtered posts)`);
 
         // Step 5: Generate comments, post them, and save to database
         const productLink = dbUser.productDetails?.link || "";
@@ -513,12 +601,20 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
           postedCount,
           failedCount,
         });
+      } else {
+        console.error(`[Auto-pilot] Filter API returned non-OK status: ${filterResponse.status}`);
+        const errorText = await filterResponse.text().catch(() => 'Unable to read error response');
+        console.error(`[Auto-pilot] Filter API error response: ${errorText}`);
       }
     } catch (filterError) {
       console.error('[Auto-pilot] Error applying AI filter:', filterError);
+      if (filterError instanceof Error) {
+        console.error('[Auto-pilot] Filter error stack:', filterError.stack);
+      }
     }
 
     // If AI filter fails, return time-filtered results
+    console.log(`[Auto-pilot] AI filter failed, returning ${timeFiltered.length} time-filtered posts`);
     return NextResponse.json({
       success: true,
       message: `Found ${timeFiltered.length} posts (AI filter failed)`,
@@ -528,7 +624,12 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
     });
 
   } catch (err: unknown) {
+    console.error("[Auto-pilot] ============================================");
     console.error("[Auto-pilot] Fatal error:", err);
+    if (err instanceof Error) {
+      console.error("[Auto-pilot] Error stack:", err.stack);
+    }
+    console.error("[Auto-pilot] ============================================");
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Unknown error" },
       { status: 500 }

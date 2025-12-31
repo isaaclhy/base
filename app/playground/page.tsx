@@ -42,13 +42,13 @@ const safeSetLocalStorage = (key: string, value: any, onError?: () => void) => {
           query,
           Array.isArray(links)
             ? links.map((link: any) => ({
-                title: link.title,
-                link: link.link,
-                snippet: link.snippet,
-                selftext: link.selftext || null,
-                postData: link.postData || null,
-                // Store full data to ensure content matches after refresh
-              }))
+              title: link.title,
+              link: link.link,
+              snippet: link.snippet,
+              selftext: link.selftext || null,
+              postData: link.postData || null,
+              // Store full data to ensure content matches after refresh
+            }))
             : links,
         ])
       );
@@ -60,33 +60,33 @@ const safeSetLocalStorage = (key: string, value: any, onError?: () => void) => {
           keyword,
           Array.isArray(links)
             ? links.map((link: any) => {
-                // Only store minimal postData needed for table (ups, num_comments, created_utc, name)
-                const minimalPostData = link.postData ? {
-                  ups: link.postData.ups || 0,
-                  num_comments: link.postData.num_comments || 0,
-                  created_utc: link.postData.created_utc || null,
-                  name: link.postData.name || null, // Needed for posting comments
-                } : null;
-                
-                return {
-                  title: link.title,
-                  link: link.link,
-                  snippet: link.snippet || null, // Keep snippet as fallback
-                  // Don't store selftext or full postData - fetch on-demand
-                  selftext: null,
-                  postData: minimalPostData,
-                };
-              })
+              // Only store minimal postData needed for table (ups, num_comments, created_utc, name)
+              const minimalPostData = link.postData ? {
+                ups: link.postData.ups || 0,
+                num_comments: link.postData.num_comments || 0,
+                created_utc: link.postData.created_utc || null,
+                name: link.postData.name || null, // Needed for posting comments
+              } : null;
+
+              return {
+                title: link.title,
+                link: link.link,
+                snippet: link.snippet || null, // Keep snippet as fallback
+                // Don't store selftext or full postData - fetch on-demand
+                selftext: null,
+                postData: minimalPostData,
+              };
+            })
             : links,
         ])
       );
     }
-    
+
     localStorage.setItem(key, JSON.stringify(dataToStore));
   } catch (e: any) {
     if (e.name === "QuotaExceededError" || e.code === 22 || e.code === 1014) {
       console.warn(`localStorage quota exceeded for key: ${key}`);
-      
+
       // If it's redditLinks or leadsLinks, try to clear old queries to make space
       if ((key === "redditLinks" || key === "leadsLinks") && onError) {
         onError();
@@ -110,10 +110,10 @@ const safeSetLocalStorage = (key: string, value: any, onError?: () => void) => {
                     q,
                     Array.isArray(links)
                       ? links.map((link: any) => ({
-                          title: link.title,
-                          link: link.link,
-                          snippet: link.snippet,
-                        }))
+                        title: link.title,
+                        link: link.link,
+                        snippet: link.snippet,
+                      }))
                       : links,
                   ])
                 );
@@ -250,12 +250,12 @@ function PlaygroundContent() {
   const fuzzyMatch = (query: string, text: string): number => {
     const queryLower = query.toLowerCase();
     const textLower = text.toLowerCase();
-    
+
     // Exact match gets highest score
     if (textLower === queryLower) return 100;
     if (textLower.startsWith(queryLower)) return 90;
     if (textLower.includes(queryLower)) return 70;
-    
+
     // Character-based fuzzy matching
     let queryIndex = 0;
     let score = 0;
@@ -265,7 +265,7 @@ function PlaygroundContent() {
         queryIndex++;
       }
     }
-    
+
     // Return score based on how many characters matched
     return queryIndex === queryLower.length ? score : 0;
   };
@@ -292,7 +292,7 @@ function PlaygroundContent() {
         }
         const data = await response.json();
         const results = data.subreddits || [];
-        
+
         // Apply fuzzy matching and sort by relevance
         const scored = results.map((sub: { name: string; displayName: string; subscribers: number }) => ({
           ...sub,
@@ -300,7 +300,7 @@ function PlaygroundContent() {
         })).filter((item: { score: number }) => item.score > 0)
           .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
           .slice(0, 10);
-        
+
         setSubredditSuggestions(scored);
         const shouldShow = scored.length > 0;
         if (shouldShow) {
@@ -482,7 +482,7 @@ function PlaygroundContent() {
           setIsRedditConnected(false);
         }
       };
-      
+
       checkRedditConnection();
     } else {
       setIsRedditConnected(null);
@@ -509,9 +509,9 @@ function PlaygroundContent() {
           setIsRedditConnected(false);
         }
       };
-      
+
       checkRedditConnection();
-      
+
       // Clean up the query parameter from URL
       const params = new URLSearchParams(searchParams.toString());
       params.delete("reddit_connected");
@@ -569,7 +569,7 @@ function PlaygroundContent() {
                   return prev;
                 });
               }
-              
+
               // Load subreddits from database
               if (data.subreddits && Array.isArray(data.subreddits)) {
                 // Only update if different to prevent unnecessary re-renders and layout shifts
@@ -580,7 +580,7 @@ function PlaygroundContent() {
                   return prev;
                 });
               }
-              
+
               // Store original values for dirty checking
               setOriginalProductDetails({
                 productName: data.productDetails.productName || "",
@@ -612,7 +612,7 @@ function PlaygroundContent() {
           });
         }
       };
-      
+
       loadProductDetails();
     }
   }, [status, session]);
@@ -698,7 +698,7 @@ function PlaygroundContent() {
           setIsLoadingInbox(false);
         }
       };
-      
+
       loadInbox();
     } else {
       setInboxMessages([]);
@@ -754,7 +754,7 @@ function PlaygroundContent() {
                   return prev;
                 });
               }
-              
+
               // Load subreddits from database
               if (data.subreddits && Array.isArray(data.subreddits)) {
                 // Only update if different to prevent unnecessary re-renders and layout shifts
@@ -765,7 +765,7 @@ function PlaygroundContent() {
                   return prev;
                 });
               }
-              
+
               // Store original values for dirty checking
               setOriginalProductDetails({
                 productName: data.productDetails.productName || "",
@@ -797,7 +797,7 @@ function PlaygroundContent() {
           setIsLoadingProductDetails(false);
         }
       };
-      
+
       loadProductDetails();
     }
   }, [status, session, activeTab]);
@@ -843,7 +843,7 @@ function PlaygroundContent() {
         setRedditLinks(links);
 
         // Load cached comments from localStorage - we'll restore them when distinctLinks are computed
-        
+
         // Load cached posts from localStorage and populate links
         // IMPORTANT: Since we now save full data (selftext/postData) to localStorage for filtered posts,
         // we should NOT load from cache if selftext/postData already exists (it would overwrite filtered content)
@@ -858,7 +858,7 @@ function PlaygroundContent() {
                 // Check if both selftext and postData are missing (null, undefined, or empty string)
                 const hasNoSelftext = !link.selftext || link.selftext === null || link.selftext === "";
                 const hasNoPostData = !link.postData || link.postData === null;
-                
+
                 if (link.link && hasNoSelftext && hasNoPostData) {
                   // Try to get from cache for legacy posts only
                   const cached = getCachedPost(link.link);
@@ -874,7 +874,7 @@ function PlaygroundContent() {
                 // Return link as-is if it already has selftext/postData (filtered posts)
                 return link;
               });
-              
+
               // Update state if we found cached posts (only for legacy posts)
               if (hasUpdates) {
                 setRedditLinks((prev) => {
@@ -883,7 +883,7 @@ function PlaygroundContent() {
                   return updated;
                 });
               }
-              
+
               // Don't fetch here - batchFetchAllPostContent will handle it after all queries load
             }
           });
@@ -909,7 +909,7 @@ function PlaygroundContent() {
     try {
       const cachePrefix = "redditPost_";
       const keysToClean: string[] = [];
-      
+
       // Find all cache keys
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -917,7 +917,7 @@ function PlaygroundContent() {
           keysToClean.push(key);
         }
       }
-      
+
       // Clean up each cache entry
       keysToClean.forEach((key) => {
         try {
@@ -926,10 +926,10 @@ function PlaygroundContent() {
             const parsed = JSON.parse(cached);
             if (parsed.postData && typeof parsed.postData === 'object') {
               // Check if it's the old format (has many fields)
-              const hasOldFormat = parsed.postData.approved_at_utc !== undefined || 
-                                   parsed.postData.subreddit !== undefined ||
-                                   parsed.postData.author_fullname !== undefined;
-              
+              const hasOldFormat = parsed.postData.approved_at_utc !== undefined ||
+                parsed.postData.subreddit !== undefined ||
+                parsed.postData.author_fullname !== undefined;
+
               if (hasOldFormat) {
                 // Convert to minimal format
                 const minimalPostData = {
@@ -938,12 +938,12 @@ function PlaygroundContent() {
                   created_utc: parsed.postData.created_utc || null,
                   name: parsed.postData.name || null,
                 };
-                
+
                 const cleanedData = {
                   selftext: parsed.selftext || null,
                   postData: minimalPostData,
                 };
-                
+
                 localStorage.setItem(key, JSON.stringify(cleanedData));
               }
             }
@@ -960,7 +960,7 @@ function PlaygroundContent() {
     const savedLeadsLinks = localStorage.getItem("leadsLinks");
     const savedLeadsUserEmail = localStorage.getItem("leadsLinksUserEmail");
     const currentUserEmail = session?.user?.email?.toLowerCase();
-    
+
     if (savedLeadsLinks) {
       // If there's a stored email and it doesn't match the current user, clear the leads data
       if (savedLeadsUserEmail && currentUserEmail && savedLeadsUserEmail !== currentUserEmail) {
@@ -977,18 +977,18 @@ function PlaygroundContent() {
         // 2. Both are null/undefined (not authenticated yet or session not loaded)
         // 3. We have saved email but current email is not yet loaded (session loading) - wait for session to load
         if (savedLeadsUserEmail === currentUserEmail || (!savedLeadsUserEmail && !currentUserEmail)) {
-        try {
-          const leads = JSON.parse(savedLeadsLinks);
-          setLeadsLinks(leads);
-        } catch (e) {
-          console.error("Failed to parse saved leads links:", e);
-        }
+          try {
+            const leads = JSON.parse(savedLeadsLinks);
+            setLeadsLinks(leads);
+          } catch (e) {
+            console.error("Failed to parse saved leads links:", e);
+          }
         }
         // If savedLeadsUserEmail exists but currentUserEmail is undefined, we'll wait for session to load
         // The useEffect will re-run when session?.user?.email changes
       }
     }
-    
+
     // Analytics posts will be loaded from MongoDB via useEffect
   }, [session?.user?.email]);
 
@@ -1076,7 +1076,7 @@ function PlaygroundContent() {
       const dbLink = productDetailsFromDb?.link || website;
       const dbProductDescription = productDetailsFromDb?.productDescription;
       const productIdeaToUse = dbProductDescription || ideaToUse;
-      
+
       if (!productIdeaToUse || !dbLink) {
         if (showAlerts) {
           setToast({
@@ -1198,7 +1198,7 @@ function PlaygroundContent() {
     if (isSearching) {
       return [];
     }
-    
+
     let globalIndex = 0;
     const allLinksWithQuery = Object.entries(redditLinks)
       .reverse()
@@ -1329,30 +1329,30 @@ function PlaygroundContent() {
           // Only fallback to localStorage state if prev is completely empty (initial state)
           const currentState = Object.keys(prev).length > 0 ? prev : currentLeadsState;
 
-        // Merge new results with existing results for this keyword, avoiding duplicates
+          // Merge new results with existing results for this keyword, avoiding duplicates
           const existingLinksForKeyword = currentState[keyword] || [];
-        const existingLinkUrls = new Set(existingLinksForKeyword.map((link: any) => link.link).filter(Boolean));
+          const existingLinkUrls = new Set(existingLinksForKeyword.map((link: any) => link.link).filter(Boolean));
 
-        // Only add new links that don't already exist (by URL)
-        const newLinks = data.results.filter((link: any) => link.link && !existingLinkUrls.has(link.link));
+          // Only add new links that don't already exist (by URL)
+          const newLinks = data.results.filter((link: any) => link.link && !existingLinkUrls.has(link.link));
 
-        const mergedLinksForKeyword = [...existingLinksForKeyword, ...newLinks];
+          const mergedLinksForKeyword = [...existingLinksForKeyword, ...newLinks];
 
-        const updated = {
+          const updated = {
             ...currentState,
-          [keyword]: mergedLinksForKeyword,
-        };
+            [keyword]: mergedLinksForKeyword,
+          };
 
-        // Save to localStorage using safe function
-        safeSetLocalStorage("leadsLinks", updated);
-        // Also save the current user's email to associate leads data with the user
-        if (session?.user?.email) {
-          try {
-            localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
-          } catch (e) {
-            console.error("Error saving leadsLinksUserEmail:", e);
+          // Save to localStorage using safe function
+          safeSetLocalStorage("leadsLinks", updated);
+          // Also save the current user's email to associate leads data with the user
+          if (session?.user?.email) {
+            try {
+              localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
+            } catch (e) {
+              console.error("Error saving leadsLinksUserEmail:", e);
+            }
           }
-        }
           return updated;
         });
       }
@@ -1385,12 +1385,12 @@ function PlaygroundContent() {
       links.forEach((link, index) => {
         if (link.link) {
           // Only fetch if we don't have minimal stats (ups, num_comments, created_utc)
-          const hasMinimalStats = link.postData && 
+          const hasMinimalStats = link.postData &&
             (link.postData.ups !== undefined || link.postData.num_comments !== undefined || link.postData.created_utc !== undefined);
-          
+
           if (!hasMinimalStats) {
             // Check cache first for minimal stats
-          const cached = getCachedPost(link.link);
+            const cached = getCachedPost(link.link);
             if (cached && cached.postData) {
               // Extract minimal stats from cache
               const minimalPostData = {
@@ -1399,28 +1399,28 @@ function PlaygroundContent() {
                 created_utc: cached.postData.created_utc || null,
                 name: cached.postData.name || null, // Needed for posting comments
               };
-              
+
               // Update state with minimal stats only (don't save selftext or full postData)
-            setLeadsLinks((prev) => {
-              const updated = { ...prev };
-              if (updated[keyword] && updated[keyword][index]) {
-                updated[keyword][index] = {
-                  ...updated[keyword][index],
+              setLeadsLinks((prev) => {
+                const updated = { ...prev };
+                if (updated[keyword] && updated[keyword][index]) {
+                  updated[keyword][index] = {
+                    ...updated[keyword][index],
                     postData: minimalPostData as RedditPost,
                   };
                 }
                 safeSetLocalStorage("leadsLinks", updated);
-              return updated;
-            });
+                return updated;
+              });
               return; // Skip this post, already has stats
-          }
+            }
 
-          const urlMatch = link.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
-          if (urlMatch) {
-            const [, , postId] = urlMatch;
-            const postFullname = `t3_${postId}`;
-            allPostsNeedingFetch.push({ url: link.link, keyword, linkIndex: index, postFullname });
-            setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [link.link!]: true }));
+            const urlMatch = link.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
+            if (urlMatch) {
+              const [, , postId] = urlMatch;
+              const postFullname = `t3_${postId}`;
+              allPostsNeedingFetch.push({ url: link.link, keyword, linkIndex: index, postFullname });
+              setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [link.link!]: true }));
             }
           }
         }
@@ -1455,10 +1455,10 @@ function PlaygroundContent() {
 
         if (redditResponse.ok) {
           const redditData = await redditResponse.json();
-          
+
           // Reddit API returns: { data: { children: [{ data: RedditPost }] } }
           const posts = redditData?.data?.children || [];
-          
+
           // Process each post and update state
           posts.forEach((child: { data: RedditPost }) => {
             const post: RedditPost = child.data;
@@ -1660,7 +1660,7 @@ function PlaygroundContent() {
 
           // Create a unique key for subreddit-based leads: "keyword:subreddit"
           const keywordSubredditKey = `${keyword}:${subreddit}`;
-          
+
           // Compute newLinks for return value (using localStorage state - may be slightly stale but acceptable for return value)
           const existingLinksForKey = currentLeadsState[keywordSubredditKey] || [];
           const existingLinkUrls = new Set(existingLinksForKey.map((link: any) => link.link).filter(Boolean));
@@ -1671,7 +1671,7 @@ function PlaygroundContent() {
             // Always use prev (most up-to-date React state) for merging
             // Only fallback to localStorage state if prev is completely empty (initial state)
             const currentState = Object.keys(prev).length > 0 ? prev : currentLeadsState;
-            
+
             const currentExistingLinks = currentState[keywordSubredditKey] || [];
             const currentExistingLinkUrls = new Set(currentExistingLinks.map((link: any) => link.link).filter(Boolean));
 
@@ -1680,20 +1680,20 @@ function PlaygroundContent() {
 
             const mergedLinks = [...currentExistingLinks, ...latestNewLinks];
 
-          const updated = {
+            const updated = {
               ...currentState,
-            [keywordSubredditKey]: mergedLinks,
-          };
+              [keywordSubredditKey]: mergedLinks,
+            };
 
-          // Save to localStorage
-          safeSetLocalStorage("leadsLinks", updated);
-          if (session?.user?.email) {
-            try {
-              localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
-            } catch (e) {
-              console.error("Error saving leadsLinksUserEmail:", e);
+            // Save to localStorage
+            safeSetLocalStorage("leadsLinks", updated);
+            if (session?.user?.email) {
+              try {
+                localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
+              } catch (e) {
+                console.error("Error saving leadsLinksUserEmail:", e);
+              }
             }
-          }
             return updated;
           });
           return newLinks;
@@ -1714,7 +1714,7 @@ function PlaygroundContent() {
     setLeadsLinks({});
     setSelectedLeads(new Set());
     setLeadsPage(1);
-    
+
     // Clear from localStorage
     try {
       localStorage.removeItem("leadsLinks");
@@ -1749,245 +1749,245 @@ function PlaygroundContent() {
       await Promise.all([...googleSearchPromises, ...subredditSearchPromises]);
 
       await batchFetchLeadsPostContent();
-      
+
       // Wait a bit longer for all post data to be fetched and state updated
       setTimeout(async () => {
-          // Filter to only posts from the past 2 hours
-          const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60); // 2 hours in seconds
-          
-          // Get current state
-          let currentState: Record<string, Array<any>> = {};
-          try {
-            const saved = localStorage.getItem("leadsLinks");
-            if (saved) {
-              currentState = JSON.parse(saved);
-            } else {
-              currentState = leadsLinks;
-            }
-          } catch (e) {
-            console.error("Error reading leadsLinks:", e);
+        // Filter to only posts from the past 2 hours
+        const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60); // 2 hours in seconds
+
+        // Get current state
+        let currentState: Record<string, Array<any>> = {};
+        try {
+          const saved = localStorage.getItem("leadsLinks");
+          if (saved) {
+            currentState = JSON.parse(saved);
+          } else {
             currentState = leadsLinks;
           }
-          
-          // First filter by time (5 hours)
-          const timeFiltered: Record<string, Array<any>> = {};
-          const allPostsForFiltering: Array<{ link: any; keyword: string; index: number }> = [];
-          
-          Object.entries(currentState).forEach(([keyword, links]) => {
-            const filteredLinks = links.filter((link: any) => {
-              // Only keep posts that have postData with created_utc within past 2 hours
-              if (link.postData && typeof link.postData.created_utc === 'number') {
-                return link.postData.created_utc >= twoHoursAgo;
-              }
-              // Remove posts without postData (they're likely old or failed to fetch)
-              return false;
+        } catch (e) {
+          console.error("Error reading leadsLinks:", e);
+          currentState = leadsLinks;
+        }
+
+        // First filter by time (5 hours)
+        const timeFiltered: Record<string, Array<any>> = {};
+        const allPostsForFiltering: Array<{ link: any; keyword: string; index: number }> = [];
+
+        Object.entries(currentState).forEach(([keyword, links]) => {
+          const filteredLinks = links.filter((link: any) => {
+            // Only keep posts that have postData with created_utc within past 2 hours
+            if (link.postData && typeof link.postData.created_utc === 'number') {
+              return link.postData.created_utc >= twoHoursAgo;
+            }
+            // Remove posts without postData (they're likely old or failed to fetch)
+            return false;
+          });
+
+          if (filteredLinks.length > 0) {
+            timeFiltered[keyword] = filteredLinks;
+            // Collect all posts for filtering
+            filteredLinks.forEach((link: any, index: number) => {
+              allPostsForFiltering.push({ link, keyword, index });
             });
-            
-            if (filteredLinks.length > 0) {
-              timeFiltered[keyword] = filteredLinks;
-              // Collect all posts for filtering
-              filteredLinks.forEach((link: any, index: number) => {
-                allPostsForFiltering.push({ link, keyword, index });
-              });
+          }
+        });
+
+        // If no posts after time filtering, exit early
+        // Count unique posts by URL (what will actually be displayed)
+        const uniqueUrls = new Set<string>();
+        Object.values(timeFiltered).forEach((links) => {
+          links.forEach((link: any) => {
+            if (link.link) {
+              uniqueUrls.add(normalizeUrl(link.link));
             }
           });
-          
-          // If no posts after time filtering, exit early
-          // Count unique posts by URL (what will actually be displayed)
-          const uniqueUrls = new Set<string>();
-          Object.values(timeFiltered).forEach((links) => {
-            links.forEach((link: any) => {
-              if (link.link) {
-                uniqueUrls.add(normalizeUrl(link.link));
-              }
-            });
-          });
-          
-          if (allPostsForFiltering.length === 0) {
-            setLeadsLinks({});
-            safeSetLocalStorage("leadsLinks", {});
-            setIsLoadingLeads(false);
-            return;
-          }
-          
-          // Collect posts that need selftext fetching
-          const postsNeedingFetch: Array<{ url: string; postFullname: string }> = [];
-          
-          allPostsForFiltering.forEach(({ link }) => {
-            if (!link.link) return;
-            
-            const cached = getCachedPost(link.link);
-            const hasSelftext = cached && cached.selftext !== undefined;
-            
-            if (!hasSelftext) {
-              const urlMatch = link.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
-              if (urlMatch) {
-                const [, , postId] = urlMatch;
-                const postFullname = `t3_${postId}`;
-                postsNeedingFetch.push({ url: link.link, postFullname });
-              }
-            }
-          });
-          
-          // Batch fetch selftext for posts that need it
-          if (postsNeedingFetch.length > 0) {
-            const BATCH_SIZE = 25;
-            for (let i = 0; i < postsNeedingFetch.length; i += BATCH_SIZE) {
-              const batch = postsNeedingFetch.slice(i, i + BATCH_SIZE);
-              const postIds = batch.map(({ postFullname }) => postFullname);
-              
-              try {
-                const redditResponse = await fetch("/api/reddit/post", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({ postIds }),
-                });
-                
-                if (redditResponse.ok) {
-                  const redditData = await redditResponse.json();
-                  const posts = redditData?.data?.children || [];
-                  
-                  posts.forEach((child: { data: RedditPost }) => {
-                    const post: RedditPost = child.data;
-                    const postFullname = post.name;
-                    const postInfo = batch.find((p) => p.postFullname === postFullname);
-                    
-                    if (postInfo) {
-                      cachePost(postInfo.url, { selftext: post.selftext || null, postData: post });
-                    }
-                  });
-                }
-              } catch (err) {
-                console.error(`Error batch fetching selftext:`, err);
-              }
-            }
-          }
-          
-          // Now build postsToFilter array with selftext from cache (only unique posts by URL, excluding analytics posts)
-          const postsToFilter: Array<{ title: string; content: string; keyword: string; linkIndex: number; url: string }> = [];
-          const seenUrls = new Set<string>();
-          
-          allPostsForFiltering.forEach(({ link, keyword, index }) => {
-            if (!link.link || !link.title) return;
-            
-            const normalizedUrl = normalizeUrl(link.link);
-            
-            // Skip if post is already in analytics (already posted/commented on)
-            if (analyticsUrlSet.has(normalizedUrl)) {
-              return;
-            }
-            
-            // Skip if we've already seen this URL (deduplication)
-            if (seenUrls.has(normalizedUrl)) {
-              return;
-            }
-            
-            seenUrls.add(normalizedUrl);
-            
-            const cached = getCachedPost(link.link);
-            const selftext = cached && cached.selftext !== undefined ? (cached.selftext || '') : '';
-            
-            postsToFilter.push({
-              title: link.title || '',
-              content: selftext,
-              keyword,
-              linkIndex: index,
-              url: link.link,
-            });
-          });
-          
-          // Get product idea
-          const productIdea = productDetailsFromDb?.productDescription || '';
-          
-          if (!productIdea) {
-            console.warn('[Auto-pilot] No product idea found, skipping AI filter');
-            setLeadsLinks(timeFiltered);
-            safeSetLocalStorage("leadsLinks", timeFiltered);
-            setIsLoadingLeads(false);
-            return;
-          }
-          
-          // Prepare posts array for filter API (only unique posts)
-          const postsForFilterAPI = postsToFilter.map(({ title, content }) => ({ title, content }));
-          
-          // Call filter API
-          try {
-            const filterResponse = await fetch("/api/openai/filter-posts", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                posts: postsForFilterAPI,
-                idea: productIdea,
-              }),
-            });
-            
-            if (!filterResponse.ok) {
-              throw new Error(`Filter API returned ${filterResponse.status}`);
-            }
-            
-            const filterData = await filterResponse.json();
-            if (filterData.error) {
-              throw new Error(filterData.error);
-            }
-            
-            const filterResults = filterData.results || [];
-            
-            // Create a map of URL -> filter result
-            const urlToFilterResult = new Map<string, string>();
-            postsToFilter.forEach((postInfo, index) => {
-              const filterResult = filterResults[index]?.toUpperCase();
-              if (filterResult) {
-                urlToFilterResult.set(normalizeUrl(postInfo.url), filterResult);
-              }
-            });
-            
-            // Filter out posts that returned "NO" (apply to all posts, including duplicates)
-            const aiFiltered: Record<string, Array<any>> = {};
-            
-            // Apply filter results to all posts in timeFiltered by matching URL (excluding analytics posts)
-            Object.entries(timeFiltered).forEach(([keyword, links]) => {
-              links.forEach((link: any) => {
-                if (!link.link) return;
-                
-                const normalizedUrl = normalizeUrl(link.link);
-                
-                // Skip if post is already in analytics (already posted/commented on)
-                if (analyticsUrlSet.has(normalizedUrl)) {
-                  return;
-                }
-                
-                const filterResult = urlToFilterResult.get(normalizedUrl);
-                
-                if (filterResult && filterResult !== 'NO') {
-                  // Keep this post
-                  if (!aiFiltered[keyword]) {
-                    aiFiltered[keyword] = [];
-                  }
-                  aiFiltered[keyword].push(link);
-                }
-              });
-            });
-            
-            // Count total posts after AI filter
-            const totalAfterAIFilter = Object.values(aiFiltered).reduce((sum, links) => sum + links.length, 0);
-            
-            // Update state with AI-filtered results
-            setLeadsLinks(aiFiltered);
-            safeSetLocalStorage("leadsLinks", aiFiltered);
-            
-          } catch (filterError) {
-            console.error('[Auto-pilot] Error filtering posts:', filterError);
-            // On error, keep the time-filtered results
-            setLeadsLinks(timeFiltered);
-            safeSetLocalStorage("leadsLinks", timeFiltered);
-          }
-          
+        });
+
+        if (allPostsForFiltering.length === 0) {
+          setLeadsLinks({});
+          safeSetLocalStorage("leadsLinks", {});
           setIsLoadingLeads(false);
-        }, 2000); // Wait 2 seconds for all post data to be fetched
+          return;
+        }
+
+        // Collect posts that need selftext fetching
+        const postsNeedingFetch: Array<{ url: string; postFullname: string }> = [];
+
+        allPostsForFiltering.forEach(({ link }) => {
+          if (!link.link) return;
+
+          const cached = getCachedPost(link.link);
+          const hasSelftext = cached && cached.selftext !== undefined;
+
+          if (!hasSelftext) {
+            const urlMatch = link.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
+            if (urlMatch) {
+              const [, , postId] = urlMatch;
+              const postFullname = `t3_${postId}`;
+              postsNeedingFetch.push({ url: link.link, postFullname });
+            }
+          }
+        });
+
+        // Batch fetch selftext for posts that need it
+        if (postsNeedingFetch.length > 0) {
+          const BATCH_SIZE = 25;
+          for (let i = 0; i < postsNeedingFetch.length; i += BATCH_SIZE) {
+            const batch = postsNeedingFetch.slice(i, i + BATCH_SIZE);
+            const postIds = batch.map(({ postFullname }) => postFullname);
+
+            try {
+              const redditResponse = await fetch("/api/reddit/post", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ postIds }),
+              });
+
+              if (redditResponse.ok) {
+                const redditData = await redditResponse.json();
+                const posts = redditData?.data?.children || [];
+
+                posts.forEach((child: { data: RedditPost }) => {
+                  const post: RedditPost = child.data;
+                  const postFullname = post.name;
+                  const postInfo = batch.find((p) => p.postFullname === postFullname);
+
+                  if (postInfo) {
+                    cachePost(postInfo.url, { selftext: post.selftext || null, postData: post });
+                  }
+                });
+              }
+            } catch (err) {
+              console.error(`Error batch fetching selftext:`, err);
+            }
+          }
+        }
+
+        // Now build postsToFilter array with selftext from cache (only unique posts by URL, excluding analytics posts)
+        const postsToFilter: Array<{ title: string; content: string; keyword: string; linkIndex: number; url: string }> = [];
+        const seenUrls = new Set<string>();
+
+        allPostsForFiltering.forEach(({ link, keyword, index }) => {
+          if (!link.link || !link.title) return;
+
+          const normalizedUrl = normalizeUrl(link.link);
+
+          // Skip if post is already in analytics (already posted/commented on)
+          if (analyticsUrlSet.has(normalizedUrl)) {
+            return;
+          }
+
+          // Skip if we've already seen this URL (deduplication)
+          if (seenUrls.has(normalizedUrl)) {
+            return;
+          }
+
+          seenUrls.add(normalizedUrl);
+
+          const cached = getCachedPost(link.link);
+          const selftext = cached && cached.selftext !== undefined ? (cached.selftext || '') : '';
+
+          postsToFilter.push({
+            title: link.title || '',
+            content: selftext,
+            keyword,
+            linkIndex: index,
+            url: link.link,
+          });
+        });
+
+        // Get product idea
+        const productIdea = productDetailsFromDb?.productDescription || '';
+
+        if (!productIdea) {
+          console.warn('[Auto-pilot] No product idea found, skipping AI filter');
+          setLeadsLinks(timeFiltered);
+          safeSetLocalStorage("leadsLinks", timeFiltered);
+          setIsLoadingLeads(false);
+          return;
+        }
+
+        // Prepare posts array for filter API (only unique posts)
+        const postsForFilterAPI = postsToFilter.map(({ title, content }) => ({ title, content }));
+
+        // Call filter API
+        try {
+          const filterResponse = await fetch("/api/openai/filter-posts", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              posts: postsForFilterAPI,
+              idea: productIdea,
+            }),
+          });
+
+          if (!filterResponse.ok) {
+            throw new Error(`Filter API returned ${filterResponse.status}`);
+          }
+
+          const filterData = await filterResponse.json();
+          if (filterData.error) {
+            throw new Error(filterData.error);
+          }
+
+          const filterResults = filterData.results || [];
+
+          // Create a map of URL -> filter result
+          const urlToFilterResult = new Map<string, string>();
+          postsToFilter.forEach((postInfo, index) => {
+            const filterResult = filterResults[index]?.toUpperCase();
+            if (filterResult) {
+              urlToFilterResult.set(normalizeUrl(postInfo.url), filterResult);
+            }
+          });
+
+          // Filter out posts that returned "NO" (apply to all posts, including duplicates)
+          const aiFiltered: Record<string, Array<any>> = {};
+
+          // Apply filter results to all posts in timeFiltered by matching URL (excluding analytics posts)
+          Object.entries(timeFiltered).forEach(([keyword, links]) => {
+            links.forEach((link: any) => {
+              if (!link.link) return;
+
+              const normalizedUrl = normalizeUrl(link.link);
+
+              // Skip if post is already in analytics (already posted/commented on)
+              if (analyticsUrlSet.has(normalizedUrl)) {
+                return;
+              }
+
+              const filterResult = urlToFilterResult.get(normalizedUrl);
+
+              if (filterResult && filterResult !== 'NO') {
+                // Keep this post
+                if (!aiFiltered[keyword]) {
+                  aiFiltered[keyword] = [];
+                }
+                aiFiltered[keyword].push(link);
+              }
+            });
+          });
+
+          // Count total posts after AI filter
+          const totalAfterAIFilter = Object.values(aiFiltered).reduce((sum, links) => sum + links.length, 0);
+
+          // Update state with AI-filtered results
+          setLeadsLinks(aiFiltered);
+          safeSetLocalStorage("leadsLinks", aiFiltered);
+
+        } catch (filterError) {
+          console.error('[Auto-pilot] Error filtering posts:', filterError);
+          // On error, keep the time-filtered results
+          setLeadsLinks(timeFiltered);
+          safeSetLocalStorage("leadsLinks", timeFiltered);
+        }
+
+        setIsLoadingLeads(false);
+      }, 2000); // Wait 2 seconds for all post data to be fetched
     } catch (error) {
       console.error("Error in auto-pilot:", error);
       setIsLoadingLeads(false);
@@ -2044,7 +2044,7 @@ function PlaygroundContent() {
     if (isLoadingLeads) {
       return distinctLeadsLinksRef.current;
     }
-    
+
     // If analytics is still loading, freeze the count to prevent it from changing
     // when analyticsPosts loads and filters out posts that are already in analytics.
     // This ensures the count stays stable and doesn't jump from 679 to 604 after refresh.
@@ -2054,7 +2054,7 @@ function PlaygroundContent() {
     if ((isLoadingAnalytics || !analyticsFetchedRef.current) && distinctLeadsLinksRef.current.length > 0) {
       return distinctLeadsLinksRef.current;
     }
-    
+
     let globalIndex = 0;
     const allLinksWithKeyword = Object.entries(leadsLinks)
       .reverse()
@@ -2062,7 +2062,7 @@ function PlaygroundContent() {
         // Extract keyword from key (handles both "keyword" and "keyword:subreddit" formats)
         const keyword = key.includes(':') ? key.split(':')[0] : key;
         const subreddit = key.includes(':') ? key.split(':')[1] : null;
-        
+
         return [...links].reverse().map((link, linkIndex) => {
           const uniqueKey = `leads-${key}-${link.link || "no-link"}-${linkIndex}-${globalIndex}`;
           const item = {
@@ -2118,7 +2118,7 @@ function PlaygroundContent() {
         const titleA = (a.title || "").toLowerCase();
         const titleB = (b.title || "").toLowerCase();
         if (titleA !== titleB) {
-          return leadsSortBy === "title-asc" 
+          return leadsSortBy === "title-asc"
             ? titleA.localeCompare(titleB)
             : titleB.localeCompare(titleA);
         }
@@ -2170,7 +2170,7 @@ function PlaygroundContent() {
     const fetchAndLogPageData = async () => {
       const pageDataPromises = paginatedLeadsLinks.map(async (linkItem) => {
         let content = linkItem.selftext || null;
-        
+
         // If selftext is not available, try to get it from cache
         if (!content && linkItem.link) {
           const cached = getCachedPost(linkItem.link);
@@ -2185,7 +2185,7 @@ function PlaygroundContent() {
               if (urlMatch) {
                 const [, , postId] = urlMatch;
                 const postFullname = `t3_${postId}`;
-                
+
                 const redditResponse = await fetch("/api/reddit/post", {
                   method: "POST",
                   headers: {
@@ -2197,7 +2197,7 @@ function PlaygroundContent() {
                 if (redditResponse.ok) {
                   const redditData = await redditResponse.json();
                   const posts = redditData?.data?.children || [];
-                  
+
                   if (posts.length > 0) {
                     const post: RedditPost = posts[0].data;
                     content = post.selftext || null;
@@ -2211,7 +2211,7 @@ function PlaygroundContent() {
             }
           }
         }
-        
+
         return {
           title: linkItem.title || null,
           content: content,
@@ -2350,7 +2350,7 @@ function PlaygroundContent() {
     const dbLink = productDetailsFromDb?.link || website;
     const dbProductDescription = productDetailsFromDb?.productDescription;
     const productIdeaToCheck = dbProductDescription || submittedProductIdea;
-    
+
     if (!productIdeaToCheck || !dbLink) {
       return;
     }
@@ -2559,7 +2559,7 @@ function PlaygroundContent() {
       // Read from localStorage to get the latest data (even when deferring, we save to localStorage temporarily)
       // This ensures we have the most up-to-date data after batchFetchAllPostContent
       let currentLinks: Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>> = {};
-      
+
       try {
         const saved = localStorage.getItem("redditLinks");
         if (saved) {
@@ -2573,11 +2573,11 @@ function PlaygroundContent() {
         // Fallback to state
         currentLinks = redditLinks;
       }
-      
+
       const postCount = Object.values(currentLinks).reduce((total, links) => total + links.length, 0);
-      
+
       const allPosts: Array<{ query: string; linkIndex: number; selftext: string | null; title: string | null }> = [];
-      
+
       // Collect all posts with their selftext and title
       Object.entries(currentLinks).forEach(([query, links]) => {
         links.forEach((link, index) => {
@@ -2594,22 +2594,22 @@ function PlaygroundContent() {
       const postsToFilter = allPosts;
       const BATCH_SIZE = 50;
       const batches: Array<Array<typeof allPosts[0]>> = [];
-      
+
       // Split posts into batches of 50
       for (let i = 0; i < postsToFilter.length; i += BATCH_SIZE) {
         batches.push(postsToFilter.slice(i, i + BATCH_SIZE));
       }
-      
+
       if (postsToFilter.length === 0) {
         return { success: false, finalPostCount: 0 };
       }
 
       // Process each batch and collect all filter results
       const allFilterResults: boolean[] = [];
-      
+
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
         const batch = batches[batchIndex];
-        
+
         // Extract content for this batch
         const selftexts = batch.map(post => {
           const selftext = post.selftext || "";
@@ -2623,7 +2623,7 @@ function PlaygroundContent() {
         if (selftexts.length === 0) {
           continue;
         }
-        
+
         // Call filter API for this batch
         const filterResponse = await fetch("/api/reddit/filter", {
           method: "POST",
@@ -2645,10 +2645,10 @@ function PlaygroundContent() {
         }
 
         const filterData = await filterResponse.json();
-        
+
         // Extract the boolean array from the response
         let batchFilterResults: boolean[] = [];
-        
+
         if (filterData.success && filterData.output_text) {
           const outputText = filterData.output_text;
           if (typeof outputText === 'string') {
@@ -2684,7 +2684,7 @@ function PlaygroundContent() {
           console.error(`Filter results length (${batchFilterResults.length}) doesn't match batch length (${batch.length}) for batch ${batchIndex + 1}`);
           console.error(`Batch filter results:`, batchFilterResults);
           console.error(`Batch selftexts sent:`, selftexts);
-          
+
           // If we got fewer results than expected, pad with false values
           // If we got more results than expected, truncate to match batch length
           if (batchFilterResults.length < batch.length) {
@@ -2711,7 +2711,7 @@ function PlaygroundContent() {
       // Filter posts - keep only those where filterResults[index] is true
       // Count posts that passed the filter
       const keptPosts = filterResults.filter(result => result === true).length;
-      
+
       // Final count = posts that passed the filter (all posts are now filtered)
       const finalPostCount = keptPosts;
 
@@ -2733,16 +2733,16 @@ function PlaygroundContent() {
             link: link.link,
             snippet: link.snippet,
           };
-          
+
           // Log if selftext is missing (for debugging)
           if (!preservedLink.selftext && preservedLink.link) {
             console.warn(`[filterPosts] Post ${preservedLink.link} is missing selftext, will fall back to snippet`);
           }
-          
+
           return preservedLink;
         });
       });
-      
+
       let removedCount = 0;
 
       // Process in reverse order to maintain correct indices
@@ -2764,14 +2764,14 @@ function PlaygroundContent() {
         }
       });
 
-        // Count the actual final number of posts that will be displayed
-        const actualFinalCount = Object.values(updated).reduce((total, links) => total + links.length, 0);
-      
+      // Count the actual final number of posts that will be displayed
+      const actualFinalCount = Object.values(updated).reduce((total, links) => total + links.length, 0);
+
       // Update localStorage with filtered results (but NOT state yet - will update after usage)
       // This ensures posts only appear after all batches complete and usage is updated
       // safeSetLocalStorage will preserve selftext and postData
       safeSetLocalStorage("redditLinks", updated);
-      
+
       // Verify that selftext is preserved in the saved data
       const savedAfterFilter = localStorage.getItem("redditLinks");
       if (savedAfterFilter) {
@@ -2794,9 +2794,9 @@ function PlaygroundContent() {
           console.error("Error verifying saved data:", e);
         }
       }
-      
+
       // DO NOT update state here - will be updated after usage update completes
-      
+
       return { success: true, finalPostCount }; // Filtering completed successfully
     } catch (error) {
       console.error("Error filtering posts:", error);
@@ -2812,7 +2812,7 @@ function PlaygroundContent() {
     // Check if user has product details saved before proceeding and use database values
     let dbLink: string | undefined;
     let dbProductDescription: string | undefined;
-    
+
     if (status === "authenticated" && session?.user?.email) {
       try {
         // Use cached product details if available, otherwise fetch
@@ -2833,7 +2833,7 @@ function PlaygroundContent() {
             return;
           }
         }
-        
+
         // Check if both link and productDescription are missing or empty
         if ((!dbLink || !dbLink.trim()) || (!dbProductDescription || !dbProductDescription.trim())) {
           setActiveTab("product");
@@ -2852,7 +2852,7 @@ function PlaygroundContent() {
 
     // Use productDescription from database instead of message input
     const productIdeaToUse = dbProductDescription || message.trim();
-    
+
     // Store the current product idea (use database description if available)
     setCurrentProductIdea(productIdeaToUse);
     setSubmittedProductIdea(productIdeaToUse);
@@ -2865,7 +2865,7 @@ function PlaygroundContent() {
     // Save product idea to localStorage
     const saved = localStorage.getItem("productIdeas");
     let ideas: string[] = [];
-    
+
     if (saved) {
       try {
         ideas = JSON.parse(saved);
@@ -2873,7 +2873,7 @@ function PlaygroundContent() {
         console.error("Failed to parse saved ideas:", e);
       }
     }
-    
+
     // Add new idea if it doesn't already exist
     if (!ideas.includes(message.trim())) {
       ideas.unshift(message.trim()); // Add to beginning
@@ -2916,20 +2916,20 @@ function PlaygroundContent() {
       }
 
       const data = await response.json();
-      
+
       if (data.error) {
         throw new Error(data.error);
       }
 
       if (data.result && Array.isArray(data.result)) {
         setResults(data.result);
-        
+
         // Save queries to localStorage
         localStorage.setItem("savedQueries", JSON.stringify(data.result));
-        
+
         // Usage is now tracked only when comments are generated, not when queries/posts are fetched
         // No need to check usage limits here
-        
+
         // Get existing posts URLs BEFORE adding new ones (to track which posts are new for usage calculation)
         let existingPostUrls = new Set<string>();
         let existingPostsCount = 0;
@@ -2950,17 +2950,17 @@ function PlaygroundContent() {
         } catch (e) {
           console.error("Error reading existing posts from localStorage:", e);
         }
-        
+
         // Don't clear existing posts - we'll append new results to them
         setIsSearching(true); // Set flag to prevent showing posts in table during search
-        
+
         // Fetch Reddit links for each query in parallel
         // Each query will fetch top 7 results for better coverage (some may be filtered)
         const RESULTS_PER_QUERY = 7;
         const linkPromises = data.result.map((query: string) => {
           return fetchRedditLinks(query, RESULTS_PER_QUERY, true); // Pass true to defer state updates
         });
-        
+
         // Wait for all links to be fetched, then batch fetch all post content together
         Promise.all(linkPromises).then(async () => {
           // Small delay to ensure all links are saved to localStorage and state is updated
@@ -2968,7 +2968,7 @@ function PlaygroundContent() {
             // Fetch post content without updating state (only update localStorage)
             // This prevents posts from appearing in UI before filtering
             await batchFetchAllPostContent(true); // Pass true to defer state updates
-            
+
             // Get total post count from localStorage (existing + new, before filtering)
             let postsBeforeFilter = 0;
             try {
@@ -2980,15 +2980,15 @@ function PlaygroundContent() {
             } catch (e) {
               console.error("Error reading post count from localStorage:", e);
             }
-            
+
             // Filter posts after content is loaded (will update state with filtered results)
             // COMMENTED OUT: Filtering disabled temporarily
             // const filterResult = await filterPosts(dbProductDescription || productIdeaToUse);
-            
+
             // Get final post count (no filtering, so use postsBeforeFilter)
             let finalPostCount = postsBeforeFilter;
             let finalLinks: Record<string, Array<any>> = {};
-            
+
             // Read posts from localStorage (unfiltered)
             try {
               const saved = localStorage.getItem("redditLinks");
@@ -2998,7 +2998,7 @@ function PlaygroundContent() {
             } catch (e) {
               console.error("Error reading posts from localStorage:", e);
             }
-            
+
             // Count how many NEW posts (not in existingPostUrls) - no filtering applied
             let newPostsAfterFilter = 0;
             Object.values(finalLinks).forEach((links: Array<any>) => {
@@ -3008,13 +3008,13 @@ function PlaygroundContent() {
                 }
               });
             });
-            
+
             // Only increment usage for new posts (no filtering, so all new posts are included)
             const postsToIncrement = Math.max(0, newPostsAfterFilter);
-            
+
             // Usage is now incremented when comments are generated, not when posts are fetched
             // No usage increment here
-            
+
             // NOW update state with posts (filtering disabled, so all posts are included)
             // Re-read from localStorage to ensure we have the latest data with selftext preserved
             try {
@@ -3036,7 +3036,7 @@ function PlaygroundContent() {
                     });
                   }
                 });
-                
+
                 setRedditLinks(latestLinks);
               } else if (Object.keys(finalLinks).length > 0) {
                 // Fallback to finalLinks if localStorage read fails
@@ -3049,10 +3049,10 @@ function PlaygroundContent() {
                 setRedditLinks(finalLinks);
               }
             }
-            
+
             // Clear the searching flag - posts can now be displayed in the table
             setIsSearching(false);
-            
+
             // Usage is tracked when comments are generated, not when posts are fetched
             // No need to show upgrade modal here
           }, 1000);
@@ -3072,7 +3072,7 @@ function PlaygroundContent() {
           setShowUpgradeModal(true);
         }, 500);
       } else {
-      console.error("Error in query generation:", err);
+        console.error("Error in query generation:", err);
         setError(errorMessage);
       }
     } finally {
@@ -3082,7 +3082,7 @@ function PlaygroundContent() {
 
   const fetchRedditLinks = async (query: string, resultsPerQuery: number = 7, deferStateUpdates: boolean = false) => {
     setIsLoadingLinks((prev) => ({ ...prev, [query]: true }));
-    
+
     try {
       const response = await fetch("/api/google/search", {
         method: "POST",
@@ -3101,7 +3101,7 @@ function PlaygroundContent() {
       }
 
       const data = await response.json();
-      
+
       if (data.error) {
         throw new Error(data.error);
       }
@@ -3134,30 +3134,30 @@ function PlaygroundContent() {
             currentLinksState = {};
           }
         }
-        
+
         // Merge new results with existing results for this query, avoiding duplicates
         const existingLinksForQuery = currentLinksState[query] || [];
         const existingLinkUrls = new Set(existingLinksForQuery.map((link: any) => link.link).filter(Boolean));
-        
+
         // Only add new links that don't already exist (by URL)
         const newLinks = data.results.filter((link: any) => link.link && !existingLinkUrls.has(link.link));
         const mergedLinksForQuery = [...existingLinksForQuery, ...newLinks];
-        
-          const updated = {
+
+        const updated = {
           ...currentLinksState,
           [query]: mergedLinksForQuery,
         };
-        
+
         // Always save to localStorage
         safeSetLocalStorage("redditLinks", updated);
-        
+
         // Only update state if not deferring
         if (!deferStateUpdates) {
           setRedditLinks(updated);
         }
-        
+
         setError(null);
-        
+
         // Don't fetch post content here - will be batched together after all queries complete
       }
     } catch (err) {
@@ -3171,7 +3171,7 @@ function PlaygroundContent() {
   const cachePost = (url: string, post: { selftext?: string | null; postData?: RedditPost | null }) => {
     try {
       const cacheKey = normalizeUrl(url);
-      
+
       // Only store the fields we actually use from postData
       const minimalPostData = post.postData ? {
         ups: post.postData.ups || 0,
@@ -3179,12 +3179,12 @@ function PlaygroundContent() {
         created_utc: post.postData.created_utc || null,
         name: post.postData.name || null, // Needed for posting comments
       } : null;
-      
+
       const cachedData = {
         selftext: post.selftext || null,
         postData: minimalPostData,
       };
-      
+
       localStorage.setItem(`redditPost_${cacheKey}`, JSON.stringify(cachedData));
     } catch (e) {
       console.error("Error caching post:", e);
@@ -3196,7 +3196,7 @@ function PlaygroundContent() {
   const batchFetchAllPostContent = async (deferStateUpdates: boolean = false) => {
     // Read from localStorage to get the latest state (since we save there immediately)
     let currentState: Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>> = {};
-    
+
     try {
       const saved = localStorage.getItem("redditLinks");
       if (saved) {
@@ -3210,10 +3210,10 @@ function PlaygroundContent() {
         return prev;
       });
     }
-    
+
     const allPostsNeedingFetch: Array<{ url: string; query: string; linkIndex: number; postFullname: string }> = [];
     const postsToUpdate: Array<{ query: string; linkIndex: number; cached: { selftext?: string | null; postData?: RedditPost | null } }> = [];
-    
+
     // Collect all posts that need fetching across all queries
     Object.entries(currentState).forEach(([query, links]) => {
       links.forEach((link, index) => {
@@ -3222,7 +3222,7 @@ function PlaygroundContent() {
           if (urlMatch) {
             const [, , postId] = urlMatch;
             const postFullname = `t3_${postId}`;
-            
+
             // Check if post is cached
             const cached = getCachedPost(link.link);
             if (cached && (cached.selftext || cached.postData)) {
@@ -3233,30 +3233,30 @@ function PlaygroundContent() {
               allPostsNeedingFetch.push({ url: link.link, query, linkIndex: index, postFullname });
               // Set loading state for posts that need fetching (only if not deferring)
               if (!deferStateUpdates) {
-              setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [link.link!]: true }));
+                setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [link.link!]: true }));
               }
             }
           }
         }
       });
     });
-    
+
     // Update state with cached posts first (only if not deferring)
     if (postsToUpdate.length > 0) {
       const updatedCached = { ...currentState };
-        postsToUpdate.forEach(({ query, linkIndex, cached }) => {
+      postsToUpdate.forEach(({ query, linkIndex, cached }) => {
         if (updatedCached[query] && updatedCached[query][linkIndex]) {
           updatedCached[query][linkIndex] = {
             ...updatedCached[query][linkIndex],
-              selftext: cached.selftext || null,
-              postData: cached.postData || null,
-            };
-          }
-        });
+            selftext: cached.selftext || null,
+            postData: cached.postData || null,
+          };
+        }
+      });
       // Update localStorage temporarily even when deferring (so filterPosts can read it)
       // It will be overwritten with filtered results later
       safeSetLocalStorage("redditLinks", updatedCached);
-      
+
       if (!deferStateUpdates) {
         setRedditLinks(updatedCached);
       } else {
@@ -3264,13 +3264,13 @@ function PlaygroundContent() {
         setRedditLinks(updatedCached);
       }
     }
-    
+
     // Process fetching if needed
     if (allPostsNeedingFetch.length > 0) {
       await processBatchFetch(allPostsNeedingFetch, deferStateUpdates);
     }
   };
-  
+
   // Helper function to process batch fetching
   // If deferStateUpdates is true, only update localStorage and don't trigger React re-renders
   const processBatchFetch = async (
@@ -3285,11 +3285,11 @@ function PlaygroundContent() {
     const batchSize = 100;
     const postFullnames = allPostsNeedingFetch.map(item => item.postFullname);
     const batches: string[][] = [];
-    
+
     for (let i = 0; i < postFullnames.length; i += batchSize) {
       batches.push(postFullnames.slice(i, i + batchSize));
     }
-    
+
     // Create a map for quick lookup: postFullname -> url, linkIndex, and query
     const postDataMap = new Map<string, { url: string; linkIndex: number; query: string }>();
     allPostsNeedingFetch.forEach(({ url, linkIndex, postFullname, query }) => {
@@ -3299,7 +3299,7 @@ function PlaygroundContent() {
     // Process each batch sequentially with delays and retry logic
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
-      
+
       // Add delay between batches (except for the first one)
       if (batchIndex > 0) {
         await new Promise(resolve => setTimeout(resolve, 3000));
@@ -3321,7 +3321,7 @@ function PlaygroundContent() {
               postIds: batch,
             }),
           });
-          
+
           if (!response.ok) {
             if (response.status === 429) {
               retryCount++;
@@ -3360,7 +3360,7 @@ function PlaygroundContent() {
               break;
             }
           }
-          
+
           success = true;
 
           const data = await response.json();
@@ -3400,29 +3400,29 @@ function PlaygroundContent() {
               currentBatchState = {};
             }
           }
-          
+
           const updated = { ...currentBatchState };
-            
-            batch.forEach((postFullname) => {
-              const postData = postDataMap.get(postFullname);
-              if (postData) {
-                const { url, linkIndex, query } = postData;
-                const post = postMap.get(postFullname);
-                
-                if (post && updated[query] && updated[query][linkIndex]) {
-                  const postContent = {
-                    selftext: post.selftext || null,
-                    postData: post,
-                  };
-                  
-                  updated[query][linkIndex] = {
-                    ...updated[query][linkIndex],
-                    ...postContent,
-                  };
-                  
-                  cachePost(url, postContent);
-                }
-                
+
+          batch.forEach((postFullname) => {
+            const postData = postDataMap.get(postFullname);
+            if (postData) {
+              const { url, linkIndex, query } = postData;
+              const post = postMap.get(postFullname);
+
+              if (post && updated[query] && updated[query][linkIndex]) {
+                const postContent = {
+                  selftext: post.selftext || null,
+                  postData: post,
+                };
+
+                updated[query][linkIndex] = {
+                  ...updated[query][linkIndex],
+                  ...postContent,
+                };
+
+                cachePost(url, postContent);
+              }
+
               if (!deferStateUpdates) {
                 setIsLoadingPostContent((prevLoading) => {
                   const newState = { ...prevLoading };
@@ -3432,11 +3432,11 @@ function PlaygroundContent() {
               }
             }
           });
-          
+
           // Update localStorage temporarily even when deferring (so filterPosts can read it)
           // It will be overwritten with filtered results later
           safeSetLocalStorage("redditLinks", updated);
-          
+
           if (!deferStateUpdates) {
             setRedditLinks(updated);
           } else {
@@ -3474,7 +3474,7 @@ function PlaygroundContent() {
     // Load cached posts first and update state
     const cachedPostsMap = new Map<string, { selftext?: string | null; postData?: RedditPost | null }>();
     const postsNeedingFetch: Array<{ url: string; linkIndex: number; postFullname: string }> = [];
-    
+
     // Process links: check cache first, only fetch if not cached
     links.forEach((link, index) => {
       if (link.link) {
@@ -3482,7 +3482,7 @@ function PlaygroundContent() {
         if (urlMatch) {
           const [, , postId] = urlMatch;
           const postFullname = `t3_${postId}`;
-          
+
           // Check if post is cached
           const cached = getCachedPost(link.link);
           if (cached && (cached.selftext || cached.postData)) {
@@ -3521,11 +3521,11 @@ function PlaygroundContent() {
     const batchSize = 100;
     const postFullnames = postsNeedingFetch.map(item => item.postFullname);
     const batches: string[][] = [];
-    
+
     for (let i = 0; i < postFullnames.length; i += batchSize) {
       batches.push(postFullnames.slice(i, i + batchSize));
     }
-    
+
     // Create a map for quick lookup: postFullname -> url, linkIndex, and query
     const postDataMap = new Map<string, { url: string; linkIndex: number; query: string }>();
     postsNeedingFetch.forEach(({ url, linkIndex, postFullname }) => {
@@ -3537,7 +3537,7 @@ function PlaygroundContent() {
     // Process each batch sequentially with delays and retry logic to avoid rate limits
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
-      
+
       // Add delay between batches (except for the first one)
       // Increased delay to 3 seconds to respect Reddit's rate limits
       if (batchIndex > 0) {
@@ -3552,7 +3552,7 @@ function PlaygroundContent() {
       while (retryCount < maxRetries && !success) {
         try {
           console.log(`Fetching batch ${batchIndex + 1}/${batches.length} with ${batch.length} posts (attempt ${retryCount + 1}/${maxRetries})`);
-          
+
           // Call /api/reddit/post with POST method for the batch
           const response = await fetch("/api/reddit/post", {
             method: "POST",
@@ -3563,7 +3563,7 @@ function PlaygroundContent() {
               postIds: batch,
             }),
           });
-          
+
           if (!response.ok) {
             // Handle 429 (Too Many Requests) with exponential backoff
             if (response.status === 429) {
@@ -3607,16 +3607,16 @@ function PlaygroundContent() {
               break; // Skip this batch and move to next
             }
           }
-          
+
           // Success - process the response
           success = true;
 
           const data = await response.json();
-          
+
           // The /api/reddit/post endpoint returns Reddit API response
           // Format: { data: { children: [{ data: RedditPost }] } }
           const posts: RedditPost[] = data?.data?.children?.map((child: any) => child.data) || [];
-          
+
           console.log(`Batch ${batchIndex + 1} returned ${posts.length} posts`);
 
           // Create a map of post ID to post data for quick lookup
@@ -3632,30 +3632,30 @@ function PlaygroundContent() {
           // Update all links in this batch with their post content and cache them
           setRedditLinks((prev) => {
             const updated = { ...prev };
-            
+
             // Update each post in the batch
             batch.forEach((postFullname) => {
               const postData = postDataMap.get(postFullname);
               if (postData) {
                 const { url, linkIndex } = postData;
                 const post = postMap.get(postFullname);
-                
+
                 if (post && updated[query] && updated[query][linkIndex]) {
                   const postContent = {
                     selftext: post.selftext || null,
                     postData: post,
                   };
-                  
+
                   // Update the link with post content
                   updated[query][linkIndex] = {
                     ...updated[query][linkIndex],
                     ...postContent,
                   };
-                  
+
                   // Cache the post in localStorage
                   cachePost(url, postContent);
                 }
-                
+
                 // Remove loading state
                 setIsLoadingPostContent((prev) => {
                   const newState = { ...prev };
@@ -3664,7 +3664,7 @@ function PlaygroundContent() {
                 });
               }
             });
-            
+
             // Save to localStorage (only minimal data)
             safeSetLocalStorage("redditLinks", updated);
             return updated;
@@ -3753,12 +3753,12 @@ function PlaygroundContent() {
           },
           body: JSON.stringify({
             status: "posted",
-      query: linkItem.query,
-      title: linkItem.title || null,
-      link: linkItem.link || null,
-      snippet: linkItem.snippet || null,
-      selftext: linkItem.selftext || null,
-      postData: linkItem.postData || null,
+            query: linkItem.query,
+            title: linkItem.title || null,
+            link: linkItem.link || null,
+            snippet: linkItem.snippet || null,
+            selftext: linkItem.selftext || null,
+            postData: linkItem.postData || null,
             comment: commentText.trim(),
             notes: commentText.trim(),
           }),
@@ -3778,32 +3778,32 @@ function PlaygroundContent() {
 
       // Refresh analytics from database after posting
       await refreshAnalytics();
-    
-    // Remove from redditLinks (filter it out from the dashboard)
-    setRedditLinks((prev) => {
-      const updated = { ...prev };
-      if (updated[linkItem.query]) {
-        // Remove the post by filtering it out
-        updated[linkItem.query] = updated[linkItem.query].filter((link, index) => {
-          // Check if this is the post we want to remove
-          // We'll use the link URL to identify it since uniqueKey might not be stored
-          if (link.link === linkItem.link) {
-            return false; // Remove this post
-          }
-          return true;
-        });
-        // If the query has no more links, we could remove the query key, but let's keep it
-        safeSetLocalStorage("redditLinks", updated);
-      }
-      return updated;
-    });
-    
-    // Remove textarea value if it exists
-    setPostTextareas((prev) => {
-      const updated = { ...prev };
+
+      // Remove from redditLinks (filter it out from the dashboard)
+      setRedditLinks((prev) => {
+        const updated = { ...prev };
+        if (updated[linkItem.query]) {
+          // Remove the post by filtering it out
+          updated[linkItem.query] = updated[linkItem.query].filter((link, index) => {
+            // Check if this is the post we want to remove
+            // We'll use the link URL to identify it since uniqueKey might not be stored
+            if (link.link === linkItem.link) {
+              return false; // Remove this post
+            }
+            return true;
+          });
+          // If the query has no more links, we could remove the query key, but let's keep it
+          safeSetLocalStorage("redditLinks", updated);
+        }
+        return updated;
+      });
+
+      // Remove textarea value if it exists
+      setPostTextareas((prev) => {
+        const updated = { ...prev };
         delete updated[linkKey];
-      return updated;
-    });
+        return updated;
+      });
 
       // Show success message
       showToast("Comment posted successfully.", { link: linkItem.link || null, variant: "success" });
@@ -3814,11 +3814,11 @@ function PlaygroundContent() {
       showToast(errorMessage, { variant: "error" });
       try {
         await fetch("/api/posts/create", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
             status: "failed",
             query: linkItem.query,
             title: linkItem.title || null,
@@ -3828,8 +3828,8 @@ function PlaygroundContent() {
             postData: linkItem.postData || null,
             comment: (postTextareas[linkKey] || "").trim() || null,
             notes: errorMessage,
-        }),
-      });
+          }),
+        });
         await refreshAnalytics();
       } catch (recordError) {
         console.error("Error recording failed analytics entry:", recordError);
@@ -3894,12 +3894,12 @@ function PlaygroundContent() {
     // Fetch from Reddit API
     try {
       setIsLoadingPostContent((prev) => ({ ...prev, [linkItem.link!]: true }));
-      
+
       const urlMatch = linkItem.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
       if (urlMatch) {
         const [, , postId] = urlMatch;
         const postFullname = `t3_${postId}`;
-        
+
         const redditResponse = await fetch("/api/reddit/post", {
           method: "POST",
           headers: {
@@ -3911,13 +3911,13 @@ function PlaygroundContent() {
         if (redditResponse.ok) {
           const redditData = await redditResponse.json();
           const posts = redditData?.data?.children || [];
-          
+
           if (posts.length > 0) {
             const post: RedditPost = posts[0].data;
-            
+
             // Cache the full post
             cachePost(linkItem.link, { selftext: post.selftext || null, postData: post });
-            
+
             // Update selectedDiscoveryPost with full data
             setSelectedDiscoveryPost((prev) => {
               if (!prev || prev.uniqueKey !== linkItem.uniqueKey) return prev;
@@ -3934,10 +3934,10 @@ function PlaygroundContent() {
           if (fallbackResponse.ok) {
             const redditData = await fallbackResponse.json();
             const post: RedditPost = redditData.post;
-            
+
             // Cache the full post
             cachePost(linkItem.link, { selftext: post.selftext || null, postData: post });
-            
+
             // Update selectedDiscoveryPost with full data
             setSelectedDiscoveryPost((prev) => {
               if (!prev || prev.uniqueKey !== linkItem.uniqueKey) return prev;
@@ -3973,7 +3973,7 @@ function PlaygroundContent() {
 
     // Use the stored modal leads (they persist even if filtered out from distinctLeadsLinks)
     const selectedLeadItems = bulkModalLeads;
-    
+
     // Initialize status for all selected leads
     const initialStatus: Record<string, "haven't started" | "generating" | "posting" | "completed" | "error"> = {};
     selectedLeadItems.forEach(item => {
@@ -3986,7 +3986,7 @@ function PlaygroundContent() {
     const dbLink = productDetailsFromDb?.link || website;
     const dbProductDescription = productDetailsFromDb?.productDescription;
     const productIdeaToUse = dbProductDescription || ideaToUse;
-    
+
     if (!productIdeaToUse || !dbLink) {
       showToast("Please enter your product details in the Product tab first.", { variant: "error" });
       return;
@@ -3994,11 +3994,11 @@ function PlaygroundContent() {
 
     const processLead = async (leadItem: typeof selectedLeadItems[number]) => {
       const linkKey = leadItem.uniqueKey;
-      
+
       try {
         // Step 1: Generate comment
         setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "generating" }));
-        
+
         const postContent = leadItem.selftext || leadItem.snippet || leadItem.title || "";
         if (!postContent) {
           console.error(`[Bulk Operations] No post content for lead: ${leadItem.title || leadItem.link}`);
@@ -4114,7 +4114,7 @@ function PlaygroundContent() {
 
         // Mark as completed
         setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "completed" }));
-        
+
       } catch (error) {
         console.error(`[Bulk Operations] Unexpected error processing lead "${leadItem.title || leadItem.link}":`, {
           error: error instanceof Error ? error.message : String(error),
@@ -4128,14 +4128,14 @@ function PlaygroundContent() {
 
     // Process all leads in parallel
     await Promise.all(selectedLeadItems.map(leadItem => processLead(leadItem)));
-    
+
     // Refresh analytics and usage once after all operations complete
     await refreshAnalytics();
     refreshUsage();
-    
+
     // Clear selected leads after bulk operation completes
     setSelectedLeads(new Set());
-    
+
     // Set posting state to false when all operations complete
     setIsBulkPosting(false);
   };
@@ -4168,7 +4168,7 @@ function PlaygroundContent() {
     const dbLink = productDetailsFromDb?.link || website;
     const dbProductDescription = productDetailsFromDb?.productDescription;
     const productIdeaToUse = dbProductDescription || ideaToUse;
-    
+
     if (!productIdeaToUse || !dbLink) {
       showToast("Please enter your product details in the Product tab first.", { variant: "error" });
       setIsBulkPosting(false);
@@ -4177,13 +4177,13 @@ function PlaygroundContent() {
 
     const processLead = async (leadItem: typeof failedLeads[number]) => {
       const linkKey = leadItem.uniqueKey;
-      
+
       try {
         // Step 1: Generate comment (or use existing if available)
         setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "generating" }));
-        
+
         let generatedComment = bulkGeneratedComments[linkKey];
-        
+
         // If we don't have a generated comment, generate one
         if (!generatedComment) {
           const postContent = leadItem.selftext || leadItem.snippet || leadItem.title || "";
@@ -4270,7 +4270,7 @@ function PlaygroundContent() {
 
         // Mark as completed
         setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "completed" }));
-        
+
       } catch (error) {
         console.error("Error processing lead:", error);
         setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
@@ -4279,11 +4279,11 @@ function PlaygroundContent() {
 
     // Process all failed leads in parallel
     await Promise.all(failedLeads.map(leadItem => processLead(leadItem)));
-    
+
     // Refresh analytics and usage once after all operations complete
     await refreshAnalytics();
     refreshUsage();
-    
+
     setIsBulkPosting(false);
   };
 
@@ -4298,12 +4298,12 @@ function PlaygroundContent() {
         },
         body: JSON.stringify({
           status: "skipped",
-      query: linkItem.query,
-      title: linkItem.title || null,
-      link: linkItem.link || null,
-      snippet: linkItem.snippet || null,
-      selftext: linkItem.selftext || null,
-      postData: linkItem.postData || null,
+          query: linkItem.query,
+          title: linkItem.title || null,
+          link: linkItem.link || null,
+          snippet: linkItem.snippet || null,
+          selftext: linkItem.selftext || null,
+          postData: linkItem.postData || null,
           notes: postTextareas[linkItem.uniqueKey] || null,
         }),
       });
@@ -4314,7 +4314,7 @@ function PlaygroundContent() {
 
     // Refresh analytics from database after skipping
     await refreshAnalytics();
-    
+
     // Remove from redditLinks
     setRedditLinks((prev) => {
       const updated = { ...prev };
@@ -4324,7 +4324,7 @@ function PlaygroundContent() {
       }
       return updated;
     });
-    
+
     // Remove textarea value
     setPostTextareas((prev) => {
       const updated = { ...prev };
@@ -4390,15 +4390,15 @@ function PlaygroundContent() {
       });
     } else {
       // Remove from redditLinks state and localStorage
-    setRedditLinks((prev) => {
-      const updated = { ...prev };
-      if (updated[linkItem.query]) {
-        // Remove the post by filtering it out
-        updated[linkItem.query] = updated[linkItem.query].filter((link) => link.link !== linkItem.link);
+      setRedditLinks((prev) => {
+        const updated = { ...prev };
+        if (updated[linkItem.query]) {
+          // Remove the post by filtering it out
+          updated[linkItem.query] = updated[linkItem.query].filter((link) => link.link !== linkItem.link);
           safeSetLocalStorage("redditLinks", updated);
-      }
-      return updated;
-    });
+        }
+        return updated;
+      });
     }
 
     // Remove textarea value
@@ -4635,7 +4635,7 @@ function PlaygroundContent() {
           const lower = k.toLowerCase().trim();
           return lower && !existingKeywordsSet.has(lower);
         });
-        
+
         // Limit to 20 total keywords
         const combined = [...keywords, ...newKeywords].slice(0, 20);
         setKeywords(combined);
@@ -4715,7 +4715,7 @@ function PlaygroundContent() {
         return (
           <div className="flex h-full flex-col">
             {/* Main content area - scrollable */}
-          <div className={cn(
+            <div className={cn(
               "flex h-full flex-col",
               !sidebarOpen && "pl-2"
             )}>
@@ -4772,14 +4772,14 @@ function PlaygroundContent() {
                       }
                     }}
                     disabled={
-                      isSavingProductDetails || 
-                      isLoadingProductDetails || 
+                      isSavingProductDetails ||
+                      isLoadingProductDetails ||
                       !originalProductDetails ||
                       (originalProductDetails.productName === (productName || "") &&
-                       originalProductDetails.website === (website || "") &&
-                       originalProductDetails.productDescription === (productDescription || "") &&
-                       originalProductDetails.productBenefits === (productBenefits || "") &&
-                       JSON.stringify(originalProductDetails.keywords.sort()) === JSON.stringify([...keywords].sort()))
+                        originalProductDetails.website === (website || "") &&
+                        originalProductDetails.productDescription === (productDescription || "") &&
+                        originalProductDetails.productBenefits === (productBenefits || "") &&
+                        JSON.stringify(originalProductDetails.keywords.sort()) === JSON.stringify([...keywords].sort()))
                     }
                     className="bg-black text-white hover:bg-black/90 disabled:opacity-50 self-start sm:self-auto"
                     size="sm"
@@ -4788,16 +4788,16 @@ function PlaygroundContent() {
                   </Button>
                 </div>
               </div>
-              
+
               {/* Content area that spans remaining space */}
               <div className={cn(
                 "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
                 !sidebarOpen && "pl-14"
-          )}>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-1">
+              )}>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-1">
                   {/* Left Column */}
                   <div className="space-y-4">
-              <div>
+                    <div>
                       <label htmlFor="product-name" className="block text-sm font-medium text-foreground mb-1">
                         Product Name
                       </label>
@@ -4809,8 +4809,8 @@ function PlaygroundContent() {
                         placeholder="Enter your product name"
                         className="w-full"
                       />
-              </div>
-              <div>
+                    </div>
+                    <div>
                       <label htmlFor="product-website" className="block text-sm font-medium text-foreground mb-1">
                         Product Website
                       </label>
@@ -4822,7 +4822,7 @@ function PlaygroundContent() {
                         placeholder="https://example.com"
                         className="w-full"
                       />
-              </div>
+                    </div>
                     <div>
                       <label htmlFor="product-description" className="block text-sm font-medium text-foreground mb-1">
                         Product Description
@@ -4858,7 +4858,7 @@ function PlaygroundContent() {
                               showToast("Please enter a website first", { variant: "error" });
                               return;
                             }
-                            
+
                             setIsGeneratingProductDescription(true);
                             try {
                               const response = await fetch("/api/openai/product", {
@@ -4912,15 +4912,15 @@ function PlaygroundContent() {
                       </p>
                     </div>
                   </div>
-                  
+
                   {/* Right Column */}
                   <div className="space-y-6">
-                  <div>
+                    <div>
                       <div className="flex items-center justify-between mb-1">
                         <label htmlFor="product-keywords" className="block text-sm font-medium text-foreground">
                           Keywords
                         </label>
-                    <Button
+                        <Button
                           type="button"
                           size="sm"
                           variant="outline"
@@ -5024,11 +5024,11 @@ function PlaygroundContent() {
                             className="shrink-0"
                           >
                             <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-                  <div>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
                       <label htmlFor="product-subreddits" className="block text-sm font-medium text-foreground mb-1">
                         Target Subreddits
                       </label>
@@ -5046,12 +5046,12 @@ function PlaygroundContent() {
                                   <span>r/{subreddit}</span>
                                   <button
                                     type="button"
-                                  onClick={() => {
-                                    const newSubreddits = subreddits.filter((_, i) => i !== index);
-                                    setSubreddits(newSubreddits);
-                                    // Auto-save subreddits when removed
-                                    saveSubreddits(newSubreddits);
-                                  }}
+                                    onClick={() => {
+                                      const newSubreddits = subreddits.filter((_, i) => i !== index);
+                                      setSubreddits(newSubreddits);
+                                      // Auto-save subreddits when removed
+                                      saveSubreddits(newSubreddits);
+                                    }}
                                     className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5 transition-colors"
                                     aria-label={`Remove ${subreddit}`}
                                   >
@@ -5163,7 +5163,7 @@ function PlaygroundContent() {
                                       <span className="text-sm font-medium">{sub.displayName}</span>
                                       {sub.subscribers > 0 && (
                                         <span className="text-xs text-muted-foreground">
-                                          {sub.subscribers >= 1000 
+                                          {sub.subscribers >= 1000
                                             ? `${(sub.subscribers / 1000).toFixed(1)}k members`
                                             : `${sub.subscribers} members`}
                                         </span>
@@ -5224,7 +5224,7 @@ function PlaygroundContent() {
                   </div>
                 </div>
               </div>
-              
+
               {/* Content area that spans remaining space */}
               <div className={cn(
                 "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
@@ -5288,7 +5288,7 @@ function PlaygroundContent() {
                             // Check if product details are available
                             const dbLink = productDetailsFromDb?.link || website;
                             const dbProductDescription = productDetailsFromDb?.productDescription;
-                            
+
                             if (!dbProductDescription || !dbLink) {
                               setToast({
                                 visible: true,
@@ -5305,7 +5305,7 @@ function PlaygroundContent() {
                             try {
                               // Step 1: Fetch Reddit post content
                               const redditResponse = await fetch(`/api/reddit?url=${encodeURIComponent(createRedditLink)}`);
-                              
+
                               if (!redditResponse.ok) {
                                 const errorData = await redditResponse.json();
                                 throw new Error(errorData.error || "Failed to fetch Reddit post");
@@ -5316,7 +5316,7 @@ function PlaygroundContent() {
 
                               // Store post data for later use when posting
                               setCreatePostData(post);
-                              
+
                               // Extract post content (title + selftext) for Founder persona
                               // For User persona, use only selftext
                               const postContent = `${post.title}\n\n${post.selftext || ""}`;
@@ -5355,7 +5355,7 @@ function PlaygroundContent() {
 
                               const generateData = await generateResponse.json();
                               const comments = generateData.comments || [];
-                              
+
                               // Display the first generated comment (or join all if multiple)
                               if (comments.length > 0) {
                                 setCreateGeneratedComment(comments[0] || comments.join("\n\n"));
@@ -5606,7 +5606,7 @@ function PlaygroundContent() {
                   </div>
                 </div>
               </div>
-              
+
               {/* Content area that spans remaining space */}
               <div className={cn(
                 "flex-1 overflow-hidden pt-2 flex flex-col min-h-0",
@@ -5628,8 +5628,8 @@ function PlaygroundContent() {
                           ? "No skipped posts yet. Skip a post in the Discovery tab to review it here."
                           : "No failed posts yet. If a post fails to publish, it will appear here."}
                     </p>
-                </div>
-              ) : (
+                  </div>
+                ) : (
                   (() => {
                     const totalItems = filteredAnalyticsPosts.length;
                     const totalPages = Math.max(1, Math.ceil(totalItems / ANALYTICS_ITEMS_PER_PAGE));
@@ -5643,101 +5643,101 @@ function PlaygroundContent() {
                         <div className="flex-1 flex flex-col rounded-lg border border-border overflow-hidden">
                           <div className="flex-1 overflow-x-auto overflow-y-auto min-h-0">
                             <table className="w-full border-collapse">
-                      <thead className="sticky top-0 z-20">
-                        <tr className="border-b border-border bg-muted/50">
-                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Status</th>
-                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Title</th>
-                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Query</th>
-                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Last Updated</th>
-                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Post</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                              {pageItems.map((post) => (
-                                <tr
-                                  key={post.id || post.uniqueKey}
-                                  className="cursor-pointer transition hover:bg-muted/40"
-                                  onClick={() => openAnalyticsDrawer(post)}
-                                >
-                                  <td className="py-3 px-2">
-                              <span
-                                      className={cn(
-                                        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize",
-                                        post.status === "posted" && "bg-emerald-500/10 text-emerald-500",
-                                        post.status === "skipped" && "bg-amber-500/10 text-amber-600",
-                                        post.status === "failed" && "bg-red-500/10 text-red-500"
+                              <thead className="sticky top-0 z-20">
+                                <tr className="border-b border-border bg-muted/50">
+                                  <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Status</th>
+                                  <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Title</th>
+                                  <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Query</th>
+                                  <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Last Updated</th>
+                                  <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Post</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-border">
+                                {pageItems.map((post) => (
+                                  <tr
+                                    key={post.id || post.uniqueKey}
+                                    className="cursor-pointer transition hover:bg-muted/40"
+                                    onClick={() => openAnalyticsDrawer(post)}
+                                  >
+                                    <td className="py-3 px-2">
+                                      <span
+                                        className={cn(
+                                          "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize",
+                                          post.status === "posted" && "bg-emerald-500/10 text-emerald-500",
+                                          post.status === "skipped" && "bg-amber-500/10 text-amber-600",
+                                          post.status === "failed" && "bg-red-500/10 text-red-500"
+                                        )}
+                                      >
+                                        {post.status}
+                                      </span>
+                                    </td>
+                                    <td className="max-w-sm py-3 px-2 text-sm font-medium text-foreground">
+                                      <div className="truncate" title={post.title || "Untitled post"}>
+                                        {post.title || "Untitled post"}
+                                      </div>
+                                    </td>
+                                    <td className="max-w-xs py-3 px-2 text-sm text-muted-foreground">
+                                      <div className="line-clamp-2">{post.query}</div>
+                                    </td>
+                                    <td className="py-3 px-2 text-sm text-muted-foreground">
+                                      {new Date(post.postedAt).toLocaleDateString()}
+                                    </td>
+                                    <td className="py-3 px-2">
+                                      {post.link ? (
+                                        <a
+                                          href={post.link}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-sm font-medium text-primary hover:underline"
+                                        >
+                                          Link
+                                        </a>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">-</span>
                                       )}
-                                    >
-                                      {post.status}
-                              </span>
-                            </td>
-                                  <td className="max-w-sm py-3 px-2 text-sm font-medium text-foreground">
-                                    <div className="truncate" title={post.title || "Untitled post"}>
-                                      {post.title || "Untitled post"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {totalPages > 1 && (
+                            <div className="flex items-center justify-between border-t border-border px-3 py-1.5 bg-card">
+                              <div className="text-xs text-muted-foreground">
+                                Showing {startIdx + 1} to {Math.min(endIdx, totalItems)} of {totalItems} posts
                               </div>
-                            </td>
-                                  <td className="max-w-xs py-3 px-2 text-sm text-muted-foreground">
-                                    <div className="line-clamp-2">{post.query}</div>
-                            </td>
-                                  <td className="py-3 px-2 text-sm text-muted-foreground">
-                                    {new Date(post.postedAt).toLocaleDateString()}
-                                  </td>
-                                  <td className="py-3 px-2">
-                              {post.link ? (
-                                <a
-                                  href={post.link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                        className="text-sm font-medium text-primary hover:underline"
+                              <div className="flex items-center gap-1.5">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setAnalyticsPage((prev) => Math.max(1, prev - 1))}
+                                  disabled={currentPage === 1}
+                                  className="text-xs h-7 px-2"
                                 >
-                                        Link
-                                </a>
-                              ) : (
-                                      <span className="text-sm text-muted-foreground">-</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                        </div>
-                        {totalPages > 1 && (
-                          <div className="flex items-center justify-between border-t border-border px-3 py-1.5 bg-card">
-                            <div className="text-xs text-muted-foreground">
-                              Showing {startIdx + 1} to {Math.min(endIdx, totalItems)} of {totalItems} posts
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setAnalyticsPage((prev) => Math.max(1, prev - 1))}
-                                disabled={currentPage === 1}
-                                className="text-xs h-7 px-2"
-                              >
-                                <ChevronLeft className="h-3 w-3" />
-                                <span className="hidden sm:inline">Previous</span>
-                              </Button>
-                              <div className="text-xs text-foreground px-1">
-                                Page {currentPage} of {totalPages}
+                                  <ChevronLeft className="h-3 w-3" />
+                                  <span className="hidden sm:inline">Previous</span>
+                                </Button>
+                                <div className="text-xs text-foreground px-1">
+                                  Page {currentPage} of {totalPages}
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setAnalyticsPage((prev) => Math.min(totalPages, prev + 1))}
+                                  disabled={currentPage === totalPages}
+                                  className="text-xs h-7 px-2"
+                                >
+                                  <span className="hidden sm:inline">Next</span>
+                                  <ChevronRight className="h-3 w-3" />
+                                </Button>
                               </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setAnalyticsPage((prev) => Math.min(totalPages, prev + 1))}
-                                disabled={currentPage === totalPages}
-                                className="text-xs h-7 px-2"
-                              >
-                                <span className="hidden sm:inline">Next</span>
-                                <ChevronRight className="h-3 w-3" />
-                              </Button>
-                  </div>
-                </div>
-              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })()
-              )}
+                    );
+                  })()
+                )}
               </div>
             </div>
           </div>
@@ -6108,223 +6108,228 @@ function PlaygroundContent() {
               !sidebarOpen && "pl-14"
             )}>
               {/* Fixed header with title and buttons */}
-                <div className={cn(
+              <div className={cn(
                 "sticky top-0 z-30 bg-background",
-                  !sidebarOpen && "pl-14"
-                )}>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <h3 className="text-lg font-semibold">
+                !sidebarOpen && "pl-14"
+              )}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="text-lg font-semibold">
                     Leads
-                    </h3>
-                    <div className="flex gap-2 self-start sm:self-auto">
-                      {selectedLeads.size > 0 && (
-                        <Button
-                          variant="default"
-                          size="sm"
-                          className="bg-black text-white hover:bg-black/90"
+                  </h3>
+                  <div className="flex gap-2 self-start sm:self-auto">
+                    {selectedLeads.size > 0 && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="bg-black text-white hover:bg-black/90"
                         onClick={async () => {
-                            // Check usage limit before opening modal
-                            try {
-                              const response = await fetch("/api/usage");
-                              if (response.ok) {
-                                const data = await response.json();
-                                const currentCount = data.currentCount ?? 0;
-                                const maxCount = data.maxCount ?? 30;
-                                const remaining = Math.max(0, maxCount - currentCount);
-                                const selectedCount = selectedLeads.size;
-                                
-                                // Check if user has enough credits for selected leads
-                                if (remaining < selectedCount) {
-                                  // Show upgrade modal instead of toast
-                                  setUpgradeModalContext({
-                                    limitReached: remaining === 0,
-                                    remaining: remaining,
-                                    selectedCount: selectedCount,
-                                    maxCount: maxCount
-                                  });
-                                  setShowUpgradeModal(true);
-                                  return;
-                                }
+                          // Check usage limit before opening modal
+                          try {
+                            const response = await fetch("/api/usage");
+                            if (response.ok) {
+                              const data = await response.json();
+                              const currentCount = data.currentCount ?? 0;
+                              const maxCount = data.maxCount ?? 30;
+                              const remaining = Math.max(0, maxCount - currentCount);
+                              const selectedCount = selectedLeads.size;
+
+                              // Check if user has enough credits for selected leads
+                              if (remaining < selectedCount) {
+                                // Show upgrade modal instead of toast
+                                setUpgradeModalContext({
+                                  limitReached: remaining === 0,
+                                  remaining: remaining,
+                                  selectedCount: selectedCount,
+                                  maxCount: maxCount
+                                });
+                                setShowUpgradeModal(true);
+                                return;
                               }
-                            } catch (error) {
-                              console.error("Error checking usage:", error);
-                              // Continue if check fails (don't block user)
                             }
-                            
-                            // Store the selected lead items before opening modal
-                            const selectedLeadItems = distinctLeadsLinks.filter(link => selectedLeads.has(link.uniqueKey));
-                            setBulkModalLeads(selectedLeadItems);
-                            setBulkModalInitialCount(selectedLeads.size);
-                            setIsBulkOperationsModalOpen(true);
-                            // Reset status when opening modal
-                            setBulkOperationStatus({});
-                            setBulkGeneratedComments({});
-                            setIsBulkPosting(false);
-                          }}
-                        >
-                          Bulk Operations {selectedLeads.size > 0 && `(${selectedLeads.size})`}
+                          } catch (error) {
+                            console.error("Error checking usage:", error);
+                            // Continue if check fails (don't block user)
+                          }
+
+                          // Store the selected lead items before opening modal
+                          const selectedLeadItems = distinctLeadsLinks.filter(link => selectedLeads.has(link.uniqueKey));
+                          setBulkModalLeads(selectedLeadItems);
+                          setBulkModalInitialCount(selectedLeads.size);
+                          setIsBulkOperationsModalOpen(true);
+                          // Reset status when opening modal
+                          setBulkOperationStatus({});
+                          setBulkGeneratedComments({});
+                          setIsBulkPosting(false);
+                        }}
+                      >
+                        Bulk Operations {selectedLeads.size > 0 && `(${selectedLeads.size})`}
                       </Button>
-                      )}
-                          <div className="flex items-center gap-3">
-                            <div title="Coming soon">
-                              <Button
-                                onClick={handleAutoPilot}
-                                disabled={true}
-                                size="sm"
-                                variant="outline"
-                                className="text-[#FF4500] font-bold cursor-not-allowed"
-                              >
-                                Auto-pilot
-                              </Button>
-                            </div>
-                          <Button
-                      onClick={handleLeadsSearch}
-                      disabled={isLoadingLeads}
-                            size="sm"
-                      variant={distinctLeadsLinks.length > 0 ? "outline" : "default"}
-                      className="w-[140px]"
-                    >
-                      {isLoadingLeads ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Refreshing...
-                        </>
-                      ) : (
-                        "Refresh Leads"
-                      )}
-                          </Button>
-                          </div>
-                      {distinctLeadsLinks.length > 0 && (
-                        <div className="relative" ref={sortDropdownRef}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
-                          >
-                            {leadsSortBy === "date-desc" ? "Sort by" : 
-                             leadsSortBy === "date-asc" ? "Date (Oldest)" :
-                             leadsSortBy === "upvotes-desc" ? "Upvotes (High)" :
-                             leadsSortBy === "upvotes-asc" ? "Upvotes (Low)" :
-                             leadsSortBy === "comments-desc" ? "Comments (Most)" :
-                             leadsSortBy === "comments-asc" ? "Comments (Least)" :
-                             leadsSortBy === "title-asc" ? "Title (A-Z)" :
-                             leadsSortBy === "title-desc" ? "Title (Z-A)" : "Sort by"}
-                            <ChevronDown className="h-3 w-3 ml-1.5" />
-                          </Button>
-                          {isSortDropdownOpen && (
-                            <div className="absolute top-full right-0 mt-1 z-40 bg-card border border-border rounded-md shadow-lg min-w-[160px]">
-                              <div className="py-1">
-                                <button
-                                  onClick={() => {
-                                    setLeadsSortBy("date-desc");
-                                    setIsSortDropdownOpen(false);
-                                  }}
-                                  className={cn(
-                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
-                                    leadsSortBy === "date-desc" && "bg-muted"
-                                  )}
-                                >
-                                  Date (Newest)
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setLeadsSortBy("date-asc");
-                                    setIsSortDropdownOpen(false);
-                                  }}
-                                  className={cn(
-                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
-                                    leadsSortBy === "date-asc" && "bg-muted"
-                                  )}
-                                >
-                                  Date (Oldest)
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setLeadsSortBy("upvotes-desc");
-                                    setIsSortDropdownOpen(false);
-                                  }}
-                                  className={cn(
-                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
-                                    leadsSortBy === "upvotes-desc" && "bg-muted"
-                                  )}
-                                >
-                                  Upvotes (High)
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setLeadsSortBy("upvotes-asc");
-                                    setIsSortDropdownOpen(false);
-                                  }}
-                                  className={cn(
-                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
-                                    leadsSortBy === "upvotes-asc" && "bg-muted"
-                                  )}
-                                >
-                                  Upvotes (Low)
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setLeadsSortBy("comments-desc");
-                                    setIsSortDropdownOpen(false);
-                                  }}
-                                  className={cn(
-                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
-                                    leadsSortBy === "comments-desc" && "bg-muted"
-                                  )}
-                                >
-                                  Comments (Most)
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setLeadsSortBy("comments-asc");
-                                    setIsSortDropdownOpen(false);
-                                  }}
-                                  className={cn(
-                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
-                                    leadsSortBy === "comments-asc" && "bg-muted"
-                                  )}
-                                >
-                                  Comments (Least)
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setLeadsSortBy("title-asc");
-                                    setIsSortDropdownOpen(false);
-                                  }}
-                                  className={cn(
-                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
-                                    leadsSortBy === "title-asc" && "bg-muted"
-                                  )}
-                                >
-                                  Title (A-Z)
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setLeadsSortBy("title-desc");
-                                    setIsSortDropdownOpen(false);
-                                  }}
-                                  className={cn(
-                                    "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
-                                    leadsSortBy === "title-desc" && "bg-muted"
-                                  )}
-                                >
-                                  Title (Z-A)
-                                </button>
-                        </div>
-                      </div>
-                          )}
-                      </div>
-                      )}
+                    )}
+                    <div className="flex items-center gap-3">
+                      {/* <Button
+                        onClick={handleAutoPilot}
+                        disabled={isLoadingLeads}
+                        size="sm"
+                        variant="outline"
+                        className="text-[#FF4500] font-bold"
+                      >
+                        {isLoadingLeads ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Running...
+                          </>
+                        ) : (
+                          "Auto-pilot"
+                        )}
+                      </Button> */}
+                      <Button
+                        onClick={handleLeadsSearch}
+                        disabled={isLoadingLeads}
+                        size="sm"
+                        variant={distinctLeadsLinks.length > 0 ? "outline" : "default"}
+                        className="w-[140px]"
+                      >
+                        {isLoadingLeads ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Refreshing...
+                          </>
+                        ) : (
+                          "Refresh Leads"
+                        )}
+                      </Button>
                     </div>
+                    {distinctLeadsLinks.length > 0 && (
+                      <div className="relative" ref={sortDropdownRef}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
+                        >
+                          {leadsSortBy === "date-desc" ? "Sort by" :
+                            leadsSortBy === "date-asc" ? "Date (Oldest)" :
+                              leadsSortBy === "upvotes-desc" ? "Upvotes (High)" :
+                                leadsSortBy === "upvotes-asc" ? "Upvotes (Low)" :
+                                  leadsSortBy === "comments-desc" ? "Comments (Most)" :
+                                    leadsSortBy === "comments-asc" ? "Comments (Least)" :
+                                      leadsSortBy === "title-asc" ? "Title (A-Z)" :
+                                        leadsSortBy === "title-desc" ? "Title (Z-A)" : "Sort by"}
+                          <ChevronDown className="h-3 w-3 ml-1.5" />
+                        </Button>
+                        {isSortDropdownOpen && (
+                          <div className="absolute top-full right-0 mt-1 z-40 bg-card border border-border rounded-md shadow-lg min-w-[160px]">
+                            <div className="py-1">
+                              <button
+                                onClick={() => {
+                                  setLeadsSortBy("date-desc");
+                                  setIsSortDropdownOpen(false);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                  leadsSortBy === "date-desc" && "bg-muted"
+                                )}
+                              >
+                                Date (Newest)
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setLeadsSortBy("date-asc");
+                                  setIsSortDropdownOpen(false);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                  leadsSortBy === "date-asc" && "bg-muted"
+                                )}
+                              >
+                                Date (Oldest)
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setLeadsSortBy("upvotes-desc");
+                                  setIsSortDropdownOpen(false);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                  leadsSortBy === "upvotes-desc" && "bg-muted"
+                                )}
+                              >
+                                Upvotes (High)
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setLeadsSortBy("upvotes-asc");
+                                  setIsSortDropdownOpen(false);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                  leadsSortBy === "upvotes-asc" && "bg-muted"
+                                )}
+                              >
+                                Upvotes (Low)
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setLeadsSortBy("comments-desc");
+                                  setIsSortDropdownOpen(false);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                  leadsSortBy === "comments-desc" && "bg-muted"
+                                )}
+                              >
+                                Comments (Most)
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setLeadsSortBy("comments-asc");
+                                  setIsSortDropdownOpen(false);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                  leadsSortBy === "comments-asc" && "bg-muted"
+                                )}
+                              >
+                                Comments (Least)
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setLeadsSortBy("title-asc");
+                                  setIsSortDropdownOpen(false);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                  leadsSortBy === "title-asc" && "bg-muted"
+                                )}
+                              >
+                                Title (A-Z)
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setLeadsSortBy("title-desc");
+                                  setIsSortDropdownOpen(false);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                  leadsSortBy === "title-desc" && "bg-muted"
+                                )}
+                              >
+                                Title (Z-A)
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  </div>
+                </div>
+              </div>
               {/* Scrollable content area */}
               <div className={cn(
                 "flex-1 overflow-hidden pt-4 flex flex-col min-h-0",
                 !sidebarOpen && "pl-14"
               )}>
-                  <div className="flex-1 flex flex-col min-h-0 space-y-4">
-                    
+                <div className="flex-1 flex flex-col min-h-0 space-y-4">
+
                   {/* Show loading state while analytics is loading to prevent count from jumping */}
                   {(isLoadingAnalytics || !analyticsFetchedRef.current) && Object.keys(leadsLinks).length > 0 ? (
                     <div className="flex-1 flex items-center justify-center">
@@ -6334,8 +6339,8 @@ function PlaygroundContent() {
                       </div>
                     </div>
                   ) : distinctLeadsLinks.length > 0 ? (
-                  <div className="flex-1 flex flex-col min-h-0 space-y-4">
-                    {/* Display Reddit links in table view */}
+                    <div className="flex-1 flex flex-col min-h-0 space-y-4">
+                      {/* Display Reddit links in table view */}
                       <div className={cn(
                         "relative rounded-lg border border-border overflow-hidden flex-1 flex flex-col min-h-0",
                         isLoadingLeads && "pointer-events-none"
@@ -6376,37 +6381,37 @@ function PlaygroundContent() {
                                 <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50 w-[80px]">Actions</th>
                               </tr>
                             </thead>
-                          <tbody>
+                            <tbody>
                               {paginatedLeadsLinks.map((linkItem) => {
-                              const link = linkItem;
-                            // Extract subreddit from URL
-                            const subredditMatch = linkItem.link?.match(/reddit\.com\/r\/([^/]+)/);
-                            const subreddit = subredditMatch ? subredditMatch[1] : null;
+                                const link = linkItem;
+                                // Extract subreddit from URL
+                                const subredditMatch = linkItem.link?.match(/reddit\.com\/r\/([^/]+)/);
+                                const subreddit = subredditMatch ? subredditMatch[1] : null;
                                 // Use unique key that includes keyword to avoid duplicates
-                            const linkKey = linkItem.uniqueKey;
-                            const isExpanded = expandedPosts.has(linkKey);
-                          
-                          // Clean snippet
-                          let cleanSnippet = link.snippet || '';
-                          cleanSnippet = cleanSnippet.replace(/\d+\s*(hours?|days?|minutes?|weeks?|months?|years?)\s+ago/gi, '');
-                          cleanSnippet = cleanSnippet.replace(/posted\s+\d+\s*(hours?|days?|minutes?|weeks?|months?|years?)\s+ago/gi, '');
-                          cleanSnippet = cleanSnippet.replace(/^[.\s\u2026]+/g, '');
-                          cleanSnippet = cleanSnippet.replace(/^\.+/g, '');
-                          cleanSnippet = cleanSnippet.replace(/^[\s\u00A0]+/g, '');
-                          cleanSnippet = cleanSnippet.replace(/^\.{1,}/g, '');
-                          cleanSnippet = cleanSnippet.trim();
-                          
-                          return (
-                                <tr 
-                              key={linkKey}
-                                  className="border-b border-border hover:bg-muted/50 cursor-pointer"
-                                  onClick={async () => {
-                                    setSelectedDiscoveryPost(linkItem);
-                                    setIsDiscoveryDrawerVisible(true);
-                                    // Fetch full post data on-demand when drawer opens
-                                    await fetchFullPostDataForDrawer(linkItem);
-                                  }}
-                                >
+                                const linkKey = linkItem.uniqueKey;
+                                const isExpanded = expandedPosts.has(linkKey);
+
+                                // Clean snippet
+                                let cleanSnippet = link.snippet || '';
+                                cleanSnippet = cleanSnippet.replace(/\d+\s*(hours?|days?|minutes?|weeks?|months?|years?)\s+ago/gi, '');
+                                cleanSnippet = cleanSnippet.replace(/posted\s+\d+\s*(hours?|days?|minutes?|weeks?|months?|years?)\s+ago/gi, '');
+                                cleanSnippet = cleanSnippet.replace(/^[.\s\u2026]+/g, '');
+                                cleanSnippet = cleanSnippet.replace(/^\.+/g, '');
+                                cleanSnippet = cleanSnippet.replace(/^[\s\u00A0]+/g, '');
+                                cleanSnippet = cleanSnippet.replace(/^\.{1,}/g, '');
+                                cleanSnippet = cleanSnippet.trim();
+
+                                return (
+                                  <tr
+                                    key={linkKey}
+                                    className="border-b border-border hover:bg-muted/50 cursor-pointer"
+                                    onClick={async () => {
+                                      setSelectedDiscoveryPost(linkItem);
+                                      setIsDiscoveryDrawerVisible(true);
+                                      // Fetch full post data on-demand when drawer opens
+                                      await fetchFullPostDataForDrawer(linkItem);
+                                    }}
+                                  >
                                     {/* Checkbox column */}
                                     <td className="py-3 px-2 align-middle w-[40px]" onClick={(e) => e.stopPropagation()}>
                                       <div
@@ -6431,8 +6436,8 @@ function PlaygroundContent() {
                                         {selectedLeads.has(linkKey) && (
                                           <Check className="h-3 w-3 text-primary" />
                                         )}
-                                  </div>
-                                  </td>
+                                      </div>
+                                    </td>
                                     {/* Stats column */}
                                     <td className="py-3 px-2 align-middle w-[70px]">
                                       {link.postData ? (
@@ -6444,7 +6449,7 @@ function PlaygroundContent() {
                                                 ? `${(link.postData.ups / 1000).toFixed(1)}k`
                                                 : (link.postData.ups || 0)}
                                             </span>
-                                  </div>
+                                          </div>
                                           <div className="flex items-center gap-1.5">
                                             <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
                                             <span className="font-medium text-foreground">
@@ -6452,48 +6457,48 @@ function PlaygroundContent() {
                                                 ? `${(link.postData.num_comments / 1000).toFixed(1)}k`
                                                 : (link.postData.num_comments || 0)}
                                             </span>
-                                    </div>
+                                          </div>
                                         </div>
                                       ) : (
                                         <div className="text-xs text-muted-foreground">-</div>
-                                )}
-                                  </td>
-                                  
-                                  {/* Title column */}
+                                      )}
+                                    </td>
+
+                                    {/* Title column */}
                                     <td className="py-3 px-2 align-middle w-[250px]">
                                       <div className="text-sm font-medium text-foreground truncate" title={link.title || undefined}>
                                         {link.title?.replace(/\s*\[r\/[^\]]+\]\s*$/i, '').replace(/\s*\(r\/[^)]+\)\s*$/i, '').replace(/\s*r\/[^\s]+\s*$/i, '').replace(/:\s*$/, '').trim() || link.title}
-                                        </div>
-                                  </td>
-                                  
+                                      </div>
+                                    </td>
+
                                     {/* Subreddit column */}
                                     <td className="py-3 px-2 align-middle w-[120px]">
                                       {subreddit ? (
                                         <div className="text-xs text-muted-foreground">
                                           r/{subreddit}
-                                      </div>
-                                    ) : (
+                                        </div>
+                                      ) : (
                                         <div className="text-xs text-muted-foreground">-</div>
-                                )}
-                                  </td>
-                                  
+                                      )}
+                                    </td>
+
                                     {/* Date column */}
                                     <td className="py-3 px-2 align-middle w-[120px]">
                                       {link.postData?.created_utc ? (
                                         <div className="text-xs text-muted-foreground">
                                           {formatTimeAgo(link.postData.created_utc)}
-                                </div>
-                                    ) : (
+                                        </div>
+                                      ) : (
                                         <div className="text-xs text-muted-foreground">-</div>
-                                    )}
-                                  </td>
-                                  
-                                  {/* Actions column */}
+                                      )}
+                                    </td>
+
+                                    {/* Actions column */}
                                     <td className="py-3 px-2 align-middle w-[80px]">
                                       <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
                                         {link.link && (
-                                    <Button
-                                      size="sm"
+                                          <Button
+                                            size="sm"
                                             variant="outline"
                                             className="text-xs p-1.5 h-7 w-7"
                                             onClick={(e) => {
@@ -6501,26 +6506,26 @@ function PlaygroundContent() {
                                               window.open(link.link!, "_blank", "noopener,noreferrer");
                                             }}
                                             title="Visit link"
-                                  >
+                                          >
                                             <ExternalLink className="h-3 w-3" />
-                                      </Button>
+                                          </Button>
                                         )}
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
                                           className="text-xs p-1.5 h-7 w-7"
-                                        onClick={() => handleCloseClick(linkItem)}
-                                        title="Close"
-                                      >
+                                          onClick={() => handleCloseClick(linkItem)}
+                                          title="Close"
+                                        >
                                           <Trash2 className="h-3 w-3" />
-                                    </Button>
-                                  </div>
-                                  </td>
-                                </tr>
-                          );
-                        })}
-                          </tbody>
-                        </table>
+                                        </Button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                         {/* Pagination controls */}
                         {distinctLeadsLinks.length > 0 && (
@@ -6570,20 +6575,20 @@ function PlaygroundContent() {
                           </div>
                         )}
                       </div>
-                        </div>
-                      ) : (
+                    </div>
+                  ) : (
                     !isLoadingLeads && !Object.values(isLoadingLeadsLinks).some(Boolean) && (
-                          <div className="flex items-center justify-center min-h-[400px]">
-                          <p className="text-sm text-muted-foreground">
+                      <div className="flex items-center justify-center min-h-[400px]">
+                        <p className="text-sm text-muted-foreground">
                           {keywords && keywords.length > 0
                             ? "No leads found. Click 'Refresh Leads' to get started."
                             : "Please add keywords in the Product tab first, then search for leads."}
-                          </p>
-                          </div>
-                        )
-                )}
+                        </p>
+                      </div>
+                    )
+                  )}
+                </div>
               </div>
-            </div>
             </div>
           </div>
         );
@@ -6605,7 +6610,7 @@ function PlaygroundContent() {
                     Engagement
                   </h3>
                 </div>
-                
+
                 {/* Filter tabs */}
                 {(() => {
                   // Calculate counts for each category
@@ -6616,7 +6621,7 @@ function PlaygroundContent() {
                   const messages = inboxMessages.filter((item) => {
                     return item.data.kind === "t4";
                   });
-                  
+
                   return (
                     <div className="flex items-center gap-2 mt-3 border-b border-border">
                       <button
@@ -6656,7 +6661,7 @@ function PlaygroundContent() {
                   );
                 })()}
               </div>
-              
+
               {/* Content area that spans remaining space */}
               <div className={cn(
                 "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
@@ -6674,7 +6679,7 @@ function PlaygroundContent() {
                     // Organize messages by type
                     const notifications: any[] = [];
                     const messages: any[] = [];
-                    
+
                     inboxMessages.forEach((item) => {
                       const message = item.data;
                       // t1 = comment reply, t3 = post reply (notifications)
@@ -6688,20 +6693,20 @@ function PlaygroundContent() {
                         notifications.push(item);
                       }
                     });
-                    
-                    const filteredMessages = engagementFilter === "all" 
-                      ? inboxMessages 
-                      : engagementFilter === "notifications" 
-                        ? notifications 
+
+                    const filteredMessages = engagementFilter === "all"
+                      ? inboxMessages
+                      : engagementFilter === "notifications"
+                        ? notifications
                         : messages;
-                    
+
                     if (filteredMessages.length === 0) {
                       return (
                         <div className="flex items-center justify-center h-full">
                           <div className="text-center">
                             <p className="text-muted-foreground">
-                              {engagementFilter === "all" 
-                                ? "No messages in your inbox" 
+                              {engagementFilter === "all"
+                                ? "No messages in your inbox"
                                 : engagementFilter === "notifications"
                                   ? "No notifications"
                                   : "No private messages"}
@@ -6710,7 +6715,7 @@ function PlaygroundContent() {
                         </div>
                       );
                     }
-                    
+
                     return (
                       <div className="space-y-3">
                         {filteredMessages.map((item, index) => {
@@ -6718,7 +6723,7 @@ function PlaygroundContent() {
                           const isComment = message.kind === "t1";
                           const isPostReply = message.kind === "t3";
                           const isPrivateMessage = message.kind === "t4";
-                          
+
                           // Determine message type label
                           let messageType = "Message";
                           let messageIcon = MessageSquare;
@@ -6729,7 +6734,7 @@ function PlaygroundContent() {
                           } else if (isPrivateMessage) {
                             messageType = "Private Message";
                           }
-                          
+
                           return (
                             <div
                               key={message.id || index}
@@ -6748,31 +6753,31 @@ function PlaygroundContent() {
                                       </span>
                                     )}
                                   </div>
-                                  
+
                                   {message.subject && (
                                     <h4 className="text-sm font-semibold text-foreground mb-1 truncate">
                                       {message.subject}
                                     </h4>
                                   )}
-                                  
+
                                   {message.body && (
                                     <p className="text-sm text-muted-foreground line-clamp-3 mb-2">
                                       {message.body}
                                     </p>
                                   )}
-                                  
+
                                   {message.author && (
                                     <p className="text-xs text-muted-foreground mb-1">
                                       From: <span className="font-medium">u/{message.author}</span>
                                     </p>
                                   )}
-                                  
+
                                   {message.created_utc && (
                                     <p className="text-xs text-muted-foreground">
                                       {new Date(message.created_utc * 1000).toLocaleString()}
                                     </p>
                                   )}
-                                  
+
                                   {message.context && (
                                     <a
                                       href={`https://www.reddit.com${message.context}`}
@@ -6814,15 +6819,15 @@ function PlaygroundContent() {
                   <h3 className="text-lg font-semibold">
                     Feedback
                   </h3>
-            </div>
-            </div>
-              
+                </div>
+              </div>
+
               {/* Content area that spans remaining space */}
               <div className={cn(
                 "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
                 !sidebarOpen && "pl-14"
               )}>
-          <div className="space-y-6 px-1">
+                <div className="space-y-6 px-1">
                   {feedbackSubmitted ? (
                     <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 p-6">
                       <CheckCircle2 className="h-12 w-12 text-emerald-500 mb-4" />
@@ -6839,7 +6844,7 @@ function PlaygroundContent() {
                       >
                         Submit Another Feedback
                       </Button>
-            </div>
+                    </div>
                   ) : (
                     <div className="space-y-4">
                       <form
@@ -6891,7 +6896,7 @@ function PlaygroundContent() {
                             disabled={isSubmittingFeedback}
                             required
                           />
-            </div>
+                        </div>
                         <div className="flex items-center justify-start gap-3">
                           <Button
                             type="submit"
@@ -6906,9 +6911,9 @@ function PlaygroundContent() {
                               "Submit Feedback"
                             )}
                           </Button>
-          </div>
+                        </div>
                       </form>
-            </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -6933,16 +6938,16 @@ function PlaygroundContent() {
 
   return (
     <>
-    <div className="flex h-full flex-col">
-      {activeTab === "dashboard" ? (
-        renderContent()
-      ) : (
-        <div className={cn(
-          "flex-1 overflow-y-auto",
-          sidebarOpen ? "p-6" : "p-6 pl-14 pt-14"
-        )}>{renderContent()}</div>
-      )}
-    </div>
+      <div className="flex h-full flex-col">
+        {activeTab === "dashboard" ? (
+          renderContent()
+        ) : (
+          <div className={cn(
+            "flex-1 overflow-y-auto",
+            sidebarOpen ? "p-6" : "p-6 pl-14 pt-14"
+          )}>{renderContent()}</div>
+        )}
+      </div>
       {selectedAnalyticsPost && (
         <>
           <div
@@ -7147,17 +7152,17 @@ function PlaygroundContent() {
                     </div>
                   </div>
                   <div className="border border-border rounded-md p-1">
-                  <textarea
-                    value={postTextareas[selectedDiscoveryPost.uniqueKey] || ""}
-                    onChange={(e) => {
-                      setPostTextareas((prev) => ({
-                        ...prev,
-                        [selectedDiscoveryPost.uniqueKey]: e.target.value,
-                      }));
-                    }}
-                    placeholder="Add comment..."
+                    <textarea
+                      value={postTextareas[selectedDiscoveryPost.uniqueKey] || ""}
+                      onChange={(e) => {
+                        setPostTextareas((prev) => ({
+                          ...prev,
+                          [selectedDiscoveryPost.uniqueKey]: e.target.value,
+                        }));
+                      }}
+                      placeholder="Add comment..."
                       className="w-full min-h-[160px] bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none resize-none"
-                  />
+                    />
                     <Button
                       size="sm"
                       variant="secondary"
@@ -7174,8 +7179,8 @@ function PlaygroundContent() {
                       )}
                     </Button>
 
+                  </div>
                 </div>
-              </div>
               </div>
               <div className="border-t border-border bg-card px-4 py-3 flex items-center justify-end gap-3 sticky bottom-0">
                 <Button
@@ -7194,7 +7199,7 @@ function PlaygroundContent() {
                   onClick={async () => {
                     const success = await handlePostClick(selectedDiscoveryPost);
                     if (success) {
-                    setIsDiscoveryDrawerVisible(false);
+                      setIsDiscoveryDrawerVisible(false);
                     }
                   }}
                   disabled={isPosting[selectedDiscoveryPost.uniqueKey] || !postTextareas[selectedDiscoveryPost.uniqueKey]?.trim()}
@@ -7357,52 +7362,52 @@ function PlaygroundContent() {
                   </div>
                   <div className="divide-y divide-border">
                     {bulkModalLeads.map((leadItem) => {
-                        const status = bulkOperationStatus[leadItem.uniqueKey] || "haven't started";
-                        const cleanedTitle = (leadItem.title || "")
-                          .replace(/\[r\/[^\]]+\]/gi, '')
-                          .replace(/\(r\/[^)]+\)/gi, '')
-                          .replace(/r\/[^\s]+/gi, '')
-                          .replace(/:\s*$/, '')
-                          .trim();
-                        
-                        return (
-                          <div key={leadItem.uniqueKey} className="flex items-center justify-between px-3 h-12">
-                            <div className="flex-1 min-w-0 pr-3">
-                              <p className="text-xs font-medium text-foreground truncate" title={cleanedTitle}>
-                                {cleanedTitle || "Untitled"}
-                              </p>
-                            </div>
-                            <div className="shrink-0 w-[80px] flex justify-center">
-                              <div className="text-left">
-                                {status === "generating" || status === "posting" ? (
-                                  <Loader2 className="h-4 w-4 animate-spin text-primary inline-block" />
-                                ) : status === "completed" ? (
-                                  <CheckCircle2 className="h-4 w-4 text-green-500 inline-block" />
-                                ) : status === "error" ? (
-                                  <X className="h-4 w-4 text-red-500 inline-block" />
-                                ) : status === "haven't started" ? (
-                                  <Circle className="h-4 w-4 text-muted-foreground inline-block" />
-                                ) : (
-                                  <div className="h-4 w-4 inline-block" />
-                                )}
-                              </div>
-                            </div>
-                            <div className="shrink-0 w-[60px] text-center">
-                              {leadItem.link ? (
-                                <button
-                                  onClick={() => window.open(leadItem.link || '', '_blank')}
-                                  className="hover:scale-110 transition-transform cursor-pointer text-muted-foreground hover:text-foreground"
-                                  title="Open link"
-                                >
-                                  <ExternalLink className="h-4 w-4" />
-                                </button>
+                      const status = bulkOperationStatus[leadItem.uniqueKey] || "haven't started";
+                      const cleanedTitle = (leadItem.title || "")
+                        .replace(/\[r\/[^\]]+\]/gi, '')
+                        .replace(/\(r\/[^)]+\)/gi, '')
+                        .replace(/r\/[^\s]+/gi, '')
+                        .replace(/:\s*$/, '')
+                        .trim();
+
+                      return (
+                        <div key={leadItem.uniqueKey} className="flex items-center justify-between px-3 h-12">
+                          <div className="flex-1 min-w-0 pr-3">
+                            <p className="text-xs font-medium text-foreground truncate" title={cleanedTitle}>
+                              {cleanedTitle || "Untitled"}
+                            </p>
+                          </div>
+                          <div className="shrink-0 w-[80px] flex justify-center">
+                            <div className="text-left">
+                              {status === "generating" || status === "posting" ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-primary inline-block" />
+                              ) : status === "completed" ? (
+                                <CheckCircle2 className="h-4 w-4 text-green-500 inline-block" />
+                              ) : status === "error" ? (
+                                <X className="h-4 w-4 text-red-500 inline-block" />
+                              ) : status === "haven't started" ? (
+                                <Circle className="h-4 w-4 text-muted-foreground inline-block" />
                               ) : (
-                                <span className="text-xs text-muted-foreground">—</span>
+                                <div className="h-4 w-4 inline-block" />
                               )}
                             </div>
                           </div>
-                        );
-                      })}
+                          <div className="shrink-0 w-[60px] text-center">
+                            {leadItem.link ? (
+                              <button
+                                onClick={() => window.open(leadItem.link || '', '_blank')}
+                                className="hover:scale-110 transition-transform cursor-pointer text-muted-foreground hover:text-foreground"
+                                title="Open link"
+                              >
+                                <ExternalLink className="h-4 w-4" />
+                              </button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -7423,7 +7428,7 @@ function PlaygroundContent() {
                     const failedCount = Object.values(bulkOperationStatus).filter(status => status === "error").length;
                     const allCompleted = Object.values(bulkOperationStatus).every(status => status === "completed" || status === "error");
                     const hasErrors = failedCount > 0;
-                    
+
                     return (
                       <>
                         {hasErrors && !isBulkPosting && (
@@ -7436,37 +7441,37 @@ function PlaygroundContent() {
                             Retry Failed ({failedCount})
                           </Button>
                         )}
-                <Button
-                  variant="default"
-                  onClick={() => {
-                    if (isBulkPosting) {
-                      // If posting is in progress, do nothing (button is disabled)
-                      return;
-                    }
-                    if (allCompleted && Object.keys(bulkOperationStatus).length > 0) {
-                      // Close modal if all are completed
-                      setIsBulkOperationsModalOpen(false);
-                      // Reset states
-                      setBulkOperationStatus({});
-                      setBulkGeneratedComments({});
-                      setIsBulkPosting(false);
-                    } else {
-                      // Start posting
-                      handleBulkComment();
-                    }
-                  }}
-                  disabled={isBulkPosting}
-                >
-                  {(() => {
-                    if (allCompleted && Object.keys(bulkOperationStatus).length > 0) {
-                      return "Close";
-                    }
-                    if (isBulkPosting) {
-                      return "Posting...";
-                    }
-                    return "Post Comment";
-                  })()}
-                </Button>
+                        <Button
+                          variant="default"
+                          onClick={() => {
+                            if (isBulkPosting) {
+                              // If posting is in progress, do nothing (button is disabled)
+                              return;
+                            }
+                            if (allCompleted && Object.keys(bulkOperationStatus).length > 0) {
+                              // Close modal if all are completed
+                              setIsBulkOperationsModalOpen(false);
+                              // Reset states
+                              setBulkOperationStatus({});
+                              setBulkGeneratedComments({});
+                              setIsBulkPosting(false);
+                            } else {
+                              // Start posting
+                              handleBulkComment();
+                            }
+                          }}
+                          disabled={isBulkPosting}
+                        >
+                          {(() => {
+                            if (allCompleted && Object.keys(bulkOperationStatus).length > 0) {
+                              return "Close";
+                            }
+                            if (isBulkPosting) {
+                              return "Posting...";
+                            }
+                            return "Post Comment";
+                          })()}
+                        </Button>
                       </>
                     );
                   })()}
@@ -7487,8 +7492,8 @@ function PlaygroundContent() {
               <div className="border-b border-border px-6 py-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xl font-semibold text-foreground">
-                    {upgradeModalContext.limitReached 
-                      ? "Weekly Limit Reached" 
+                    {upgradeModalContext.limitReached
+                      ? "Weekly Limit Reached"
                       : "Running Low on Posts"}
                   </h3>
                   <button
@@ -7512,7 +7517,7 @@ function PlaygroundContent() {
                     </p>
                   )}
                 </div>
-                
+
                 <div className="grid gap-6 md:grid-cols-2 mb-6">
                   <div className="flex h-full flex-col gap-4 rounded-xl border border-border bg-muted/30 p-6 text-left">
                     <div>
@@ -7577,7 +7582,7 @@ function PlaygroundContent() {
                         }
 
                         try {
-                        setShowUpgradeModal(false);
+                          setShowUpgradeModal(false);
                           const response = await fetch("/api/stripe/create-checkout-session", {
                             method: "POST",
                           });
@@ -7737,7 +7742,7 @@ export default function PlaygroundPage() {
           </div>
         </div>
       }>
-      <PlaygroundContent />
+        <PlaygroundContent />
       </Suspense>
     </PlaygroundLayout>
   );
