@@ -52,6 +52,34 @@ const safeSetLocalStorage = (key: string, value: any, onError?: () => void) => {
             : links,
         ])
       );
+    } else if (key === "leadsLinks" && typeof value === "object") {
+      // For leadsLinks, only store minimal data needed for table display
+      // Full post data (selftext, full postData) will be fetched on-demand when drawer opens
+      dataToStore = Object.fromEntries(
+        Object.entries(value).map(([keyword, links]: [string, any]) => [
+          keyword,
+          Array.isArray(links)
+            ? links.map((link: any) => {
+                // Only store minimal postData needed for table (ups, num_comments, created_utc, name)
+                const minimalPostData = link.postData ? {
+                  ups: link.postData.ups || 0,
+                  num_comments: link.postData.num_comments || 0,
+                  created_utc: link.postData.created_utc || null,
+                  name: link.postData.name || null, // Needed for posting comments
+                } : null;
+                
+                return {
+                  title: link.title,
+                  link: link.link,
+                  snippet: link.snippet || null, // Keep snippet as fallback
+                  // Don't store selftext or full postData - fetch on-demand
+                  selftext: null,
+                  postData: minimalPostData,
+                };
+              })
+            : links,
+        ])
+      );
     }
     
     localStorage.setItem(key, JSON.stringify(dataToStore));
@@ -75,7 +103,6 @@ const safeSetLocalStorage = (key: string, value: any, onError?: () => void) => {
             // Try to save the trimmed version
             try {
               localStorage.setItem(key, JSON.stringify(trimmed));
-              console.log(`Cleared old queries, kept only the most recent 5`);
               // Now try to save the new data again (but it might still fail)
               if (value && typeof value === "object") {
                 const minimalData = Object.fromEntries(
@@ -304,7 +331,7 @@ function PlaygroundContent() {
   const toastHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showCheckoutSuccessModal, setShowCheckoutSuccessModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [upgradeModalContext, setUpgradeModalContext] = useState<{ limitReached?: boolean; remaining?: number } | null>(null);
+  const [upgradeModalContext, setUpgradeModalContext] = useState<{ limitReached?: boolean; remaining?: number; selectedCount?: number; maxCount?: number } | null>(null);
   const generatedCommentUrlsRef = useRef<Set<string>>(new Set());
   const generatingCommentUrlsRef = useRef<Set<string>>(new Set());
   const restoredCommentsRef = useRef<Set<string>>(new Set());
@@ -377,6 +404,7 @@ function PlaygroundContent() {
   const [bulkGeneratedComments, setBulkGeneratedComments] = useState<Record<string, string>>({});
   const [bulkModalLeads, setBulkModalLeads] = useState<Array<typeof distinctLeadsLinks[number]>>([]);
   const [bulkModalInitialCount, setBulkModalInitialCount] = useState(0);
+  const [isAutoPilot, setIsAutoPilot] = useState(false);
   const LEADS_ITEMS_PER_PAGE = 20;
 
   const analyticsUrlSet = useMemo(() => {
@@ -441,18 +469,8 @@ function PlaygroundContent() {
           if (response.ok) {
             const data = await response.json();
             setIsRedditConnected(data.connected);
-            console.log("🔗 Reddit Connection Status Check:", {
-              connected: data.connected,
-              hasAccessToken: data.hasAccessToken,
-              hasRefreshToken: data.hasRefreshToken,
-              user: session.user.email
-            });
           } else {
             setIsRedditConnected(false);
-            console.log("🔗 Reddit Connection Status Check: Failed to fetch status", {
-              status: response.status,
-              user: session.user.email
-            });
           }
         } catch (error) {
           console.error("🔗 Error checking Reddit connection status:", error);
@@ -807,6 +825,58 @@ function PlaygroundContent() {
       }
     }
 
+    // Clean up old cache entries to reduce localStorage usage
+    // This runs once to convert old full RedditPost objects to minimal format
+    try {
+      const cachePrefix = "redditPost_";
+      const keysToClean: string[] = [];
+      
+      // Find all cache keys
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(cachePrefix)) {
+          keysToClean.push(key);
+        }
+      }
+      
+      // Clean up each cache entry
+      keysToClean.forEach((key) => {
+        try {
+          const cached = localStorage.getItem(key);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed.postData && typeof parsed.postData === 'object') {
+              // Check if it's the old format (has many fields)
+              const hasOldFormat = parsed.postData.approved_at_utc !== undefined || 
+                                   parsed.postData.subreddit !== undefined ||
+                                   parsed.postData.author_fullname !== undefined;
+              
+              if (hasOldFormat) {
+                // Convert to minimal format
+                const minimalPostData = {
+                  ups: parsed.postData.ups || 0,
+                  num_comments: parsed.postData.num_comments || 0,
+                  created_utc: parsed.postData.created_utc || null,
+                  name: parsed.postData.name || null,
+                };
+                
+                const cleanedData = {
+                  selftext: parsed.selftext || null,
+                  postData: minimalPostData,
+                };
+                
+                localStorage.setItem(key, JSON.stringify(cleanedData));
+              }
+            }
+          }
+        } catch (e) {
+          console.error(`Error cleaning cache entry ${key}:`, e);
+        }
+      });
+    } catch (e) {
+      console.error("Error cleaning cache entries:", e);
+    }
+
     // Load saved leads links - only if they belong to the current user
     const savedLeadsLinks = localStorage.getItem("leadsLinks");
     const savedLeadsUserEmail = localStorage.getItem("leadsLinksUserEmail");
@@ -815,13 +885,11 @@ function PlaygroundContent() {
     if (savedLeadsLinks) {
       // If there's a stored email and it doesn't match the current user, clear the leads data
       if (savedLeadsUserEmail && currentUserEmail && savedLeadsUserEmail !== currentUserEmail) {
-        console.log("Clearing leads data from previous user:", savedLeadsUserEmail, "Current user:", currentUserEmail);
         localStorage.removeItem("leadsLinks");
         localStorage.removeItem("leadsLinksUserEmail");
         setLeadsLinks({});
       } else if (!savedLeadsUserEmail && currentUserEmail) {
         // If there's no stored email but we have a current user, clear old data (from before we tracked emails)
-        console.log("Clearing leads data from before email tracking was implemented");
         localStorage.removeItem("leadsLinks");
         setLeadsLinks({});
       } else {
@@ -830,13 +898,12 @@ function PlaygroundContent() {
         // 2. Both are null/undefined (not authenticated yet or session not loaded)
         // 3. We have saved email but current email is not yet loaded (session loading) - wait for session to load
         if (savedLeadsUserEmail === currentUserEmail || (!savedLeadsUserEmail && !currentUserEmail)) {
-          try {
-            const leads = JSON.parse(savedLeadsLinks);
-            console.log(`[LEADS LOAD] Loading ${Object.keys(leads).length} keyword entries from localStorage`);
-            setLeadsLinks(leads);
-          } catch (e) {
-            console.error("Failed to parse saved leads links:", e);
-          }
+        try {
+          const leads = JSON.parse(savedLeadsLinks);
+          setLeadsLinks(leads);
+        } catch (e) {
+          console.error("Failed to parse saved leads links:", e);
+        }
         }
         // If savedLeadsUserEmail exists but currentUserEmail is undefined, we'll wait for session to load
         // The useEffect will re-run when session?.user?.email changes
@@ -1166,10 +1233,6 @@ function PlaygroundContent() {
       }
 
       if (data.results && Array.isArray(data.results)) {
-        // Log keyword and all results found
-        console.log(`[KEYWORD SEARCH] Keyword: "${keyword}" | Results found: ${data.results.length}`);
-        console.log(`[KEYWORD RESULTS] Keyword: "${keyword}" | Results:`, data.results);
-
         // Read current leads state
         let currentLeadsState: Record<string, Array<any>> = {};
         try {
@@ -1186,38 +1249,31 @@ function PlaygroundContent() {
           // Always use prev (most up-to-date React state) for merging
           // Only fallback to localStorage state if prev is completely empty (initial state)
           const currentState = Object.keys(prev).length > 0 ? prev : currentLeadsState;
-          
-          // Merge new results with existing results for this keyword, avoiding duplicates
+
+        // Merge new results with existing results for this keyword, avoiding duplicates
           const existingLinksForKeyword = currentState[keyword] || [];
-          const existingLinkUrls = new Set(existingLinksForKeyword.map((link: any) => link.link).filter(Boolean));
+        const existingLinkUrls = new Set(existingLinksForKeyword.map((link: any) => link.link).filter(Boolean));
 
-          // Only add new links that don't already exist (by URL)
-          const newLinks = data.results.filter((link: any) => link.link && !existingLinkUrls.has(link.link));
+        // Only add new links that don't already exist (by URL)
+        const newLinks = data.results.filter((link: any) => link.link && !existingLinkUrls.has(link.link));
 
-          // Log each lead with its keyword
-          newLinks.forEach((link: any) => {
-            console.log(`[LEAD] Keyword: "${keyword}" | Title: "${link.title || 'N/A'}" | URL: ${link.link}`);
-          });
+        const mergedLinksForKeyword = [...existingLinksForKeyword, ...newLinks];
 
-          const mergedLinksForKeyword = [...existingLinksForKeyword, ...newLinks];
-
-          const updated = {
+        const updated = {
             ...currentState,
-            [keyword]: mergedLinksForKeyword,
-          };
+          [keyword]: mergedLinksForKeyword,
+        };
 
-          // Save to localStorage using safe function
-          safeSetLocalStorage("leadsLinks", updated);
-          // Also save the current user's email to associate leads data with the user
-          if (session?.user?.email) {
-            try {
-              localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
-            } catch (e) {
-              console.error("Error saving leadsLinksUserEmail:", e);
-            }
+        // Save to localStorage using safe function
+        safeSetLocalStorage("leadsLinks", updated);
+        // Also save the current user's email to associate leads data with the user
+        if (session?.user?.email) {
+          try {
+            localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
+          } catch (e) {
+            console.error("Error saving leadsLinksUserEmail:", e);
           }
-          // Log summary for this keyword
-          console.log(`[LEAD SUMMARY] Keyword: "${keyword}" | Total leads found: ${mergedLinksForKeyword.length} | New leads: ${newLinks.length}`);
+        }
           return updated;
         });
       }
@@ -1228,7 +1284,8 @@ function PlaygroundContent() {
     }
   };
 
-  // Batch fetch post content for leads
+  // Batch fetch minimal post stats for leads table (ups, num_comments, created_utc)
+  // Full post data (selftext, full postData) will be fetched on-demand when drawer opens
   const batchFetchLeadsPostContent = async () => {
     let currentState: Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>> = {};
 
@@ -1244,39 +1301,39 @@ function PlaygroundContent() {
 
     const allPostsNeedingFetch: Array<{ url: string; keyword: string; linkIndex: number; postFullname: string }> = [];
 
-    // Collect all posts that need fetching (excluding cached ones)
+    // Collect all posts that need minimal stats (only if postData is missing or incomplete)
     Object.entries(currentState).forEach(([keyword, links]) => {
       links.forEach((link, index) => {
-        if (link.link && !link.selftext && !link.postData) {
-          // Check cache first
+        if (link.link) {
+          // Only fetch if we don't have minimal stats (ups, num_comments, created_utc)
+          const hasMinimalStats = link.postData && 
+            (link.postData.ups !== undefined || link.postData.num_comments !== undefined || link.postData.created_utc !== undefined);
+          
+          if (!hasMinimalStats) {
+            // Check cache first for minimal stats
           const cached = getCachedPost(link.link);
-          if (cached && (cached.selftext || cached.postData)) {
-            // Update from cache
+            if (cached && cached.postData) {
+              // Extract minimal stats from cache
+              const minimalPostData = {
+                ups: cached.postData.ups || 0,
+                num_comments: cached.postData.num_comments || 0,
+                created_utc: cached.postData.created_utc || null,
+                name: cached.postData.name || null, // Needed for posting comments
+              };
+              
+              // Update state with minimal stats only (don't save selftext or full postData)
             setLeadsLinks((prev) => {
               const updated = { ...prev };
               if (updated[keyword] && updated[keyword][index]) {
                 updated[keyword][index] = {
                   ...updated[keyword][index],
-                  selftext: cached.selftext,
-                  postData: cached.postData,
-                };
-              }
-              try {
-                localStorage.setItem("leadsLinks", JSON.stringify(updated));
-                // Also save the current user's email to associate leads data with the user
-                if (session?.user?.email) {
-                  try {
-                    localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
-                  } catch (e) {
-                    console.error("Error saving leadsLinksUserEmail:", e);
-                  }
+                    postData: minimalPostData as RedditPost,
+                  };
                 }
-              } catch (e) {
-                console.error("Error saving leadsLinks to localStorage:", e);
-              }
+                safeSetLocalStorage("leadsLinks", updated);
               return updated;
             });
-            return; // Skip this post, already cached
+              return; // Skip this post, already has stats
           }
 
           const urlMatch = link.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
@@ -1285,6 +1342,7 @@ function PlaygroundContent() {
             const postFullname = `t3_${postId}`;
             allPostsNeedingFetch.push({ url: link.link, keyword, linkIndex: index, postFullname });
             setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [link.link!]: true }));
+            }
           }
         }
       });
@@ -1331,17 +1389,26 @@ function PlaygroundContent() {
             if (postInfo) {
               const { url, keyword, linkIndex } = postInfo;
 
-              // Cache the post
+              // Cache the full post (for on-demand fetching when drawer opens)
               cachePost(url, { selftext: post.selftext || null, postData: post });
 
-              // Update state
+              // Only save minimal stats to state (ups, num_comments, created_utc, name)
+              // Full postData and selftext are cached but not saved to leadsLinks
+              const minimalPostData = {
+                ups: post.ups || 0,
+                num_comments: post.num_comments || 0,
+                created_utc: post.created_utc || null,
+                name: post.name || null, // Needed for posting comments
+              };
+
+              // Update state with minimal stats only
               setLeadsLinks((prev) => {
                 const updated = { ...prev };
                 if (updated[keyword] && updated[keyword][linkIndex]) {
                   updated[keyword][linkIndex] = {
                     ...updated[keyword][linkIndex],
-                    selftext: post.selftext || null,
-                    postData: post,
+                    // Don't save selftext or full postData - only minimal stats
+                    postData: minimalPostData as RedditPost,
                   };
                 }
                 safeSetLocalStorage("leadsLinks", updated);
@@ -1378,17 +1445,24 @@ function PlaygroundContent() {
                   const redditData = await redditResponse.json();
                   const post: RedditPost = redditData.post;
 
-                  // Cache the post
+                  // Cache the full post (for on-demand fetching when drawer opens)
                   cachePost(url, { selftext: post.selftext || null, postData: post });
 
-                  // Update state
+                  // Only save minimal stats to state (ups, num_comments, created_utc)
+                  const minimalPostData = {
+                    ups: post.ups || 0,
+                    num_comments: post.num_comments || 0,
+                    created_utc: post.created_utc || null,
+                  };
+
+                  // Update state with minimal stats only
                   setLeadsLinks((prev) => {
                     const updated = { ...prev };
                     if (updated[keyword] && updated[keyword][linkIndex]) {
                       updated[keyword][linkIndex] = {
                         ...updated[keyword][linkIndex],
-                        selftext: post.selftext || null,
-                        postData: post,
+                        // Don't save selftext or full postData - only minimal stats
+                        postData: minimalPostData as RedditPost,
                       };
                     }
                     safeSetLocalStorage("leadsLinks", updated);
@@ -1422,15 +1496,23 @@ function PlaygroundContent() {
                 const redditData = await redditResponse.json();
                 const post: RedditPost = redditData.post;
 
+                // Cache the full post (for on-demand fetching when drawer opens)
                 cachePost(url, { selftext: post.selftext || null, postData: post });
+
+                // Only save minimal stats to state (ups, num_comments, created_utc)
+                const minimalPostData = {
+                  ups: post.ups || 0,
+                  num_comments: post.num_comments || 0,
+                  created_utc: post.created_utc || null,
+                };
 
                 setLeadsLinks((prev) => {
                   const updated = { ...prev };
                   if (updated[keyword] && updated[keyword][linkIndex]) {
                     updated[keyword][linkIndex] = {
                       ...updated[keyword][linkIndex],
-                      selftext: post.selftext || null,
-                      postData: post,
+                      // Don't save selftext or full postData - only minimal stats
+                      postData: minimalPostData as RedditPost,
                     };
                   }
                   safeSetLocalStorage("leadsLinks", updated);
@@ -1457,7 +1539,7 @@ function PlaygroundContent() {
   };
 
   // Fetch leads from subreddits for a keyword
-  const fetchLeadsFromSubreddits = async (keyword: string, subredditsList: string[]) => {
+  const fetchLeadsFromSubreddits = async (keyword: string, subredditsList: string[], limit: number = 15) => {
     if (!subredditsList || subredditsList.length === 0) {
       return;
     }
@@ -1472,7 +1554,7 @@ function PlaygroundContent() {
           body: JSON.stringify({
             keyword: keyword,
             subreddit: subreddit,
-            limit: 15,
+            limit: limit,
           }),
         });
 
@@ -1484,8 +1566,6 @@ function PlaygroundContent() {
 
         const data = await response.json();
         if (data.results && Array.isArray(data.results)) {
-          console.log(`[SUBREDDIT SEARCH] Keyword: "${keyword}" | Subreddit: r/${subreddit} | Results: ${data.results.length}`);
-          
           // Read current leads state
           let currentLeadsState: Record<string, Array<any>> = {};
           try {
@@ -1504,7 +1584,7 @@ function PlaygroundContent() {
           const existingLinksForKey = currentLeadsState[keywordSubredditKey] || [];
           const existingLinkUrls = new Set(existingLinksForKey.map((link: any) => link.link).filter(Boolean));
           const newLinks = data.results.filter((link: any) => link.link && !existingLinkUrls.has(link.link));
-          
+
           // Use functional state update to avoid race conditions when multiple fetches run in parallel
           setLeadsLinks((prev) => {
             // Always use prev (most up-to-date React state) for merging
@@ -1519,22 +1599,20 @@ function PlaygroundContent() {
 
             const mergedLinks = [...currentExistingLinks, ...latestNewLinks];
 
-            const updated = {
+          const updated = {
               ...currentState,
-              [keywordSubredditKey]: mergedLinks,
-            };
+            [keywordSubredditKey]: mergedLinks,
+          };
 
-            // Save to localStorage
-            safeSetLocalStorage("leadsLinks", updated);
-            if (session?.user?.email) {
-              try {
-                localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
-              } catch (e) {
-                console.error("Error saving leadsLinksUserEmail:", e);
-              }
+          // Save to localStorage
+          safeSetLocalStorage("leadsLinks", updated);
+          if (session?.user?.email) {
+            try {
+              localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
+            } catch (e) {
+              console.error("Error saving leadsLinksUserEmail:", e);
             }
-            // Log summary for this subreddit
-            console.log(`[SUBREDDIT SUMMARY] Keyword: "${keyword}" | Subreddit: r/${subreddit} | Total: ${mergedLinks.length} | New: ${latestNewLinks.length}`);
+          }
             return updated;
           });
           return newLinks;
@@ -1547,6 +1625,293 @@ function PlaygroundContent() {
     });
 
     await Promise.all(subredditPromises);
+  };
+
+  // Handle auto-pilot: clear leads and refresh with 2-hour filter
+  const handleAutoPilot = async () => {
+    // Clear the leads table
+    setLeadsLinks({});
+    setSelectedLeads(new Set());
+    setLeadsPage(1);
+    
+    // Clear from localStorage
+    try {
+      localStorage.removeItem("leadsLinks");
+    } catch (e) {
+      console.error("Error clearing leads from localStorage:", e);
+    }
+
+    // Run refresh leads
+    if (!keywords || keywords.length === 0) {
+      setShowNoKeywordsModal(true);
+      setIsLoadingLeads(false);
+      return;
+    }
+
+    setIsLoadingLeads(true);
+
+    try {
+      // Fetch Reddit links for each keyword via Google Search
+      const googleSearchPromises = keywords.map((keyword) => {
+        return fetchLeadsForKeyword(keyword, 50);
+      });
+
+      // Fetch Reddit links from subreddits for each keyword
+      const subredditSearchPromises: Promise<void>[] = [];
+      if (subreddits && subreddits.length > 0) {
+        keywords.forEach((keyword) => {
+          subredditSearchPromises.push(fetchLeadsFromSubreddits(keyword, subreddits, 30));
+        });
+      }
+
+      // Run both Google search and subreddit search in parallel
+      await Promise.all([...googleSearchPromises, ...subredditSearchPromises]);
+
+      await batchFetchLeadsPostContent();
+      
+      // Wait a bit longer for all post data to be fetched and state updated
+      setTimeout(async () => {
+          // Filter to only posts from the past 2 hours
+          const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60); // 2 hours in seconds
+          
+          // Get current state
+          let currentState: Record<string, Array<any>> = {};
+          try {
+            const saved = localStorage.getItem("leadsLinks");
+            if (saved) {
+              currentState = JSON.parse(saved);
+            } else {
+              currentState = leadsLinks;
+            }
+          } catch (e) {
+            console.error("Error reading leadsLinks:", e);
+            currentState = leadsLinks;
+          }
+          
+          // First filter by time (5 hours)
+          const timeFiltered: Record<string, Array<any>> = {};
+          const allPostsForFiltering: Array<{ link: any; keyword: string; index: number }> = [];
+          
+          Object.entries(currentState).forEach(([keyword, links]) => {
+            const filteredLinks = links.filter((link: any) => {
+              // Only keep posts that have postData with created_utc within past 2 hours
+              if (link.postData && typeof link.postData.created_utc === 'number') {
+                return link.postData.created_utc >= twoHoursAgo;
+              }
+              // Remove posts without postData (they're likely old or failed to fetch)
+              return false;
+            });
+            
+            if (filteredLinks.length > 0) {
+              timeFiltered[keyword] = filteredLinks;
+              // Collect all posts for filtering
+              filteredLinks.forEach((link: any, index: number) => {
+                allPostsForFiltering.push({ link, keyword, index });
+              });
+            }
+          });
+          
+          // If no posts after time filtering, exit early
+          // Count unique posts by URL (what will actually be displayed)
+          const uniqueUrls = new Set<string>();
+          Object.values(timeFiltered).forEach((links) => {
+            links.forEach((link: any) => {
+              if (link.link) {
+                uniqueUrls.add(normalizeUrl(link.link));
+              }
+            });
+          });
+          
+          if (allPostsForFiltering.length === 0) {
+            setLeadsLinks({});
+            safeSetLocalStorage("leadsLinks", {});
+            setIsLoadingLeads(false);
+            return;
+          }
+          
+          // Collect posts that need selftext fetching
+          const postsNeedingFetch: Array<{ url: string; postFullname: string }> = [];
+          
+          allPostsForFiltering.forEach(({ link }) => {
+            if (!link.link) return;
+            
+            const cached = getCachedPost(link.link);
+            const hasSelftext = cached && cached.selftext !== undefined;
+            
+            if (!hasSelftext) {
+              const urlMatch = link.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
+              if (urlMatch) {
+                const [, , postId] = urlMatch;
+                const postFullname = `t3_${postId}`;
+                postsNeedingFetch.push({ url: link.link, postFullname });
+              }
+            }
+          });
+          
+          // Batch fetch selftext for posts that need it
+          if (postsNeedingFetch.length > 0) {
+            const BATCH_SIZE = 25;
+            for (let i = 0; i < postsNeedingFetch.length; i += BATCH_SIZE) {
+              const batch = postsNeedingFetch.slice(i, i + BATCH_SIZE);
+              const postIds = batch.map(({ postFullname }) => postFullname);
+              
+              try {
+                const redditResponse = await fetch("/api/reddit/post", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ postIds }),
+                });
+                
+                if (redditResponse.ok) {
+                  const redditData = await redditResponse.json();
+                  const posts = redditData?.data?.children || [];
+                  
+                  posts.forEach((child: { data: RedditPost }) => {
+                    const post: RedditPost = child.data;
+                    const postFullname = post.name;
+                    const postInfo = batch.find((p) => p.postFullname === postFullname);
+                    
+                    if (postInfo) {
+                      cachePost(postInfo.url, { selftext: post.selftext || null, postData: post });
+                    }
+                  });
+                }
+              } catch (err) {
+                console.error(`Error batch fetching selftext:`, err);
+              }
+            }
+          }
+          
+          // Now build postsToFilter array with selftext from cache (only unique posts by URL, excluding analytics posts)
+          const postsToFilter: Array<{ title: string; content: string; keyword: string; linkIndex: number; url: string }> = [];
+          const seenUrls = new Set<string>();
+          
+          allPostsForFiltering.forEach(({ link, keyword, index }) => {
+            if (!link.link || !link.title) return;
+            
+            const normalizedUrl = normalizeUrl(link.link);
+            
+            // Skip if post is already in analytics (already posted/commented on)
+            if (analyticsUrlSet.has(normalizedUrl)) {
+              return;
+            }
+            
+            // Skip if we've already seen this URL (deduplication)
+            if (seenUrls.has(normalizedUrl)) {
+              return;
+            }
+            
+            seenUrls.add(normalizedUrl);
+            
+            const cached = getCachedPost(link.link);
+            const selftext = cached && cached.selftext !== undefined ? (cached.selftext || '') : '';
+            
+            postsToFilter.push({
+              title: link.title || '',
+              content: selftext,
+              keyword,
+              linkIndex: index,
+              url: link.link,
+            });
+          });
+          
+          // Get product idea
+          const productIdea = productDetailsFromDb?.productDescription || '';
+          
+          if (!productIdea) {
+            console.warn('[Auto-pilot] No product idea found, skipping AI filter');
+            setLeadsLinks(timeFiltered);
+            safeSetLocalStorage("leadsLinks", timeFiltered);
+            setIsLoadingLeads(false);
+            return;
+          }
+          
+          // Prepare posts array for filter API (only unique posts)
+          const postsForFilterAPI = postsToFilter.map(({ title, content }) => ({ title, content }));
+          
+          // Call filter API
+          try {
+            const filterResponse = await fetch("/api/openai/filter-posts", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                posts: postsForFilterAPI,
+                idea: productIdea,
+              }),
+            });
+            
+            if (!filterResponse.ok) {
+              throw new Error(`Filter API returned ${filterResponse.status}`);
+            }
+            
+            const filterData = await filterResponse.json();
+            if (filterData.error) {
+              throw new Error(filterData.error);
+            }
+            
+            const filterResults = filterData.results || [];
+            
+            // Create a map of URL -> filter result
+            const urlToFilterResult = new Map<string, string>();
+            postsToFilter.forEach((postInfo, index) => {
+              const filterResult = filterResults[index]?.toUpperCase();
+              if (filterResult) {
+                urlToFilterResult.set(normalizeUrl(postInfo.url), filterResult);
+              }
+            });
+            
+            // Filter out posts that returned "NO" (apply to all posts, including duplicates)
+            const aiFiltered: Record<string, Array<any>> = {};
+            
+            // Apply filter results to all posts in timeFiltered by matching URL (excluding analytics posts)
+            Object.entries(timeFiltered).forEach(([keyword, links]) => {
+              links.forEach((link: any) => {
+                if (!link.link) return;
+                
+                const normalizedUrl = normalizeUrl(link.link);
+                
+                // Skip if post is already in analytics (already posted/commented on)
+                if (analyticsUrlSet.has(normalizedUrl)) {
+                  return;
+                }
+                
+                const filterResult = urlToFilterResult.get(normalizedUrl);
+                
+                if (filterResult && filterResult !== 'NO') {
+                  // Keep this post
+                  if (!aiFiltered[keyword]) {
+                    aiFiltered[keyword] = [];
+                  }
+                  aiFiltered[keyword].push(link);
+                }
+              });
+            });
+            
+            // Count total posts after AI filter
+            const totalAfterAIFilter = Object.values(aiFiltered).reduce((sum, links) => sum + links.length, 0);
+            
+            // Update state with AI-filtered results
+            setLeadsLinks(aiFiltered);
+            safeSetLocalStorage("leadsLinks", aiFiltered);
+            
+          } catch (filterError) {
+            console.error('[Auto-pilot] Error filtering posts:', filterError);
+            // On error, keep the time-filtered results
+            setLeadsLinks(timeFiltered);
+            safeSetLocalStorage("leadsLinks", timeFiltered);
+          }
+          
+          setIsLoadingLeads(false);
+        }, 2000); // Wait 2 seconds for all post data to be fetched
+    } catch (error) {
+      console.error("Error in auto-pilot:", error);
+      setIsLoadingLeads(false);
+      showToast("Error fetching leads. Please try again.", { variant: "error" });
+    }
   };
 
   // Handle leads search
@@ -1594,8 +1959,18 @@ function PlaygroundContent() {
   // Compute distinct leads links (similar to distinctLinks)
   // Freeze the count during loading to prevent count jumping
   const distinctLeadsLinks = useMemo(() => {
-    // If loading, return previous result to prevent count jumping
+    // If loading leads, return previous result to prevent count jumping
     if (isLoadingLeads) {
+      return distinctLeadsLinksRef.current;
+    }
+    
+    // If analytics is still loading, freeze the count to prevent it from changing
+    // when analyticsPosts loads and filters out posts that are already in analytics.
+    // This ensures the count stays stable and doesn't jump from 679 to 604 after refresh.
+    // We freeze if:
+    // 1. Analytics is loading AND we have a previous result (to maintain stability)
+    // 2. Analytics hasn't been fetched yet AND we have a previous result (to avoid showing wrong count on refresh)
+    if ((isLoadingAnalytics || !analyticsFetchedRef.current) && distinctLeadsLinksRef.current.length > 0) {
       return distinctLeadsLinksRef.current;
     }
     
@@ -1690,16 +2065,12 @@ function PlaygroundContent() {
 
       seenUrls.add(normalizedUrl);
 
-      // Log which keyword this lead came from when adding to results
-      console.log(`[LEAD DISPLAY] Keyword: "${linkItem.query}" | Title: "${linkItem.title || 'N/A'}" | URL: ${linkItem.link}`);
-
       results.push(linkItem);
     }
-
     // Store the result in ref for use during loading
     distinctLeadsLinksRef.current = results;
     return results;
-  }, [leadsLinks, analyticsUrlSet, leadsSortBy, isLoadingLeads]);
+  }, [leadsLinks, analyticsUrlSet, leadsSortBy, isLoadingLeads, isLoadingAnalytics]);
 
   // Paginated leads links
   const paginatedLeadsLinks = useMemo(() => {
@@ -1709,6 +2080,68 @@ function PlaygroundContent() {
   }, [distinctLeadsLinks, leadsPage]);
 
   const totalLeadsPages = Math.ceil(distinctLeadsLinks.length / LEADS_ITEMS_PER_PAGE);
+
+  // Log each page as an array of objects with title and content (selftext)
+  // Fetches selftext from cache or API if not available
+  useEffect(() => {
+    if (paginatedLeadsLinks.length === 0) return;
+
+    const fetchAndLogPageData = async () => {
+      const pageDataPromises = paginatedLeadsLinks.map(async (linkItem) => {
+        let content = linkItem.selftext || null;
+        
+        // If selftext is not available, try to get it from cache
+        if (!content && linkItem.link) {
+          const cached = getCachedPost(linkItem.link);
+          if (cached && cached.selftext) {
+            content = cached.selftext;
+          } else if (cached && cached.postData && cached.postData.selftext) {
+            content = cached.postData.selftext;
+          } else if (linkItem.link) {
+            // If not in cache, fetch from API
+            try {
+              const urlMatch = linkItem.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
+              if (urlMatch) {
+                const [, , postId] = urlMatch;
+                const postFullname = `t3_${postId}`;
+                
+                const redditResponse = await fetch("/api/reddit/post", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ postIds: [postFullname] }),
+                });
+
+                if (redditResponse.ok) {
+                  const redditData = await redditResponse.json();
+                  const posts = redditData?.data?.children || [];
+                  
+                  if (posts.length > 0) {
+                    const post: RedditPost = posts[0].data;
+                    content = post.selftext || null;
+                    // Cache the full post for future use
+                    cachePost(linkItem.link, { selftext: post.selftext || null, postData: post });
+                  }
+                }
+              }
+            } catch (error) {
+              console.error(`Error fetching selftext for ${linkItem.link}:`, error);
+            }
+          }
+        }
+        
+        return {
+          title: linkItem.title || null,
+          content: content,
+        };
+      });
+
+      const pageData = await Promise.all(pageDataPromises);
+    };
+
+    fetchAndLogPageData();
+  }, [paginatedLeadsLinks, leadsPage]);
 
   // Reset to page 1 when distinctLeadsLinks changes
   useEffect(() => {
@@ -1723,7 +2156,6 @@ function PlaygroundContent() {
   // Log selfText of first 50 posts
   useEffect(() => {
     const first50SelfTexts = distinctLinks.slice(0, 50).map(link => link.selftext || null);
-    console.log("First 50 posts selfText array:", first50SelfTexts);
   }, [distinctLinks]);
 
   const openAnalyticsDrawer = useCallback((post: AnalyticsPost) => {
@@ -2038,10 +2470,7 @@ function PlaygroundContent() {
   // Filter posts using the filter API
   // Returns { success: boolean, finalPostCount: number } - finalPostCount is the number of posts that will be displayed after filtering
   const filterPosts = async (productIdea: string): Promise<{ success: boolean; finalPostCount: number }> => {
-    console.log("INSIDEFILTER POST")
-    console.log("productIdea:", productIdea);
     if (!productIdea || !productIdea.trim()) {
-      console.log("No product idea provided, skipping filter");
       return { success: false, finalPostCount: 0 };
     }
 
@@ -2065,7 +2494,6 @@ function PlaygroundContent() {
       }
       
       const postCount = Object.values(currentLinks).reduce((total, links) => total + links.length, 0);
-      console.log("filterPosts: Found", postCount, "posts in", Object.keys(currentLinks).length, "queries");
       
       const allPosts: Array<{ query: string; linkIndex: number; selftext: string | null; title: string | null }> = [];
       
@@ -2081,8 +2509,6 @@ function PlaygroundContent() {
         });
       });
 
-      console.log("filterPosts: Collected", allPosts.length, "total posts from", Object.keys(currentLinks).length, "queries");
-
       // Filter ALL posts in batches of 50
       const postsToFilter = allPosts;
       const BATCH_SIZE = 50;
@@ -2093,10 +2519,7 @@ function PlaygroundContent() {
         batches.push(postsToFilter.slice(i, i + BATCH_SIZE));
       }
       
-      console.log(`filterPosts: Split ${postsToFilter.length} posts into ${batches.length} batches of up to ${BATCH_SIZE} posts`);
-
       if (postsToFilter.length === 0) {
-        console.log("No posts to filter");
         return { success: false, finalPostCount: 0 };
       }
 
@@ -2117,11 +2540,8 @@ function PlaygroundContent() {
         });
 
         if (selftexts.length === 0) {
-          console.log(`Batch ${batchIndex + 1} has no content to filter, skipping`);
           continue;
         }
-
-        console.log(`Filter API - Calling filter API for batch ${batchIndex + 1}/${batches.length} with ${selftexts.length} posts`);
         
         // Call filter API for this batch
         const filterResponse = await fetch("/api/reddit/filter", {
@@ -2197,8 +2617,6 @@ function PlaygroundContent() {
 
         // Add this batch's results to the combined results
         allFilterResults.push(...batchFilterResults);
-        
-        console.log(`Batch ${batchIndex + 1}/${batches.length} completed: ${batchFilterResults.filter(r => r === true).length}/${batch.length} posts passed filter`);
       }
 
       // Now we have all filter results combined
@@ -2208,13 +2626,6 @@ function PlaygroundContent() {
         console.error(`Combined filter results length (${filterResults.length}) doesn't match total posts length (${postsToFilter.length})`);
         return { success: false, finalPostCount: 0 };
       }
-
-      console.log("Filter API - Combined filterResults summary:", {
-        total: filterResults.length,
-        true: filterResults.filter(r => r === true).length,
-        false: filterResults.filter(r => r === false).length,
-        batches: batches.length
-      });
 
       // Filter posts - keep only those where filterResults[index] is true
       // Count posts that passed the filter
@@ -2274,7 +2685,6 @@ function PlaygroundContent() {
 
         // Count the actual final number of posts that will be displayed
         const actualFinalCount = Object.values(updated).reduce((total, links) => total + links.length, 0);
-        console.log(`Filtered ${removedCount} posts, kept ${keptPosts} out of ${allPosts.length} total posts, calculated final count: ${finalPostCount}, actual final count: ${actualFinalCount}`);
       
       // Update localStorage with filtered results (but NOT state yet - will update after usage)
       // This ensures posts only appear after all batches complete and usage is updated
@@ -2299,7 +2709,6 @@ function PlaygroundContent() {
               });
             }
           });
-          console.log(`[filterPosts] After saving: ${postsWithSelftext} posts with selftext, ${postsWithoutSelftext} posts without selftext`);
         } catch (e) {
           console.error("Error verifying saved data:", e);
         }
@@ -2432,7 +2841,6 @@ function PlaygroundContent() {
       }
 
       if (data.result && Array.isArray(data.result)) {
-        console.log("Generated queries:", data.result);
         setResults(data.result);
         
         // Save queries to localStorage
@@ -2523,8 +2931,6 @@ function PlaygroundContent() {
             // Only increment usage for new posts (no filtering, so all new posts are included)
             const postsToIncrement = Math.max(0, newPostsAfterFilter);
             
-            console.log(`Existing posts: ${existingPostsCount}, Total posts: ${postsBeforeFilter}, New posts: ${newPostsAfterFilter} (filtering disabled)`);
-            
             // Usage is now incremented when comments are generated, not when posts are fetched
             // No usage increment here
             
@@ -2549,14 +2955,11 @@ function PlaygroundContent() {
                     });
                   }
                 });
-                console.log(`[handleSubmit] Loading posts: ${postsWithSelftext} with selftext, ${postsWithoutSelftext} without selftext`);
                 
                 setRedditLinks(latestLinks);
-                console.log("Updated state with posts after usage update");
               } else if (Object.keys(finalLinks).length > 0) {
                 // Fallback to finalLinks if localStorage read fails
                 setRedditLinks(finalLinks);
-                console.log("Updated state with posts (fallback)");
               }
             } catch (e) {
               console.error("Error reading final filtered posts from localStorage:", e);
@@ -2623,12 +3026,6 @@ function PlaygroundContent() {
       }
 
       if (data.results && Array.isArray(data.results)) {
-        // Log which posts were found by this query
-        console.log(`[Google Search] Query: "${query}" found ${data.results.length} Reddit posts:`);
-        data.results.forEach((result: any, index: number) => {
-          console.log(`  ${index + 1}. ${result.title || 'No title'} - ${result.link || 'No link'}`);
-        });
-        
         // Don't increment usage here - will be incremented after filtering
         // This ensures usage count matches the number of posts displayed in the table
 
@@ -2689,11 +3086,25 @@ function PlaygroundContent() {
     }
   };
 
-  // Helper function to cache post
+  // Helper function to cache post - only stores minimal fields we actually use
   const cachePost = (url: string, post: { selftext?: string | null; postData?: RedditPost | null }) => {
     try {
       const cacheKey = normalizeUrl(url);
-      localStorage.setItem(`redditPost_${cacheKey}`, JSON.stringify(post));
+      
+      // Only store the fields we actually use from postData
+      const minimalPostData = post.postData ? {
+        ups: post.postData.ups || 0,
+        num_comments: post.postData.num_comments || 0,
+        created_utc: post.postData.created_utc || null,
+        name: post.postData.name || null, // Needed for posting comments
+      } : null;
+      
+      const cachedData = {
+        selftext: post.selftext || null,
+        postData: minimalPostData,
+      };
+      
+      localStorage.setItem(`redditPost_${cacheKey}`, JSON.stringify(cachedData));
     } catch (e) {
       console.error("Error caching post:", e);
     }
@@ -2775,10 +3186,7 @@ function PlaygroundContent() {
     
     // Process fetching if needed
     if (allPostsNeedingFetch.length > 0) {
-      console.log(`Batch fetching ${allPostsNeedingFetch.length} posts from ${Object.keys(currentState).length} queries in a single batch operation`);
       await processBatchFetch(allPostsNeedingFetch, deferStateUpdates);
-    } else {
-      console.log("All posts were found in cache, no fetching needed");
     }
   };
   
@@ -2789,11 +3197,8 @@ function PlaygroundContent() {
     deferStateUpdates: boolean = false
   ) => {
     if (allPostsNeedingFetch.length === 0) {
-      console.log("All posts were found in cache, no fetching needed");
       return;
     }
-
-    console.log(`Found ${allPostsNeedingFetch.length} posts to fetch across all queries`);
 
     // Group post IDs into batches of 100 (Reddit API limit is 100 posts per call)
     const batchSize = 100;
@@ -2810,15 +3215,12 @@ function PlaygroundContent() {
       postDataMap.set(postFullname, { url, linkIndex, query });
     });
 
-    console.log(`Fetching ${postFullnames.length} posts in ${batches.length} batch(es) of up to ${batchSize} (Reddit API limit: 100 posts per call)`);
-
     // Process each batch sequentially with delays and retry logic
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
       
       // Add delay between batches (except for the first one)
       if (batchIndex > 0) {
-        console.log(`Waiting 3 seconds before next batch to avoid rate limits...`);
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
 
@@ -2828,8 +3230,6 @@ function PlaygroundContent() {
 
       while (retryCount < maxRetries && !success) {
         try {
-          console.log(`Fetching batch ${batchIndex + 1}/${batches.length} with ${batch.length} posts (attempt ${retryCount + 1}/${maxRetries})`);
-          
           const response = await fetch("/api/reddit/post", {
             method: "POST",
             headers: {
@@ -2884,8 +3284,6 @@ function PlaygroundContent() {
 
           const data = await response.json();
           const posts: RedditPost[] = data?.data?.children?.map((child: any) => child.data) || [];
-          
-          console.log(`Batch ${batchIndex + 1} returned ${posts.length} posts`);
 
           const postMap = new Map<string, RedditPost>();
           posts.forEach((post: RedditPost) => {
@@ -2969,7 +3367,6 @@ function PlaygroundContent() {
           if (retryCount < maxRetries) {
             const waitTime = Math.pow(2, retryCount) * 5000;
             console.error(`Error fetching batch ${batchIndex + 1} (attempt ${retryCount}/${maxRetries}):`, err);
-            console.log(`Waiting ${waitTime / 1000}s before retry...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
             continue;
           } else {
@@ -2989,8 +3386,6 @@ function PlaygroundContent() {
         }
       }
     }
-
-    console.log(`Finished fetching all ${postFullnames.length} posts`);
   };
 
   // Legacy function - kept for backwards compatibility but not used
@@ -3037,11 +3432,8 @@ function PlaygroundContent() {
 
     // If all posts are cached, we're done
     if (postsNeedingFetch.length === 0) {
-      console.log(`All ${links.length} posts were found in cache, no fetching needed`);
       return;
     }
-
-    console.log(`Found ${cachedPostsMap.size} cached posts, fetching ${postsNeedingFetch.length} new posts`);
 
     // Group post IDs into batches
     // Reddit API limit is 100 posts per call
@@ -3202,7 +3594,6 @@ function PlaygroundContent() {
             // Exponential backoff for network errors
             const waitTime = Math.pow(2, retryCount) * 5000;
             console.error(`Error fetching batch ${batchIndex + 1} (attempt ${retryCount}/${maxRetries}):`, err);
-            console.log(`Waiting ${waitTime / 1000}s before retry...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
             continue; // Retry
           } else {
@@ -3394,6 +3785,101 @@ function PlaygroundContent() {
     await generateCommentForLink(linkItem, { force: true, showAlerts: true, persona: persona || "Founder" });
   };
 
+  // Fetch full post data (selftext and full postData) when drawer opens
+  const fetchFullPostDataForDrawer = async (linkItem: { uniqueKey: string; query?: string; title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }) => {
+    if (!linkItem.link) return;
+
+    // Check if we already have full data (selftext or full postData with all fields)
+    const hasFullData = linkItem.selftext || (linkItem.postData && linkItem.postData.selftext !== undefined);
+    if (hasFullData) {
+      return; // Already have full data, no need to fetch
+    }
+
+    // Check cache first
+    const cached = getCachedPost(linkItem.link);
+    if (cached && (cached.selftext || cached.postData)) {
+      // Update selectedDiscoveryPost with cached data
+      setSelectedDiscoveryPost((prev) => {
+        if (!prev || prev.uniqueKey !== linkItem.uniqueKey) return prev;
+        return {
+          ...prev,
+          selftext: cached.selftext || prev.selftext,
+          postData: cached.postData || prev.postData,
+        };
+      });
+      return; // Found in cache
+    }
+
+    // Fetch from Reddit API
+    try {
+      setIsLoadingPostContent((prev) => ({ ...prev, [linkItem.link!]: true }));
+      
+      const urlMatch = linkItem.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
+      if (urlMatch) {
+        const [, , postId] = urlMatch;
+        const postFullname = `t3_${postId}`;
+        
+        const redditResponse = await fetch("/api/reddit/post", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ postIds: [postFullname] }),
+        });
+
+        if (redditResponse.ok) {
+          const redditData = await redditResponse.json();
+          const posts = redditData?.data?.children || [];
+          
+          if (posts.length > 0) {
+            const post: RedditPost = posts[0].data;
+            
+            // Cache the full post
+            cachePost(linkItem.link, { selftext: post.selftext || null, postData: post });
+            
+            // Update selectedDiscoveryPost with full data
+            setSelectedDiscoveryPost((prev) => {
+              if (!prev || prev.uniqueKey !== linkItem.uniqueKey) return prev;
+              return {
+                ...prev,
+                selftext: post.selftext || null,
+                postData: post,
+              };
+            });
+          }
+        } else {
+          // Fallback to individual API call
+          const fallbackResponse = await fetch(`/api/reddit?url=${encodeURIComponent(linkItem.link)}`);
+          if (fallbackResponse.ok) {
+            const redditData = await fallbackResponse.json();
+            const post: RedditPost = redditData.post;
+            
+            // Cache the full post
+            cachePost(linkItem.link, { selftext: post.selftext || null, postData: post });
+            
+            // Update selectedDiscoveryPost with full data
+            setSelectedDiscoveryPost((prev) => {
+              if (!prev || prev.uniqueKey !== linkItem.uniqueKey) return prev;
+              return {
+                ...prev,
+                selftext: post.selftext || null,
+                postData: post,
+              };
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error fetching full post data for ${linkItem.link}:`, error);
+    } finally {
+      setIsLoadingPostContent((prev) => {
+        const newState = { ...prev };
+        delete newState[linkItem.link!];
+        return newState;
+      });
+    }
+  };
+
   // Handler for bulk commenting
   const handleBulkComment = async () => {
     if (selectedLeads.size === 0) {
@@ -3434,6 +3920,7 @@ function PlaygroundContent() {
         
         const postContent = leadItem.selftext || leadItem.snippet || leadItem.title || "";
         if (!postContent) {
+          console.error(`[Bulk Operations] No post content for lead: ${leadItem.title || leadItem.link}`);
           setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
           return;
         }
@@ -3453,18 +3940,205 @@ function PlaygroundContent() {
         });
 
         if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error(`[Bulk Operations] Comment generation failed for "${leadItem.title || leadItem.link}":`, {
+            status: response.status,
+            statusText: response.statusText,
+            error: errorData.error || errorData.message || "Unknown error"
+          });
           setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
           return;
         }
 
         const data = await response.json();
         if (data.error || !data.comments || data.comments.length === 0) {
+          console.error(`[Bulk Operations] Invalid comment response for "${leadItem.title || leadItem.link}":`, {
+            error: data.error,
+            hasComments: !!data.comments,
+            commentsLength: data.comments?.length || 0
+          });
           setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
           return;
         }
 
         const generatedComment = data.comments.join("\n\n");
         setBulkGeneratedComments(prev => ({ ...prev, [linkKey]: generatedComment }));
+
+        // Step 2: Post comment
+        setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "posting" }));
+
+        if (!leadItem.postData?.name) {
+          console.error(`[Bulk Operations] Missing postData.name for "${leadItem.title || leadItem.link}":`, {
+            hasPostData: !!leadItem.postData,
+            postDataName: leadItem.postData?.name,
+            link: leadItem.link
+          });
+          setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          return;
+        }
+
+        const thingId = extractThingIdFromLink(leadItem.link || "");
+        if (!thingId) {
+          console.error(`[Bulk Operations] Failed to extract thing_id from link: "${leadItem.link}"`);
+          setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          return;
+        }
+
+        const postResponse = await fetch("/api/reddit/post-comment", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            thing_id: thingId,
+            text: generatedComment.trim(),
+          }),
+        });
+
+        if (!postResponse.ok) {
+          const errorData = await postResponse.json().catch(() => ({}));
+          console.error(`[Bulk Operations] Failed to post comment for "${leadItem.title || leadItem.link}":`, {
+            status: postResponse.status,
+            statusText: postResponse.statusText,
+            error: errorData.error || errorData.message || "Unknown error",
+            thingId: thingId,
+            link: leadItem.link
+          });
+          setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          return;
+        }
+
+        // Save to MongoDB
+        try {
+          await fetch("/api/posts/create", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              status: "posted",
+              query: leadItem.query,
+              title: leadItem.title || null,
+              link: leadItem.link || null,
+              snippet: leadItem.snippet || null,
+              selftext: leadItem.selftext || null,
+              postData: leadItem.postData || null,
+              comment: generatedComment.trim(),
+              notes: generatedComment.trim(),
+            }),
+          });
+        } catch (dbError) {
+          console.error("Error saving post to database:", dbError);
+        }
+
+        // Mark as completed
+        setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "completed" }));
+        
+      } catch (error) {
+        console.error(`[Bulk Operations] Unexpected error processing lead "${leadItem.title || leadItem.link}":`, {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          link: leadItem.link,
+          title: leadItem.title
+        });
+        setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+      }
+    };
+
+    // Process all leads in parallel
+    await Promise.all(selectedLeadItems.map(leadItem => processLead(leadItem)));
+    
+    // Refresh analytics and usage once after all operations complete
+    await refreshAnalytics();
+    refreshUsage();
+    
+    // Clear selected leads after bulk operation completes
+    setSelectedLeads(new Set());
+    
+    // Set posting state to false when all operations complete
+    setIsBulkPosting(false);
+  };
+
+  // Retry failed comments in bulk operations
+  const handleRetryFailedComments = async () => {
+    const failedLeads = bulkModalLeads.filter(
+      leadItem => bulkOperationStatus[leadItem.uniqueKey] === "error"
+    );
+
+    if (failedLeads.length === 0) {
+      showToast("No failed comments to retry");
+      return;
+    }
+
+    // Set posting state to true
+    setIsBulkPosting(true);
+
+    // Reset status for failed leads to "haven't started" so they can be retried
+    setBulkOperationStatus(prev => {
+      const updated = { ...prev };
+      failedLeads.forEach(leadItem => {
+        updated[leadItem.uniqueKey] = "haven't started";
+      });
+      return updated;
+    });
+
+    // Process all failed leads asynchronously in parallel
+    const ideaToUse = submittedProductIdea || currentProductIdea;
+    const dbLink = productDetailsFromDb?.link || website;
+    const dbProductDescription = productDetailsFromDb?.productDescription;
+    const productIdeaToUse = dbProductDescription || ideaToUse;
+    
+    if (!productIdeaToUse || !dbLink) {
+      showToast("Please enter your product details in the Product tab first.", { variant: "error" });
+      setIsBulkPosting(false);
+      return;
+    }
+
+    const processLead = async (leadItem: typeof failedLeads[number]) => {
+      const linkKey = leadItem.uniqueKey;
+      
+      try {
+        // Step 1: Generate comment (or use existing if available)
+        setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "generating" }));
+        
+        let generatedComment = bulkGeneratedComments[linkKey];
+        
+        // If we don't have a generated comment, generate one
+        if (!generatedComment) {
+          const postContent = leadItem.selftext || leadItem.snippet || leadItem.title || "";
+          if (!postContent) {
+            setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+            return;
+          }
+
+          const response = await fetch("/api/openai/comment", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              productIdea: productIdeaToUse,
+              productLink: dbLink,
+              postContent: postContent,
+              persona: bulkPersona.toLowerCase(),
+              selftext: leadItem.selftext || undefined,
+            }),
+          });
+
+          if (!response.ok) {
+            setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+            return;
+          }
+
+          const data = await response.json();
+          if (data.error || !data.comments || data.comments.length === 0) {
+            setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+            return;
+          }
+
+          generatedComment = data.comments.join("\n\n");
+          setBulkGeneratedComments(prev => ({ ...prev, [linkKey]: generatedComment }));
+        }
 
         // Step 2: Post comment
         setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "posting" }));
@@ -3522,17 +4196,13 @@ function PlaygroundContent() {
       }
     };
 
-    // Process all leads in parallel
-    await Promise.all(selectedLeadItems.map(leadItem => processLead(leadItem)));
+    // Process all failed leads in parallel
+    await Promise.all(failedLeads.map(leadItem => processLead(leadItem)));
     
     // Refresh analytics and usage once after all operations complete
     await refreshAnalytics();
     refreshUsage();
     
-    // Clear selected leads after bulk operation completes
-    setSelectedLeads(new Set());
-    
-    // Set posting state to false when all operations complete
     setIsBulkPosting(false);
   };
 
@@ -4296,7 +4966,7 @@ function PlaygroundContent() {
                           )}
                         </div>
                         <div className="relative flex gap-2 pt-1">
-                          <div className="relative flex-1" style={{ zIndex: 100 }}>
+                          <div className="relative flex-1" style={{ zIndex: 40 }}>
                             <Input
                               ref={subredditInputRef}
                               id="product-subreddits"
@@ -4362,7 +5032,7 @@ function PlaygroundContent() {
                             {showSubredditDropdown && subredditSuggestions.length > 0 && subredditDropdownPosition && (
                               <div
                                 ref={subredditDropdownRef}
-                                className="fixed z-[100] bg-background border border-border rounded-md shadow-lg max-h-60 overflow-y-auto"
+                                className="fixed z-40 bg-background border border-border rounded-md shadow-lg max-h-60 overflow-y-auto"
                                 style={{
                                   top: `${subredditDropdownPosition.top}px`,
                                   left: `${subredditDropdownPosition.left}px`,
@@ -5352,7 +6022,35 @@ function PlaygroundContent() {
                           variant="default"
                           size="sm"
                           className="bg-black text-white hover:bg-black/90"
-                        onClick={() => {
+                        onClick={async () => {
+                            // Check usage limit before opening modal
+                            try {
+                              const response = await fetch("/api/usage");
+                              if (response.ok) {
+                                const data = await response.json();
+                                const currentCount = data.currentCount ?? 0;
+                                const maxCount = data.maxCount ?? 30;
+                                const remaining = Math.max(0, maxCount - currentCount);
+                                const selectedCount = selectedLeads.size;
+                                
+                                // Check if user has enough credits for selected leads
+                                if (remaining < selectedCount) {
+                                  // Show upgrade modal instead of toast
+                                  setUpgradeModalContext({
+                                    limitReached: remaining === 0,
+                                    remaining: remaining,
+                                    selectedCount: selectedCount,
+                                    maxCount: maxCount
+                                  });
+                                  setShowUpgradeModal(true);
+                                  return;
+                                }
+                              }
+                            } catch (error) {
+                              console.error("Error checking usage:", error);
+                              // Continue if check fails (don't block user)
+                            }
+                            
                             // Store the selected lead items before opening modal
                             const selectedLeadItems = distinctLeadsLinks.filter(link => selectedLeads.has(link.uniqueKey));
                             setBulkModalLeads(selectedLeadItems);
@@ -5367,6 +6065,17 @@ function PlaygroundContent() {
                           Bulk Operations
                       </Button>
                       )}
+                          <div className="flex items-center gap-3">
+                            <div title="Coming soon" className="inline-block">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={true}
+                                className="cursor-not-allowed"
+                              >
+                                Auto-pilot
+                              </Button>
+                            </div>
                           <Button
                       onClick={handleLeadsSearch}
                       disabled={isLoadingLeads}
@@ -5383,6 +6092,7 @@ function PlaygroundContent() {
                         "Refresh Leads"
                       )}
                           </Button>
+                          </div>
                       {distinctLeadsLinks.length > 0 && (
                         <div className="relative" ref={sortDropdownRef}>
                           <Button
@@ -5401,7 +6111,7 @@ function PlaygroundContent() {
                             <ChevronDown className="h-3 w-3 ml-1.5" />
                           </Button>
                           {isSortDropdownOpen && (
-                            <div className="absolute top-full right-0 mt-1 z-[100] bg-card border border-border rounded-md shadow-lg min-w-[160px]">
+                            <div className="absolute top-full right-0 mt-1 z-40 bg-card border border-border rounded-md shadow-lg min-w-[160px]">
                               <div className="py-1">
                                 <button
                                   onClick={() => {
@@ -5514,7 +6224,15 @@ function PlaygroundContent() {
               )}>
                   <div className="flex-1 flex flex-col min-h-0 space-y-4">
                     
-                  {distinctLeadsLinks.length > 0 ? (
+                  {/* Show loading state while analytics is loading to prevent count from jumping */}
+                  {(isLoadingAnalytics || !analyticsFetchedRef.current) && Object.keys(leadsLinks).length > 0 ? (
+                    <div className="flex-1 flex items-center justify-center">
+                      <div className="flex items-center gap-2">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                        <p className="text-sm text-muted-foreground">Loading leads...</p>
+                      </div>
+                    </div>
+                  ) : distinctLeadsLinks.length > 0 ? (
                   <div className="flex-1 flex flex-col min-h-0 space-y-4">
                     {/* Display Reddit links in table view */}
                       <div className="rounded-lg border border-border overflow-hidden flex-1 flex flex-col min-h-0">
@@ -5575,9 +6293,11 @@ function PlaygroundContent() {
                                 <tr 
                               key={linkKey}
                                   className="border-b border-border hover:bg-muted/50 cursor-pointer"
-                                  onClick={() => {
+                                  onClick={async () => {
                                     setSelectedDiscoveryPost(linkItem);
                                     setIsDiscoveryDrawerVisible(true);
+                                    // Fetch full post data on-demand when drawer opens
+                                    await fetchFullPostDataForDrawer(linkItem);
                                   }}
                                 >
                                     {/* Checkbox column */}
@@ -6053,14 +6773,19 @@ function PlaygroundContent() {
             </div>
             <div className="flex h-full flex-col">
               <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 pr-4 pb-40">
-                {(selectedDiscoveryPost.selftext || selectedDiscoveryPost.snippet) && (
+                {isLoadingPostContent[selectedDiscoveryPost.link || ''] ? (
+                  <div className="flex items-center gap-2 py-4">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                    <span className="text-sm text-muted-foreground">Loading post content...</span>
+                  </div>
+                ) : (selectedDiscoveryPost.selftext || selectedDiscoveryPost.snippet) ? (
                   <div>
                     <h4 className="text-sm font-medium text-foreground mb-2">Post Content</h4>
                     <p className="text-sm text-muted-foreground whitespace-pre-wrap">
                       {selectedDiscoveryPost.selftext || selectedDiscoveryPost.snippet}
                     </p>
                   </div>
-                )}
+                ) : null}
                 <div>
                   <h4 className="text-sm font-medium text-foreground mb-2">Generated Comment</h4>
                   <div className="flex items-center gap-3 mb-3">
@@ -6356,13 +7081,32 @@ function PlaygroundContent() {
                 <div className="text-sm text-muted-foreground">
                   {(() => {
                     const completedCount = Object.values(bulkOperationStatus).filter(status => status === "completed").length;
+                    const failedCount = Object.values(bulkOperationStatus).filter(status => status === "error").length;
                     const totalCount = bulkModalLeads.length;
-                    if (isBulkPosting || completedCount > 0) {
-                      return `${completedCount} / ${totalCount} posted`;
+                    if (isBulkPosting || completedCount > 0 || failedCount > 0) {
+                      return `${completedCount} / ${totalCount} posted${failedCount > 0 ? ` (${failedCount} failed)` : ''}`;
                     }
                     return null;
                   })()}
                 </div>
+                <div className="flex items-center gap-2">
+                  {(() => {
+                    const failedCount = Object.values(bulkOperationStatus).filter(status => status === "error").length;
+                    const allCompleted = Object.values(bulkOperationStatus).every(status => status === "completed" || status === "error");
+                    const hasErrors = failedCount > 0;
+                    
+                    return (
+                      <>
+                        {hasErrors && !isBulkPosting && (
+                          <Button
+                            variant="outline"
+                            onClick={handleRetryFailedComments}
+                            disabled={isBulkPosting}
+                            size="sm"
+                          >
+                            Retry Failed ({failedCount})
+                          </Button>
+                        )}
                 <Button
                   variant="default"
                   onClick={() => {
@@ -6370,7 +7114,6 @@ function PlaygroundContent() {
                       // If posting is in progress, do nothing (button is disabled)
                       return;
                     }
-                    const allCompleted = Object.values(bulkOperationStatus).every(status => status === "completed" || status === "error");
                     if (allCompleted && Object.keys(bulkOperationStatus).length > 0) {
                       // Close modal if all are completed
                       setIsBulkOperationsModalOpen(false);
@@ -6386,7 +7129,6 @@ function PlaygroundContent() {
                   disabled={isBulkPosting}
                 >
                   {(() => {
-                    const allCompleted = Object.values(bulkOperationStatus).every(status => status === "completed" || status === "error");
                     if (allCompleted && Object.keys(bulkOperationStatus).length > 0) {
                       return "Close";
                     }
@@ -6396,6 +7138,10 @@ function PlaygroundContent() {
                     return "Post Comment";
                   })()}
                 </Button>
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
             </div>
           </div>
@@ -6429,11 +7175,11 @@ function PlaygroundContent() {
                 <div className="space-y-4 mb-6">
                   {upgradeModalContext.limitReached ? (
                     <p className="text-sm text-muted-foreground">
-                      You've reached your weekly limit of 30 Free Credits. Upgrade to Premium to get 10,000 Free Credits per month and never worry about limits again.
+                      You've reached your weekly limit of {upgradeModalContext.maxCount || 30} Free Credits. {upgradeModalContext.selectedCount ? `You selected ${upgradeModalContext.selectedCount} leads, but need more credits. ` : ''}Upgrade to Premium to get 10,000 Free Credits per month and never worry about limits again.
                     </p>
                   ) : (
                     <p className="text-sm text-muted-foreground">
-                      You have {upgradeModalContext.remaining} Free Credits remaining this week. Upgrade to Premium for 10,000 Free Credits per month and unlock more features.
+                      You have {upgradeModalContext.remaining} Free Credits remaining this week, but you selected {upgradeModalContext.selectedCount || 0} leads. Upgrade to Premium for 10,000 Free Credits per month and unlock more features.
                     </p>
                   )}
                 </div>
@@ -6466,7 +7212,7 @@ function PlaygroundContent() {
                     </Button>
                   </div>
 
-                  <div className="flex h-full flex-col gap-4 rounded-xl border border-[#ff4500]/60 bg-white p-6 text-left shadow-[0_0_35px_-12px_rgba(255,69,0,0.65)]">
+                  <div className="flex h-full flex-col gap-4 rounded-xl border border-[#ff4500]/60 bg-[#ffffff] p-6 text-left shadow-[0_0_35px_-12px_rgba(255,69,0,0.65)]">
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <span className="rounded-full bg-[#ff4500] px-3 py-1 text-xs font-medium uppercase tracking-wide text-white">
@@ -6496,11 +7242,30 @@ function PlaygroundContent() {
                     <Button
                       size="sm"
                       onClick={async () => {
-                        // Close modal and switch to pricing tab
+                        if (!session) {
+                          signIn(undefined, { callbackUrl: "/playground" });
+                          return;
+                        }
+
+                        try {
                         setShowUpgradeModal(false);
-                        setActiveTab("pricing");
+                          const response = await fetch("/api/stripe/create-checkout-session", {
+                            method: "POST",
+                          });
+
+                          if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({}));
+                            throw new Error(errorData.error || "Unable to start checkout.");
+                          }
+
+                          const data = await response.json();
+                          window.location.href = data.url;
+                        } catch (error) {
+                          console.error("Error starting Stripe checkout:", error);
+                          showToast(error instanceof Error ? error.message : "Unable to start checkout.", { variant: "error" });
+                        }
                       }}
-                      className="mt-auto"
+                      className="mt-auto bg-[#ff4500] hover:bg-[#ff4500]/90 text-white"
                     >
                       Upgrade to Premium
                     </Button>

@@ -41,10 +41,10 @@ export function UserMenu() {
       {isOpen && (
         <>
           <div
-            className="fixed inset-0 z-10"
+            className="fixed inset-0 z-[60]"
             onClick={() => setIsOpen(false)}
           />
-          <div className="absolute right-0 top-full z-20 mt-2 w-48 rounded-md border border-border bg-card shadow-lg">
+          <div className="absolute right-0 top-full z-[60] mt-2 w-48 rounded-md border border-border bg-card shadow-lg">
             <div className="p-2">
               <div className="px-2 py-1.5 text-sm font-medium text-foreground">
                 {session.user.name || "User"}

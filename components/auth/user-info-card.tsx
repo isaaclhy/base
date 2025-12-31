@@ -155,7 +155,7 @@ export function UserInfoCard() {
   };
 
   return (
-    <div className="border-t border-border bg-muted/30 p-4">
+    <div className="border-t border-border bg-muted/30 p-4 relative z-[60]">
       <div className="flex items-center gap-2 mb-3">
         {showImage ? (
           <div className="relative h-10 w-10 rounded-full border-2 border-border overflow-hidden flex-shrink-0">
@@ -191,10 +191,10 @@ export function UserInfoCard() {
           {isMenuOpen && (
             <>
               <div
-                className="fixed inset-0 z-10"
+                className="fixed inset-0 z-[60]"
                 onClick={() => setIsMenuOpen(false)}
               />
-              <div className="absolute bottom-full right-0 mb-2 z-20 w-48 rounded-md border border-border bg-card shadow-lg">
+              <div className="absolute bottom-full right-0 mb-2 z-[60] w-48 rounded-md border border-border bg-card shadow-lg">
                 <div className="p-1">
                   <Button
                     variant="ghost"

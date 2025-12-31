@@ -148,8 +148,12 @@ export async function updateUserRedditTokens(
   const db = await getDatabase();
   const usersCollection = db.collection<User>('usersv2');
 
-  const updatedUser = await usersCollection.findOneAndUpdate(
-    { email },
+  // Normalize email to lowercase for consistent lookup
+  const normalizedEmail = email.toLowerCase();
+
+  // First, try to find the user
+  let updatedUser = await usersCollection.findOneAndUpdate(
+    { email: normalizedEmail },
     {
       $set: {
         redditAccessToken: tokens.accessToken,
@@ -161,8 +165,59 @@ export async function updateUserRedditTokens(
     { returnDocument: 'after' }
   );
 
+  // If user not found, try case-insensitive search (for old data)
   if (!updatedUser) {
-    throw new Error('Failed to update Reddit tokens');
+    console.warn(`User with email ${normalizedEmail} not found with exact case. Trying case-insensitive search...`);
+    const regex = new RegExp(`^${normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const existingUser = await usersCollection.findOne({ email: { $regex: regex } });
+    
+    if (existingUser) {
+      // Found user with different case - update it
+      updatedUser = await usersCollection.findOneAndUpdate(
+        { _id: existingUser._id },
+        {
+          $set: {
+            redditAccessToken: tokens.accessToken,
+            redditRefreshToken: tokens.refreshToken,
+            redditTokenExpiresAt: tokens.expiresAt,
+            email: normalizedEmail, // Normalize email to lowercase
+            updatedAt: new Date(),
+          },
+        },
+        { returnDocument: 'after' }
+      );
+      console.log(`Found user with different case, normalized email to ${normalizedEmail} and updated Reddit tokens`);
+    }
+  }
+
+  // If still not found, create a new user with Reddit tokens
+  // This handles edge cases where user exists in NextAuth but not in our DB
+  if (!updatedUser) {
+    console.warn(`User with email ${normalizedEmail} not found. Creating new user with Reddit tokens...`);
+    const now = new Date();
+    const newUser: User = {
+      email: normalizedEmail,
+      name: null,
+      image: null,
+      plan: "free",
+      createdAt: now,
+      updatedAt: now,
+      redditAccessToken: tokens.accessToken,
+      redditRefreshToken: tokens.refreshToken,
+      redditTokenExpiresAt: tokens.expiresAt,
+      onboardingCompleted: false,
+    };
+
+    const result = await usersCollection.insertOne(newUser);
+    
+    if (!result.insertedId) {
+      throw new Error('Failed to create user with Reddit tokens');
+    }
+
+    return {
+      ...newUser,
+      _id: result.insertedId,
+    };
   }
 
   return updatedUser as User;

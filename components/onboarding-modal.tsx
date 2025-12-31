@@ -30,6 +30,13 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
   // Step 1: Reddit connection
   const [isConnectingReddit, setIsConnectingReddit] = useState(false);
   const [isRedditConnected, setIsRedditConnected] = useState(false);
+
+  // Reset loading state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setIsConnectingReddit(false);
+    }
+  }, [isOpen]);
   
   // Step 2: Product info
   const [productName, setProductName] = useState("");
@@ -47,32 +54,44 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
 
   // Check if we're returning from Reddit OAuth
   useEffect(() => {
-    if (isOpen && searchParams.get("reddit_connected") === "success") {
-      setCurrentStep(1);
-      // Check connection status after a short delay to allow tokens to be saved
-      setTimeout(async () => {
-        try {
-          const response = await fetch("/api/reddit/status");
-          if (response.ok) {
-            const data = await response.json();
-            setIsRedditConnected(data.connected);
+    if (isOpen) {
+      // Reset loading state when modal opens (handles case where user left and came back)
+      setIsConnectingReddit(false);
+      
+      if (searchParams.get("reddit_connected") === "success") {
+        setCurrentStep(1);
+        // Check connection status after a short delay to allow tokens to be saved
+        setTimeout(async () => {
+          try {
+            const response = await fetch("/api/reddit/status");
+            if (response.ok) {
+              const data = await response.json();
+              setIsRedditConnected(data.connected);
+            }
+          } catch (error) {
+            console.error("Error checking Reddit connection:", error);
           }
-        } catch (error) {
-          console.error("Error checking Reddit connection:", error);
-        }
-      }, 1000);
+        }, 1000);
+      }
     }
   }, [isOpen, searchParams]);
 
   // Check Reddit connection status
   useEffect(() => {
     if (currentStep === 1 && isOpen) {
+      // Reset loading state when checking connection status
+      setIsConnectingReddit(false);
+      
       const checkRedditConnection = async () => {
         try {
           const response = await fetch("/api/reddit/status");
           if (response.ok) {
             const data = await response.json();
             setIsRedditConnected(data.connected);
+            // If connected, ensure loading state is reset
+            if (data.connected) {
+              setIsConnectingReddit(false);
+            }
           }
         } catch (error) {
           console.error("Error checking Reddit connection:", error);
@@ -262,19 +281,21 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
 
   return (
     <>
-      <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop that excludes the sidebar on desktop (224px = w-56), full screen on mobile */}
+      {/* On mobile, always cover full screen. On desktop (lg+), exclude sidebar area */}
+      <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm lg:left-[224px]" />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 lg:left-[224px]">
         <div className="relative w-full max-w-2xl h-[80vh] rounded-lg border border-border bg-card shadow-lg flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-border px-6 py-4">
-            <div>
-              <h2 className="text-2xl font-semibold text-foreground">Welcome to SignalScouter</h2>
-              <p className="text-sm text-muted-foreground mt-1">
+          <div className="flex items-center justify-between border-b border-border px-4 sm:px-6 py-4 gap-4">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-xl sm:text-2xl font-semibold text-foreground">Welcome to SignalScouter</h2>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                 Let's get you set up in just a few steps
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
                 Step {currentStep} of 3
               </span>
             </div>

@@ -117,7 +117,9 @@ export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
       <aside
         className={cn(
           "flex flex-col border-r border-border bg-card transition-all duration-300 ease-in-out",
-          isSidebarVisible ? "w-56" : "w-0 overflow-hidden"
+          isSidebarVisible ? "w-56" : "w-0 overflow-hidden",
+          // On mobile, ensure sidebar is below modal backdrop (z-50)
+          "relative z-40 lg:z-auto"
         )}
       >
         {/* Sidebar Header */}

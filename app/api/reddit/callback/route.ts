@@ -158,14 +158,23 @@ export async function GET(request: NextRequest) {
     expiresAt.setSeconds(expiresAt.getSeconds() + (tokenData.expires_in || 3600));
 
     // Store tokens in database
+    // Normalize email to lowercase to ensure consistent storage
+    const normalizedEmail = userEmail.toLowerCase();
     try {
-      await updateUserRedditTokens(userEmail, {
+      await updateUserRedditTokens(normalizedEmail, {
         accessToken: tokenData.access_token,
         refreshToken: tokenData.refresh_token,
         expiresAt,
       });
+      console.log(`Successfully saved Reddit tokens for user: ${normalizedEmail}`);
     } catch (dbError) {
       console.error("Error saving Reddit tokens:", dbError);
+      console.error("Error details:", {
+        email: normalizedEmail,
+        hasAccessToken: !!tokenData.access_token,
+        hasRefreshToken: !!tokenData.refresh_token,
+        errorMessage: dbError instanceof Error ? dbError.message : String(dbError),
+      });
       return NextResponse.redirect(
         `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/playground?error=reddit_oauth_save_failed`
       );
