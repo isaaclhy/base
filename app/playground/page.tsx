@@ -6235,8 +6235,14 @@ function PlaygroundContent() {
                   ) : distinctLeadsLinks.length > 0 ? (
                   <div className="flex-1 flex flex-col min-h-0 space-y-4">
                     {/* Display Reddit links in table view */}
-                      <div className="rounded-lg border border-border overflow-hidden flex-1 flex flex-col min-h-0">
-                        <div className="overflow-x-auto flex-1 overflow-y-auto min-h-0">
+                      <div className={cn(
+                        "relative rounded-lg border border-border overflow-hidden flex-1 flex flex-col min-h-0",
+                        isLoadingLeads && "pointer-events-none"
+                      )}>
+                        <div className={cn(
+                          "overflow-x-auto flex-1 overflow-y-auto min-h-0",
+                          isLoadingLeads && "blur-sm"
+                        )}>
                           <table className="w-full border-collapse table-fixed">
                             <thead className="sticky top-0 z-20">
                               <tr className="border-b border-border bg-muted">
@@ -6417,7 +6423,10 @@ function PlaygroundContent() {
                         </div>
                         {/* Pagination controls */}
                         {distinctLeadsLinks.length > 0 && (
-                          <div className="flex items-center justify-between border-t border-border px-3 py-1.5 bg-card">
+                          <div className={cn(
+                            "flex items-center justify-between border-t border-border px-3 py-1.5 bg-card",
+                            isLoadingLeads && "blur-sm"
+                          )}>
                             <div className="text-xs text-muted-foreground">
                               Showing {(leadsPage - 1) * LEADS_ITEMS_PER_PAGE + 1} to{" "}
                               {Math.min(leadsPage * LEADS_ITEMS_PER_PAGE, distinctLeadsLinks.length)} of{" "}
@@ -6428,7 +6437,7 @@ function PlaygroundContent() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => setLeadsPage((prev) => Math.max(1, prev - 1))}
-                                disabled={leadsPage === 1}
+                                disabled={leadsPage === 1 || isLoadingLeads}
                                 className="text-xs h-7 px-2"
                               >
                                 <ChevronLeft className="h-3 w-3" />
@@ -6441,12 +6450,21 @@ function PlaygroundContent() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => setLeadsPage((prev) => Math.min(totalLeadsPages, prev + 1))}
-                                disabled={leadsPage === totalLeadsPages}
+                                disabled={leadsPage === totalLeadsPages || isLoadingLeads}
                                 className="text-xs h-7 px-2"
                               >
                                 <span className="hidden sm:inline">Next</span>
                                 <ChevronRight className="h-3 w-3" />
                               </Button>
+                            </div>
+                          </div>
+                        )}
+                        {/* Loading overlay */}
+                        {isLoadingLeads && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
+                            <div className="flex items-center gap-2">
+                              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                              <p className="text-sm font-medium text-foreground">Loading leads...</p>
                             </div>
                           </div>
                         )}
