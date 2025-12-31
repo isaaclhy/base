@@ -27,6 +27,7 @@ export interface User {
     link?: string;
     productName?: string;
     productDescription?: string;
+    productBenefits?: string;
     keywords?: string;
   };
   // Keywords array
@@ -394,6 +395,7 @@ export async function updateUserProductDetails(
     link?: string;
     productName?: string;
     productDescription?: string;
+    productBenefits?: string;
     keywords?: string;
   }
 ): Promise<User | null> {

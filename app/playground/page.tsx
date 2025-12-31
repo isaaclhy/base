@@ -168,11 +168,13 @@ function PlaygroundContent() {
   const [productName, setProductName] = useState("");
   const [website, setWebsite] = useState("");
   const [productDescription, setProductDescription] = useState("");
+  const [productBenefits, setProductBenefits] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
   const [originalProductDetails, setOriginalProductDetails] = useState<{
     productName: string;
     website: string;
     productDescription: string;
+    productBenefits: string;
     keywords: string[];
   } | null>(null);
   const [keywordInput, setKeywordInput] = useState("");
@@ -504,6 +506,9 @@ function PlaygroundContent() {
               if (data.productDetails.productDescription) {
                 setProductDescription(data.productDetails.productDescription);
               }
+              if (data.productDetails.productBenefits) {
+                setProductBenefits(data.productDetails.productBenefits);
+              }
               // Load keywords from the keywords field (array) or fallback to productDetails.keywords (legacy)
               let loadedKeywords: string[] = [];
               if (data.keywords && Array.isArray(data.keywords)) {
@@ -547,6 +552,7 @@ function PlaygroundContent() {
                 productName: data.productDetails.productName || "",
                 website: data.productDetails.link || "",
                 productDescription: data.productDetails.productDescription || "",
+                productBenefits: data.productDetails.productBenefits || "",
                 keywords: loadedKeywords,
               });
             } else {
@@ -555,6 +561,7 @@ function PlaygroundContent() {
                 productName: "",
                 website: "",
                 productDescription: "",
+                productBenefits: "",
                 keywords: [],
               });
             }
@@ -566,6 +573,7 @@ function PlaygroundContent() {
             productName: "",
             website: "",
             productDescription: "",
+            productBenefits: "",
             keywords: [],
           });
         }
@@ -652,6 +660,9 @@ function PlaygroundContent() {
               if (data.productDetails.productDescription) {
                 setProductDescription(data.productDetails.productDescription);
               }
+              if (data.productDetails.productBenefits) {
+                setProductBenefits(data.productDetails.productBenefits);
+              }
               // Load keywords from the keywords field (array) or fallback to productDetails.keywords (legacy)
               let loadedKeywords: string[] = [];
               if (data.keywords && Array.isArray(data.keywords)) {
@@ -695,6 +706,7 @@ function PlaygroundContent() {
                 productName: data.productDetails.productName || "",
                 website: data.productDetails.link || "",
                 productDescription: data.productDetails.productDescription || "",
+                productBenefits: data.productDetails.productBenefits || "",
                 keywords: loadedKeywords,
               });
             } else {
@@ -702,6 +714,7 @@ function PlaygroundContent() {
                 productName: "",
                 website: "",
                 productDescription: "",
+                productBenefits: "",
                 keywords: [],
               });
             }
@@ -712,6 +725,7 @@ function PlaygroundContent() {
             productName: "",
             website: "",
             productDescription: "",
+            productBenefits: "",
             keywords: [],
           });
         } finally {
@@ -4660,6 +4674,7 @@ function PlaygroundContent() {
                             productName: productName || undefined,
                             link: website || undefined,
                             productDescription: productDescription || undefined,
+                            productBenefits: productBenefits || undefined,
                             keywords: keywords.length > 0 ? keywords : undefined,
                           }),
                         });
@@ -4676,6 +4691,7 @@ function PlaygroundContent() {
                             productName: productName || "",
                             website: website || "",
                             productDescription: productDescription || "",
+                            productBenefits: productBenefits || "",
                             keywords: keywords,
                           });
                           // Show success toast (auto-dismisses after 5 seconds)
@@ -4695,6 +4711,7 @@ function PlaygroundContent() {
                       (originalProductDetails.productName === (productName || "") &&
                        originalProductDetails.website === (website || "") &&
                        originalProductDetails.productDescription === (productDescription || "") &&
+                       originalProductDetails.productBenefits === (productBenefits || "") &&
                        JSON.stringify(originalProductDetails.keywords.sort()) === JSON.stringify([...keywords].sort()))
                     }
                     className="bg-black text-white hover:bg-black/90 disabled:opacity-50 self-start sm:self-auto"
@@ -4810,6 +4827,22 @@ function PlaygroundContent() {
                           {isGeneratingProductDescription ? "Generating..." : "AI generate"}
                         </Button>
                       </div>
+                    </div>
+                    <div>
+                      <label htmlFor="product-benefits" className="block text-sm font-medium text-foreground mb-1">
+                        Product Benefits/Results
+                      </label>
+                      <textarea
+                        id="product-benefits"
+                        value={productBenefits}
+                        onChange={(e) => setProductBenefits(e.target.value)}
+                        placeholder="Enter metrics and achievements (e.g., 89 signups in a day, revenue up by 50%, 1000 users gained in a week, etc.)"
+                        className="w-full min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 resize-y"
+                        rows={5}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Specify metrics and achievements users can achieve with your product
+                      </p>
                     </div>
                   </div>
                   
@@ -6062,7 +6095,7 @@ function PlaygroundContent() {
                             setIsBulkPosting(false);
                           }}
                         >
-                          Bulk Operations
+                          Bulk Operations {selectedLeads.size > 0 && `(${selectedLeads.size})`}
                       </Button>
                       )}
                           <div className="flex items-center gap-3">

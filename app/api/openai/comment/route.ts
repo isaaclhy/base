@@ -88,13 +88,18 @@ export async function POST(request: NextRequest): Promise<NextResponse<GenerateC
     } else {
       // Default prompt for Founder or other personas
       console.log('[Comment Generation] Using default/Founder persona prompt');
+      
+      // Get productBenefits from database (productDetails.productBenefits)
+      const productBenefits = dbUser?.productDetails?.productBenefits || "";
+      
       response = await (client as any).responses.create({
         prompt: {
           "id": "pmpt_694ff0c078ec8197ad0b92621f11735905afaefebad67788",
-          "version": "5",
+          "version": "7",
           "variables": {
             "content": postContent,
-            "idea": productIdea
+            "idea": productIdea,
+            "benefits": productBenefits || ""
           }
         }
       });
