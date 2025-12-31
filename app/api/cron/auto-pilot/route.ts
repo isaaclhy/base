@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserByEmail } from "@/lib/db/users";
 import { getValidAccessToken, refreshAccessToken } from "@/lib/reddit/auth";
 import { google, customsearch_v1 } from "googleapis";
-import { createPost, PostStatus } from "@/lib/db/posts";
+import { createPost, PostStatus, getPostsByUserId } from "@/lib/db/posts";
 import { incrementUsage, getMaxPostsPerWeekForPlan, getUserUsage } from "@/lib/db/usage";
 import OpenAI from "openai";
 
@@ -27,6 +27,13 @@ function isRedditPostUrl(url: string) {
     /reddit\.com\/r\/[^/]+\/comments\/[a-z0-9]+(\/|$)/i.test(url) &&
     !/\/comment\//i.test(url)
   );
+}
+
+function normalizeUrl(url: string): string {
+  return url
+    .split('?')[0]
+    .replace(/\/$/, '')
+    .toLowerCase();
 }
 
 async function fetchGoogleCustomSearch(
@@ -315,22 +322,94 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
       }
     }
 
-    console.log(`[Auto-pilot] Total posts fetched from all keywords: ${allPosts.length}`);
+    console.log(`[Auto-pilot] Total posts fetched from Google Search: ${allPosts.length}`);
 
     // Step 2: Fetch leads from subreddits (if available)
     if (subreddits.length > 0 && redditAccessToken) {
-      console.log(`[Auto-pilot] Subreddit fetching not yet implemented. Skipping ${subreddits.length} subreddits.`);
-      // Note: Reddit API subreddit search would go here if needed
-      // For now, skipping as it requires additional implementation
+      console.log(`[Auto-pilot] Fetching leads from ${subreddits.length} subreddits for ${keywords.length} keywords...`);
+      
+      for (const keyword of keywords) {
+        for (const subreddit of subreddits) {
+          try {
+            console.log(`[Auto-pilot] Searching r/${subreddit} for keyword "${keyword}"...`);
+            
+            // Search Reddit posts in subreddit by keyword, sorted by new, limited to this week
+            const searchUrl = `https://oauth.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(keyword)}&sort=new&limit=30&t=week&restrict_sr=1`;
+            
+            const response = await fetch(searchUrl, {
+              headers: {
+                'User-Agent': 'reddit-comment-tool/0.1 by isaaclhy13',
+                'Accept': 'application/json',
+                'Authorization': `Bearer ${redditAccessToken}`,
+              },
+              cache: 'no-store'
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              const posts: any[] = data.data?.children?.map((child: any) => child.data) || [];
+              
+              console.log(`[Auto-pilot] Found ${posts.length} posts in r/${subreddit} for keyword "${keyword}"`);
+              
+              // Convert to the format expected
+              const subredditPosts = posts.map((post: any) => ({
+                title: post.title,
+                link: `https://www.reddit.com${post.permalink}`,
+                snippet: post.selftext?.substring(0, 200) || post.title,
+                selftext: post.selftext || null,
+                keyword,
+                postData: {
+                  ups: post.ups || 0,
+                  num_comments: post.num_comments || 0,
+                  created_utc: post.created_utc,
+                  name: post.name,
+                },
+              }));
+              
+              allPosts.push(...subredditPosts);
+              console.log(`[Auto-pilot] Added ${subredditPosts.length} posts from r/${subreddit} for keyword "${keyword}"`);
+            } else {
+              console.error(`[Auto-pilot] Failed to fetch from r/${subreddit} for keyword "${keyword}": HTTP ${response.status}`);
+            }
+          } catch (error) {
+            console.error(`[Auto-pilot] Error fetching from r/${subreddit} for keyword "${keyword}":`, error);
+          }
+        }
+      }
+      
+      console.log(`[Auto-pilot] Total posts after subreddit search: ${allPosts.length}`);
     } else if (subreddits.length === 0) {
       console.log(`[Auto-pilot] No subreddits configured, skipping subreddit fetching`);
     } else {
       console.log(`[Auto-pilot] No Reddit access token, skipping subreddit fetching`);
     }
 
+    // Step 2.5: Filter out posts that are already in analytics (already posted/commented on)
+    console.log(`[Auto-pilot] Fetching analytics posts to filter out already-posted posts...`);
+    const analyticsPosts = await getPostsByUserId(email);
+    const analyticsUrlSet = new Set<string>();
+    analyticsPosts.forEach((post) => {
+      if (post.link) {
+        analyticsUrlSet.add(normalizeUrl(post.link));
+      }
+    });
+    console.log(`[Auto-pilot] Found ${analyticsPosts.length} posts in analytics, ${analyticsUrlSet.size} unique URLs`);
+    
+    const beforeAnalyticsFilter = allPosts.length;
+    const allPostsFiltered = allPosts.filter((post) => {
+      if (!post.link) return false;
+      const normalizedUrl = normalizeUrl(post.link);
+      const isInAnalytics = analyticsUrlSet.has(normalizedUrl);
+      if (isInAnalytics) {
+        console.log(`[Auto-pilot] Filtered out already-posted post: "${post.title}" | URL: ${post.link}`);
+      }
+      return !isInAnalytics;
+    });
+    console.log(`[Auto-pilot] Filtered out ${beforeAnalyticsFilter - allPostsFiltered.length} already-posted posts. ${allPostsFiltered.length} posts remaining.`);
+
     // Step 3: Filter by time (2 hours)
-    console.log(`[Auto-pilot] Filtering ${allPosts.length} posts by time (last 2 hours)...`);
-    const timeFiltered = allPosts.filter((post) => {
+    console.log(`[Auto-pilot] Filtering ${allPostsFiltered.length} posts by time (last 2 hours)...`);
+    const timeFiltered = allPostsFiltered.filter((post) => {
       if (post.postData && typeof post.postData.created_utc === 'number') {
         const isWithinWindow = post.postData.created_utc >= twoHoursAgo;
         if (!isWithinWindow) {
@@ -345,7 +424,7 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
       }
     });
 
-    console.log(`[Auto-pilot] ${timeFiltered.length} posts remaining after 2-hour filter (out of ${allPosts.length} total)`);
+    console.log(`[Auto-pilot] ${timeFiltered.length} posts remaining after 2-hour filter (out of ${allPostsFiltered.length} total, ${allPosts.length} before analytics filter)`);
     
     if (timeFiltered.length > 0) {
       console.log(`[Auto-pilot] Time-filtered posts:`, timeFiltered.map(p => ({
@@ -358,6 +437,23 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
 
     if (timeFiltered.length === 0) {
       console.log(`[Auto-pilot] No posts found within the last 2 hours. Returning empty results.`);
+      
+      // Calculate age statistics for debugging
+      const postsWithTimestamps = allPostsFiltered
+        .filter(p => p.postData?.created_utc && typeof p.postData.created_utc === 'number')
+        .map(p => ({
+          title: p.title,
+          created_utc: p.postData!.created_utc!,
+          created_date: new Date(p.postData!.created_utc! * 1000).toISOString(),
+          hours_ago: ((now / 1000) - p.postData!.created_utc!) / 3600,
+          link: p.link
+        }))
+        .sort((a, b) => b.created_utc - a.created_utc); // Sort by newest first
+      
+      const oldestPost = postsWithTimestamps[postsWithTimestamps.length - 1];
+      const newestPost = postsWithTimestamps[0];
+      const postsWithMissingTimestamps = allPosts.filter(p => !p.postData?.created_utc || typeof p.postData.created_utc !== 'number').length;
+      
       return NextResponse.json({
         success: true,
         message: "No posts found within the last 2 hours",
@@ -366,13 +462,27 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
         afterTimeFilter: 0,
         debug: {
           totalPosts: allPosts.length,
+          postsWithValidTimestamps: postsWithTimestamps.length,
+          postsWithMissingTimestamps: postsWithMissingTimestamps,
           timeThreshold: twoHoursAgo,
           timeThresholdISO: new Date(twoHoursAgo * 1000).toISOString(),
           nowISO: new Date(now).toISOString(),
-          postsWithTimestamps: allPosts.map(p => ({
+          newestPost: newestPost ? {
+            title: newestPost.title,
+            created_date: newestPost.created_date,
+            hours_ago: newestPost.hours_ago.toFixed(2),
+            link: newestPost.link
+          } : null,
+          oldestPost: oldestPost ? {
+            title: oldestPost.title,
+            created_date: oldestPost.created_date,
+            hours_ago: oldestPost.hours_ago.toFixed(2),
+            link: oldestPost.link
+          } : null,
+          samplePosts: postsWithTimestamps.slice(0, 10).map(p => ({
             title: p.title,
-            created_utc: p.postData?.created_utc,
-            created_date: p.postData?.created_utc ? new Date(p.postData.created_utc * 1000).toISOString() : 'missing',
+            created_date: p.created_date,
+            hours_ago: p.hours_ago.toFixed(2),
             link: p.link
           }))
         }
@@ -437,7 +547,7 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
             success: true,
             message: `Found ${aiFiltered.length} posts but usage limit reached`,
             posts: aiFiltered,
-            totalFound: allPosts.length,
+            totalFound: allPostsFiltered.length,
             afterTimeFilter: timeFiltered.length,
             afterAiFilter: aiFiltered.length,
             postedCount: 0,
@@ -595,7 +705,7 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
           success: true,
           message: `Processed ${aiFiltered.length} posts: ${postedCount} posted, ${failedCount} failed`,
           posts: aiFiltered,
-          totalFound: allPosts.length,
+          totalFound: allPostsFiltered.length,
           afterTimeFilter: timeFiltered.length,
           afterAiFilter: aiFiltered.length,
           postedCount,
