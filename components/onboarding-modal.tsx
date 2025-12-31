@@ -60,18 +60,29 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
       
       if (searchParams.get("reddit_connected") === "success") {
         setCurrentStep(1);
-        // Check connection status after a short delay to allow tokens to be saved
-        setTimeout(async () => {
+        // Check connection status immediately and retry if needed
+        const checkConnection = async (retryCount = 0) => {
           try {
             const response = await fetch("/api/reddit/status");
             if (response.ok) {
               const data = await response.json();
               setIsRedditConnected(data.connected);
+              // If not connected yet and we haven't retried too many times, retry after a delay
+              if (!data.connected && retryCount < 3) {
+                setTimeout(() => checkConnection(retryCount + 1), 1000);
+              }
+            } else if (retryCount < 3) {
+              // Retry on error
+              setTimeout(() => checkConnection(retryCount + 1), 1000);
             }
           } catch (error) {
             console.error("Error checking Reddit connection:", error);
+            if (retryCount < 3) {
+              setTimeout(() => checkConnection(retryCount + 1), 1000);
+            }
           }
-        }, 1000);
+        };
+        checkConnection();
       }
     }
   }, [isOpen, searchParams]);

@@ -486,6 +486,37 @@ function PlaygroundContent() {
     }
   }, [status, session]);
 
+  // Refresh Reddit connection status when redirected back from OAuth
+  useEffect(() => {
+    const redditConnected = searchParams?.get("reddit_connected");
+    if (redditConnected === "success" && status === "authenticated" && session?.user?.email) {
+      // Refresh the connection status
+      const checkRedditConnection = async () => {
+        try {
+          const response = await fetch("/api/reddit/status");
+          if (response.ok) {
+            const data = await response.json();
+            setIsRedditConnected(data.connected);
+            console.log("🔗 Reddit connection status refreshed after OAuth:", data.connected);
+          } else {
+            setIsRedditConnected(false);
+          }
+        } catch (error) {
+          console.error("🔗 Error checking Reddit connection status after OAuth:", error);
+          setIsRedditConnected(false);
+        }
+      };
+      
+      checkRedditConnection();
+      
+      // Clean up the query parameter from URL
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("reddit_connected");
+      const newUrl = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname;
+      router.replace(newUrl);
+    }
+  }, [searchParams, status, session, router]);
+
   // Load product details when authenticated (for use in Discovery page)
   useEffect(() => {
     if (status === "authenticated" && session?.user?.email) {

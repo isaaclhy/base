@@ -161,12 +161,30 @@ export async function GET(request: NextRequest) {
     // Normalize email to lowercase to ensure consistent storage
     const normalizedEmail = userEmail.toLowerCase();
     try {
-      await updateUserRedditTokens(normalizedEmail, {
+      const updatedUser = await updateUserRedditTokens(normalizedEmail, {
         accessToken: tokenData.access_token,
         refreshToken: tokenData.refresh_token,
         expiresAt,
       });
-      console.log(`Successfully saved Reddit tokens for user: ${normalizedEmail}`);
+      
+      // Verify tokens were actually saved
+      if (!updatedUser || !updatedUser.redditAccessToken || !updatedUser.redditRefreshToken) {
+        console.error("Tokens were not saved correctly:", {
+          email: normalizedEmail,
+          hasUser: !!updatedUser,
+          hasAccessToken: !!updatedUser?.redditAccessToken,
+          hasRefreshToken: !!updatedUser?.redditRefreshToken,
+        });
+        return NextResponse.redirect(
+          `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/playground?error=reddit_oauth_save_failed`
+        );
+      }
+      
+      console.log(`Successfully saved Reddit tokens for user: ${normalizedEmail}`, {
+        hasAccessToken: !!updatedUser.redditAccessToken,
+        hasRefreshToken: !!updatedUser.redditRefreshToken,
+        expiresAt: updatedUser.redditTokenExpiresAt,
+      });
     } catch (dbError) {
       console.error("Error saving Reddit tokens:", dbError);
       console.error("Error details:", {
@@ -174,6 +192,7 @@ export async function GET(request: NextRequest) {
         hasAccessToken: !!tokenData.access_token,
         hasRefreshToken: !!tokenData.refresh_token,
         errorMessage: dbError instanceof Error ? dbError.message : String(dbError),
+        errorStack: dbError instanceof Error ? dbError.stack : undefined,
       });
       return NextResponse.redirect(
         `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/playground?error=reddit_oauth_save_failed`
