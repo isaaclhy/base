@@ -492,6 +492,12 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
     // Step 4: Apply AI filter
     let filterError: unknown = null;
     try {
+      // Check if API key is configured
+      const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
+      if (!apiKey) {
+        throw new Error('OpenAI API key is not configured. Please set OPENAI_API_KEY or OPENAI_KEY environment variable.');
+      }
+
       const postsForFilter = timeFiltered.map((post) => ({
         title: post.title || "",
         content: post.selftext || post.snippet || "",
@@ -499,15 +505,12 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
 
       console.log(`[Auto-pilot] Filtering ${postsForFilter.length} posts using OpenAI...`);
       
-      // Format posts for the prompt
-      const postsString = JSON.stringify(postsForFilter);
-      
       const filterResponse = await (openaiClient as any).responses.create({
         prompt: {
           "id": "pmpt_6954083f58708193b7fbe2c0ed6396530bbdd28382fe1384",
           "version": "9",
           "variables": {
-            "posts": postsString,
+            "posts": postsForFilter,
             "idea": productIdea
           }
         }
@@ -515,7 +518,8 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
 
       if (filterResponse.error) {
         console.error('[Auto-pilot] OpenAI filter API error:', filterResponse.error);
-        throw new Error(filterResponse.error?.message || 'OpenAI filter error');
+        const errorMessage = filterResponse.error?.message || JSON.stringify(filterResponse.error);
+        throw new Error(`OpenAI filter error: ${errorMessage}`);
       }
 
       // Extract the output - handle different possible response structures
@@ -777,11 +781,23 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
         const errorText = await filterResponse.text().catch(() => 'Unable to read error response');
         console.error(`[Auto-pilot] Filter API error response: ${errorText}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       filterError = error;
       console.error('[Auto-pilot] ============================================');
       console.error('[Auto-pilot] Error applying AI filter:', error);
-      if (error instanceof Error) {
+      
+      // Handle OpenAI API errors specifically
+      if (error?.status === 401 || error?.code === 'invalid_api_key') {
+        console.error('[Auto-pilot] OpenAI authentication failed - 401 Unauthorized');
+        console.error('[Auto-pilot] This usually means:');
+        console.error('[Auto-pilot]   1. OPENAI_API_KEY or OPENAI_KEY environment variable is missing');
+        console.error('[Auto-pilot]   2. The API key is invalid or expired');
+        console.error('[Auto-pilot]   3. The API key does not have access to the prompts/responses API');
+        filterError = 'OpenAI API authentication failed (401). Please check your API key configuration.';
+      } else if (error?.status) {
+        console.error(`[Auto-pilot] OpenAI API returned status ${error.status}`);
+        console.error('[Auto-pilot] Error response:', error.message || error.error || JSON.stringify(error));
+      } else if (error instanceof Error) {
         console.error('[Auto-pilot] Filter error message:', error.message);
         console.error('[Auto-pilot] Filter error stack:', error.stack);
       } else {
