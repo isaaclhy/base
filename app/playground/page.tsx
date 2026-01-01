@@ -398,12 +398,13 @@ function PlaygroundContent() {
   const [isLoadingLeadsLinks, setIsLoadingLeadsLinks] = useState<Record<string, boolean>>({});
   const distinctLeadsLinksRef = useRef<Array<any>>([]);
   const [leadsPage, setLeadsPage] = useState(1);
-  const [leadsSortBy, setLeadsSortBy] = useState<"date-desc" | "date-asc" | "upvotes-desc" | "upvotes-asc" | "comments-desc" | "comments-asc" | "title-asc" | "title-desc">("date-desc");
+  const [leadsSortBy, setLeadsSortBy] = useState<"relevance" | "date-desc" | "date-asc" | "upvotes-desc" | "upvotes-asc" | "comments-desc" | "comments-asc" | "title-asc" | "title-desc">("relevance");
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [isBulkOperationsModalOpen, setIsBulkOperationsModalOpen] = useState(false);
   const [showNoKeywordsModal, setShowNoKeywordsModal] = useState(false);
+  const [showNoRowsSelectedModal, setShowNoRowsSelectedModal] = useState(false);
   const [bulkPersona, setBulkPersona] = useState<"Founder" | "User">("Founder");
   const [bulkOperationStatus, setBulkOperationStatus] = useState<Record<string, "haven't started" | "generating" | "posting" | "completed" | "error">>({});
   const [bulkGeneratedComments, setBulkGeneratedComments] = useState<Record<string, string>>({});
@@ -2134,39 +2135,78 @@ function PlaygroundContent() {
       return distinctLeadsLinksRef.current;
     }
 
-    let globalIndex = 0;
-    const allLinksWithKeyword = Object.entries(leadsLinks)
-      .reverse()
-      .flatMap(([key, links]) => {
-        // Extract keyword from key (handles both "keyword" and "keyword:subreddit" formats)
-        const keyword = key.includes(':') ? key.split(':')[0] : key;
-        const subreddit = key.includes(':') ? key.split(':')[1] : null;
+    // Separate Google search results (keys without colon) from subreddit search results (keys with colon)
+    const googleSearchKeys: string[] = [];
+    const subredditSearchKeys: string[] = [];
+    
+    Object.keys(leadsLinks).forEach(key => {
+      if (key.includes(':')) {
+        subredditSearchKeys.push(key);
+      } else {
+        googleSearchKeys.push(key);
+      }
+    });
 
-        return [...links].reverse().map((link, linkIndex) => {
-          const uniqueKey = `leads-${key}-${link.link || "no-link"}-${linkIndex}-${globalIndex}`;
+    // Find the maximum number of results across all searches to know how many rounds to process
+    const maxResults = Math.max(
+      ...googleSearchKeys.map(key => leadsLinks[key]?.length || 0),
+      ...subredditSearchKeys.map(key => leadsLinks[key]?.length || 0),
+      0
+    );
+
+    // Round-robin: first result from all Google searches, then first from all subreddit searches,
+    // then second from all Google searches, then second from all subreddit searches, etc.
+    let globalIndex = 0;
+    const allLinksWithKeyword: Array<any> = [];
+
+    for (let resultIndex = 0; resultIndex < maxResults; resultIndex++) {
+      // First, add result at this index from each Google search
+      for (const key of googleSearchKeys) {
+        const links = leadsLinks[key] || [];
+        if (links[resultIndex]) {
+          const link = links[resultIndex];
+          const uniqueKey = `leads-${key}-${link.link || "no-link"}-${resultIndex}-${globalIndex}`;
           const item = {
             ...link,
-            query: subreddit ? `${keyword} (r/${subreddit})` : keyword,
-            keyword: keyword, // Store original keyword for reference
-            subreddit: subreddit, // Store subreddit if applicable
-            linkIndex,
+            query: key,
+            keyword: key,
+            subreddit: null,
+            linkIndex: resultIndex,
             uniqueKey,
             order: globalIndex,
-          } as typeof link & {
-            query: string;
-            keyword: string;
-            subreddit: string | null;
-            linkIndex: number;
-            uniqueKey: string;
-            order: number;
           };
+          allLinksWithKeyword.push(item);
           globalIndex += 1;
-          return item;
-        });
-      });
+        }
+      }
+
+      // Then, add result at this index from each subreddit search
+      for (const key of subredditSearchKeys) {
+        const links = leadsLinks[key] || [];
+        if (links[resultIndex]) {
+          const link = links[resultIndex];
+          const [keyword, subreddit] = key.split(':');
+          const uniqueKey = `leads-${key}-${link.link || "no-link"}-${resultIndex}-${globalIndex}`;
+          const item = {
+            ...link,
+            query: `${keyword} (r/${subreddit})`,
+            keyword: keyword,
+            subreddit: subreddit,
+            linkIndex: resultIndex,
+            uniqueKey,
+            order: globalIndex,
+          };
+          allLinksWithKeyword.push(item);
+          globalIndex += 1;
+        }
+      }
+    }
 
     const sortedLinks = [...allLinksWithKeyword].sort((a, b) => {
-      if (leadsSortBy === "date-desc" || leadsSortBy === "date-asc") {
+      if (leadsSortBy === "relevance") {
+        // Sort by order field to maintain round-robin relevance order
+        return a.order - b.order;
+      } else if (leadsSortBy === "date-desc" || leadsSortBy === "date-asc") {
         const timeA =
           typeof a.postData?.created_utc === "number"
             ? a.postData.created_utc
@@ -6197,54 +6237,58 @@ function PlaygroundContent() {
                     Leads
                   </h3>
                   <div className="flex gap-2 self-start sm:self-auto">
-                    {selectedLeads.size > 0 && (
-                      <Button
-                        variant="default"
-                        size="sm"
-                        className="bg-black text-white hover:bg-black/90"
-                        onClick={async () => {
-                          // Check usage limit before opening modal
-                          try {
-                            const response = await fetch("/api/usage");
-                            if (response.ok) {
-                              const data = await response.json();
-                              const currentCount = data.currentCount ?? 0;
-                              const maxCount = data.maxCount ?? 30;
-                              const remaining = Math.max(0, maxCount - currentCount);
-                              const selectedCount = selectedLeads.size;
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="bg-black text-white hover:bg-black/90"
+                      onClick={async () => {
+                        // If no rows are selected, show modal asking user to select rows
+                        if (selectedLeads.size === 0) {
+                          setShowNoRowsSelectedModal(true);
+                          return;
+                        }
 
-                              // Check if user has enough credits for selected leads
-                              if (remaining < selectedCount) {
-                                // Show upgrade modal instead of toast
-                                setUpgradeModalContext({
-                                  limitReached: remaining === 0,
-                                  remaining: remaining,
-                                  selectedCount: selectedCount,
-                                  maxCount: maxCount
-                                });
-                                setShowUpgradeModal(true);
-                                return;
-                              }
+                        // Check usage limit before opening modal
+                        try {
+                          const response = await fetch("/api/usage");
+                          if (response.ok) {
+                            const data = await response.json();
+                            const currentCount = data.currentCount ?? 0;
+                            const maxCount = data.maxCount ?? 30;
+                            const remaining = Math.max(0, maxCount - currentCount);
+                            const selectedCount = selectedLeads.size;
+
+                            // Check if user has enough credits for selected leads
+                            if (remaining < selectedCount) {
+                              // Show upgrade modal instead of toast
+                              setUpgradeModalContext({
+                                limitReached: remaining === 0,
+                                remaining: remaining,
+                                selectedCount: selectedCount,
+                                maxCount: maxCount
+                              });
+                              setShowUpgradeModal(true);
+                              return;
                             }
-                          } catch (error) {
-                            console.error("Error checking usage:", error);
-                            // Continue if check fails (don't block user)
                           }
+                        } catch (error) {
+                          console.error("Error checking usage:", error);
+                          // Continue if check fails (don't block user)
+                        }
 
-                          // Store the selected lead items before opening modal
-                          const selectedLeadItems = distinctLeadsLinks.filter(link => selectedLeads.has(link.uniqueKey));
-                          setBulkModalLeads(selectedLeadItems);
-                          setBulkModalInitialCount(selectedLeads.size);
-                          setIsBulkOperationsModalOpen(true);
-                          // Reset status when opening modal
-                          setBulkOperationStatus({});
-                          setBulkGeneratedComments({});
-                          setIsBulkPosting(false);
-                        }}
-                      >
-                        Bulk Operations {selectedLeads.size > 0 && `(${selectedLeads.size})`}
-                      </Button>
-                    )}
+                        // Store the selected lead items before opening modal
+                        const selectedLeadItems = distinctLeadsLinks.filter(link => selectedLeads.has(link.uniqueKey));
+                        setBulkModalLeads(selectedLeadItems);
+                        setBulkModalInitialCount(selectedLeads.size);
+                        setIsBulkOperationsModalOpen(true);
+                        // Reset status when opening modal
+                        setBulkOperationStatus({});
+                        setBulkGeneratedComments({});
+                        setIsBulkPosting(false);
+                      }}
+                    >
+                      Bulk Operations {selectedLeads.size > 0 && `(${selectedLeads.size})`}
+                    </Button>
                     <div className="flex items-center gap-3">
                       {/* <Button
                         onClick={handleAutoPilot}
@@ -6286,19 +6330,32 @@ function PlaygroundContent() {
                           size="sm"
                           onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
                         >
-                          {leadsSortBy === "date-desc" ? "Sort by" :
-                            leadsSortBy === "date-asc" ? "Date (Oldest)" :
-                              leadsSortBy === "upvotes-desc" ? "Upvotes (High)" :
-                                leadsSortBy === "upvotes-asc" ? "Upvotes (Low)" :
-                                  leadsSortBy === "comments-desc" ? "Comments (Most)" :
-                                    leadsSortBy === "comments-asc" ? "Comments (Least)" :
-                                      leadsSortBy === "title-asc" ? "Title (A-Z)" :
-                                        leadsSortBy === "title-desc" ? "Title (Z-A)" : "Sort by"}
+                          {leadsSortBy === "relevance" ? "Relevance" :
+                            leadsSortBy === "date-desc" ? "Date (Newest)" :
+                              leadsSortBy === "date-asc" ? "Date (Oldest)" :
+                                leadsSortBy === "upvotes-desc" ? "Upvotes (High)" :
+                                  leadsSortBy === "upvotes-asc" ? "Upvotes (Low)" :
+                                    leadsSortBy === "comments-desc" ? "Comments (Most)" :
+                                      leadsSortBy === "comments-asc" ? "Comments (Least)" :
+                                        leadsSortBy === "title-asc" ? "Title (A-Z)" :
+                                          leadsSortBy === "title-desc" ? "Title (Z-A)" : "Sort by"}
                           <ChevronDown className="h-3 w-3 ml-1.5" />
                         </Button>
                         {isSortDropdownOpen && (
                           <div className="absolute top-full right-0 mt-1 z-40 bg-card border border-border rounded-md shadow-lg min-w-[160px]">
                             <div className="py-1">
+                              <button
+                                onClick={() => {
+                                  setLeadsSortBy("relevance");
+                                  setIsSortDropdownOpen(false);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                  leadsSortBy === "relevance" && "bg-muted"
+                                )}
+                              >
+                                Relevance
+                              </button>
                               <button
                                 onClick={() => {
                                   setLeadsSortBy("date-desc");
@@ -7738,6 +7795,45 @@ function PlaygroundContent() {
                     }}
                   >
                     Add Keywords
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+      {showNoRowsSelectedModal && (
+        <>
+          <div
+            className="fixed inset-0 z-50 bg-background/40 backdrop-blur-sm"
+            onClick={() => setShowNoRowsSelectedModal(false)}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="w-full max-w-md rounded-lg border border-border bg-card shadow-lg">
+              <div className="border-b border-border px-6 py-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xl font-semibold text-foreground">
+                    No Rows Selected
+                  </h3>
+                  <button
+                    onClick={() => setShowNoRowsSelectedModal(false)}
+                    className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                    aria-label="Close modal"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+              <div className="px-6 py-6">
+                <p className="text-sm text-muted-foreground mb-6">
+                  Please select at least one row from the table to use bulk operations. You can select rows by clicking the checkboxes on the left side of each row.
+                </p>
+                <div className="flex items-center justify-end gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowNoRowsSelectedModal(false)}
+                  >
+                    Close
                   </Button>
                 </div>
               </div>
