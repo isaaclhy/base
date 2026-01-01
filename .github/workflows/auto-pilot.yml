@@ -12,11 +12,29 @@ jobs:
     steps:
       - name: Call Auto-pilot Endpoint
         run: |
-          curl -X POST ${{ secrets.APP_URL }}/api/cron/auto-pilot \
+          echo "Calling auto-pilot endpoint: ${{ secrets.APP_URL }}/api/cron/auto-pilot"
+          echo "Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo ""
+          response=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST ${{ secrets.APP_URL }}/api/cron/auto-pilot \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.CRON_API_KEY }}" \
             -d '{
               "userEmail": "${{ secrets.CRON_USER_EMAIL }}",
               "apiKey": "${{ secrets.CRON_API_KEY }}"
-            }'
+            }')
+          
+          http_status=$(echo "$response" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
+          body=$(echo "$response" | sed '/HTTP_STATUS:/d')
+          
+          echo "HTTP Status: $http_status"
+          echo ""
+          echo "Response:"
+          echo "$body" | jq '.' 2>/dev/null || echo "$body"
+          
+          if [ "$http_status" != "200" ]; then
+            echo ""
+            echo "❌ Request failed with status $http_status"
+            echo "Check Vercel logs for detailed error information"
+            exit 1
+          fi
 
