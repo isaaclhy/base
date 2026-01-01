@@ -496,38 +496,98 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
         content: post.selftext || post.snippet || "",
       }));
 
-      console.log(`[Auto-pilot] Sending ${postsForFilter.length} posts to AI filter API`);
-      const filterApiUrl = `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/openai/filter-posts`;
-      console.log(`[Auto-pilot] Filter API URL: ${filterApiUrl}`);
+      console.log(`[Auto-pilot] Filtering ${postsForFilter.length} posts using OpenAI...`);
       
-      const filterResponse = await fetch(filterApiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          posts: postsForFilter,
-          idea: productIdea,
-        }),
-      });
+      // Format posts for the prompt
+      const postsString = JSON.stringify(postsForFilter);
       
-      console.log(`[Auto-pilot] Filter API response status: ${filterResponse.status}`);
-
-      if (filterResponse.ok) {
-        const filterData = await filterResponse.json();
-        const filterResults = filterData.results || [];
-        console.log(`[Auto-pilot] Filter API returned ${filterResults.length} results:`, filterResults);
-        
-        const aiFiltered = timeFiltered.filter((post, index) => {
-          const result = filterResults[index]?.toUpperCase();
-          const isKept = result && result !== 'NO';
-          if (!isKept) {
-            console.log(`[Auto-pilot] AI filter removed: "${post.title}" | Result: ${result}`);
+      const filterResponse = await (openaiClient as any).responses.create({
+        prompt: {
+          "id": "pmpt_6954083f58708193b7fbe2c0ed6396530bbdd28382fe1384",
+          "version": "9",
+          "variables": {
+            "posts": postsString,
+            "idea": productIdea
           }
-          return isKept;
-        });
+        }
+      });
 
-        console.log(`[Auto-pilot] ${aiFiltered.length} posts remaining after AI filter (out of ${timeFiltered.length} time-filtered posts)`);
+      if (filterResponse.error) {
+        console.error('[Auto-pilot] OpenAI filter API error:', filterResponse.error);
+        throw new Error(filterResponse.error?.message || 'OpenAI filter error');
+      }
+
+      // Extract the output - handle different possible response structures
+      let output: string;
+      try {
+        if (filterResponse.output && Array.isArray(filterResponse.output)) {
+          const message = filterResponse.output.find((res: any) => res.type === 'message');
+          if (message && message.content && Array.isArray(message.content)) {
+            const outputText = message.content.find((res: any) => res.type === 'output_text');
+            if (outputText && outputText.text) {
+              output = outputText.text;
+            } else {
+              throw new Error('Could not find output_text in message content');
+            }
+          } else {
+            throw new Error('Could not find message in output');
+          }
+        } else if (filterResponse.data) {
+          output = typeof filterResponse.data === 'string' ? filterResponse.data : JSON.stringify(filterResponse.data);
+        } else if (typeof filterResponse === 'string') {
+          output = filterResponse;
+        } else {
+          throw new Error('Unexpected response structure');
+        }
+      } catch (extractError) {
+        console.error('[Auto-pilot] Error extracting filter output:', extractError);
+        output = JSON.stringify(filterResponse);
+      }
+
+      console.log(`[Auto-pilot] Raw OpenAI filter output:`, output);
+
+      // Parse the response - should be an array of YES/MAYBE/NO
+      let filterResults: string[];
+      try {
+        const parsed = JSON.parse(output);
+        if (Array.isArray(parsed)) {
+          filterResults = parsed.map((r: any) => String(r).trim().toUpperCase());
+        } else if (typeof parsed === 'string') {
+          filterResults = parsed.split(/\n|,/).map((r: string) => r.trim().toUpperCase()).filter(Boolean);
+        } else {
+          throw new Error('Unexpected response format');
+        }
+      } catch (e) {
+        console.log('[Auto-pilot] Filter output is not JSON, trying to parse as plain text');
+        const lines = output.split(/\n/).filter((line: string) => line.trim().length > 0);
+        filterResults = lines.map((line: string) => {
+          const match = line.match(/\b(YES|NO|MAYBE)\b/i);
+          return match ? match[1].toUpperCase() : line.trim().toUpperCase();
+        }).filter(Boolean);
+      }
+
+      // Validate that we have the right number of results
+      if (filterResults.length !== postsForFilter.length) {
+        console.warn(`[Auto-pilot] Expected ${postsForFilter.length} filter results, got ${filterResults.length}`);
+        if (filterResults.length < postsForFilter.length) {
+          filterResults = [...filterResults, ...Array(postsForFilter.length - filterResults.length).fill('NO')];
+        } else {
+          filterResults = filterResults.slice(0, postsForFilter.length);
+        }
+      }
+
+      console.log(`[Auto-pilot] Filter API returned ${filterResults.length} results:`, filterResults);
+      
+      const aiFiltered = timeFiltered.filter((post, index) => {
+        const result = filterResults[index]?.toUpperCase();
+        const isKept = result && result !== 'NO';
+        if (!isKept) {
+          console.log(`[Auto-pilot] AI filter removed: "${post.title}" | Result: ${result}`);
+        }
+        return isKept;
+      });
+
+      console.log(`[Auto-pilot] ${aiFiltered.length} posts remaining after AI filter (out of ${timeFiltered.length} time-filtered posts)`);
 
         // Step 5: Generate comments, post them, and save to database
         const productLink = dbUser.productDetails?.link || "";
