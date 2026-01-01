@@ -505,12 +505,15 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
 
       console.log(`[Auto-pilot] Filtering ${postsForFilter.length} posts using OpenAI...`);
       
+      // Format posts as JSON string (OpenAI expects string, not array)
+      const postsString = JSON.stringify(postsForFilter);
+      
       const filterResponse = await (openaiClient as any).responses.create({
         prompt: {
           "id": "pmpt_6954083f58708193b7fbe2c0ed6396530bbdd28382fe1384",
           "version": "9",
           "variables": {
-            "posts": postsForFilter,
+            "posts": postsString,
             "idea": productIdea
           }
         }
