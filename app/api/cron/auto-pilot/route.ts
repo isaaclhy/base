@@ -776,11 +776,6 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
           postedCount,
           failedCount,
         });
-      } else {
-        console.error(`[Auto-pilot] Filter API returned non-OK status: ${filterResponse.status}`);
-        const errorText = await filterResponse.text().catch(() => 'Unable to read error response');
-        console.error(`[Auto-pilot] Filter API error response: ${errorText}`);
-      }
     } catch (error: any) {
       filterError = error;
       console.error('[Auto-pilot] ============================================');
