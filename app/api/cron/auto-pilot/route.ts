@@ -490,6 +490,7 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
     }
 
     // Step 4: Apply AI filter
+    let filterError: unknown = null;
     try {
       const postsForFilter = timeFiltered.map((post) => ({
         title: post.title || "",
@@ -776,11 +777,17 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
         const errorText = await filterResponse.text().catch(() => 'Unable to read error response');
         console.error(`[Auto-pilot] Filter API error response: ${errorText}`);
       }
-    } catch (filterError) {
-      console.error('[Auto-pilot] Error applying AI filter:', filterError);
-      if (filterError instanceof Error) {
-        console.error('[Auto-pilot] Filter error stack:', filterError.stack);
+    } catch (error) {
+      filterError = error;
+      console.error('[Auto-pilot] ============================================');
+      console.error('[Auto-pilot] Error applying AI filter:', error);
+      if (error instanceof Error) {
+        console.error('[Auto-pilot] Filter error message:', error.message);
+        console.error('[Auto-pilot] Filter error stack:', error.stack);
+      } else {
+        console.error('[Auto-pilot] Filter error (non-Error object):', JSON.stringify(error));
       }
+      console.error('[Auto-pilot] ============================================');
     }
 
     // If AI filter fails, return time-filtered results
@@ -789,8 +796,9 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
       success: true,
       message: `Found ${timeFiltered.length} posts (AI filter failed)`,
       posts: timeFiltered,
-      totalFound: allPosts.length,
+      totalFound: allPostsFiltered.length,
       afterTimeFilter: timeFiltered.length,
+      filterError: filterError instanceof Error ? filterError.message : filterError ? String(filterError) : 'Unknown error'
     });
 
   } catch (err: unknown) {
