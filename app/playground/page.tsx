@@ -1708,6 +1708,7 @@ function PlaygroundContent() {
     await Promise.all(subredditPromises);
   };
 
+
   // Handle auto-pilot: clear leads and refresh with 4-hour filter
   const handleAutoPilot = async () => {
     // Clear the leads table
@@ -1745,7 +1746,7 @@ function PlaygroundContent() {
         });
       }
 
-      // Run both Google search and subreddit search in parallel
+      // Run Google search and subreddit search in parallel
       await Promise.all([...googleSearchPromises, ...subredditSearchPromises]);
 
       await batchFetchLeadsPostContent();
@@ -1912,36 +1913,112 @@ function PlaygroundContent() {
         // Prepare posts array for filter API (only unique posts)
         const postsForFilterAPI = postsToFilter.map(({ title, content }) => ({ title, content }));
 
-        console.log('[Auto-pilot] Posts sent to filter API:', postsForFilterAPI);
+        console.log('[Auto-pilot] Total posts to filter:', postsForFilterAPI.length);
 
-        // Call filter API
+        // Batch posts to avoid exceeding API character limit (1048576 characters for posts variable)
+        // The posts variable is JSON.stringify'd in the API, so we need to check the stringified length
+        const MAX_POSTS_STRING_LENGTH = 900000; // Conservative limit (leave some buffer from 1048576)
+        const batches: Array<Array<{ title: string; content: string }>> = [];
+
+        // Split posts into batches, checking the actual JSON string length to ensure we don't exceed the limit
+        let currentBatch: Array<{ title: string; content: string }> = [];
+
+        for (const post of postsForFilterAPI) {
+          // Test if adding this post would exceed the limit
+          const testBatch = [...currentBatch, post];
+          const testBatchString = JSON.stringify(testBatch);
+          
+          // If adding this post would exceed the limit, start a new batch
+          if (testBatchString.length > MAX_POSTS_STRING_LENGTH && currentBatch.length > 0) {
+            batches.push(currentBatch);
+            currentBatch = [post];
+          } else {
+            currentBatch.push(post);
+          }
+        }
+
+        // Add the last batch if it has posts
+        if (currentBatch.length > 0) {
+          batches.push(currentBatch);
+        }
+
+        console.log(`[Auto-pilot] Split into ${batches.length} batches for filtering`);
+
+        // Process each batch and collect all filter results
+        const allFilterResults: string[] = [];
+
         try {
-          const filterResponse = await fetch("/api/openai/filter-posts", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              posts: postsForFilterAPI,
-              idea: productIdea,
-            }),
-          });
+          for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+            const batch = batches[batchIndex];
+            
+            console.log(`[Auto-pilot] Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} posts)`);
 
-          if (!filterResponse.ok) {
-            throw new Error(`Filter API returned ${filterResponse.status}`);
+            // Call filter API for this batch
+            const filterResponse = await fetch("/api/openai/filter-posts", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                posts: batch,
+                idea: productIdea,
+              }),
+            });
+
+            if (!filterResponse.ok) {
+              // Try to extract error message from response
+              let errorMessage = `Filter API returned ${filterResponse.status} for batch ${batchIndex + 1}`;
+              try {
+                const errorData = await filterResponse.json();
+                if (errorData.error) {
+                  errorMessage = `${errorMessage}: ${errorData.error}`;
+                }
+              } catch (e) {
+                // If JSON parsing fails, use status text
+                errorMessage = `${errorMessage} ${filterResponse.statusText || ''}`;
+              }
+              console.error('[Auto-pilot] Filter API error:', errorMessage);
+              
+              // If a batch fails, treat all posts in that batch as "NO" (filtered out)
+              allFilterResults.push(...new Array(batch.length).fill('NO'));
+              continue;
+            }
+
+            const filterData = await filterResponse.json();
+            if (filterData.error) {
+              console.error(`[Auto-pilot] Filter API returned error for batch ${batchIndex + 1}:`, filterData.error);
+              // Treat all posts in this batch as "NO" (filtered out)
+              allFilterResults.push(...new Array(batch.length).fill('NO'));
+              continue;
+            }
+
+            const batchFilterResults = filterData.results || [];
+            
+            // Validate batch results length
+            if (batchFilterResults.length !== batch.length) {
+              console.warn(`[Auto-pilot] Batch ${batchIndex + 1} returned ${batchFilterResults.length} results, expected ${batch.length}`);
+              // Pad with "NO" if we got fewer results, or truncate if we got more
+              if (batchFilterResults.length < batch.length) {
+                allFilterResults.push(...batchFilterResults.map((r: string) => String(r).toUpperCase()), ...new Array(batch.length - batchFilterResults.length).fill('NO'));
+              } else {
+                allFilterResults.push(...batchFilterResults.slice(0, batch.length).map((r: string) => String(r).toUpperCase()));
+              }
+            } else {
+              // Add this batch's results to the combined results
+              allFilterResults.push(...batchFilterResults.map((r: string) => String(r).toUpperCase()));
+            }
           }
 
-          const filterData = await filterResponse.json();
-          if (filterData.error) {
-            throw new Error(filterData.error);
+          // Validate that we have the right number of results
+          if (allFilterResults.length !== postsToFilter.length) {
+            console.error(`[Auto-pilot] Total filter results (${allFilterResults.length}) don't match total posts (${postsToFilter.length})`);
+            throw new Error(`Filter results mismatch: expected ${postsToFilter.length}, got ${allFilterResults.length}`);
           }
-
-          const filterResults = filterData.results || [];
 
           // Create a map of URL -> filter result
           const urlToFilterResult = new Map<string, string>();
           postsToFilter.forEach((postInfo, index) => {
-            const filterResult = filterResults[index]?.toUpperCase();
+            const filterResult = allFilterResults[index]?.toUpperCase();
             if (filterResult) {
               urlToFilterResult.set(normalizeUrl(postInfo.url), filterResult);
             }

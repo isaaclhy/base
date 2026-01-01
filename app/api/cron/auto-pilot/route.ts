@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserByEmail } from "@/lib/db/users";
 import { getValidAccessToken, refreshAccessToken } from "@/lib/reddit/auth";
-import { google, customsearch_v1 } from "googleapis";
 import { createPost, PostStatus, getPostsByUserId } from "@/lib/db/posts";
 import { incrementUsage, incrementCronUsage, getMaxPostsPerWeekForPlan, getUserUsage } from "@/lib/db/usage";
 import OpenAI from "openai";
@@ -15,18 +14,10 @@ export const maxDuration = 300;
 // Force dynamic execution to prevent caching issues
 export const dynamic = 'force-dynamic';
 
-const customsearch = google.customsearch("v1");
 
 interface AutoPilotRequestBody {
   userEmail?: string;
   apiKey?: string;
-}
-
-function isRedditPostUrl(url: string) {
-  return (
-    /reddit\.com\/r\/[^/]+\/comments\/[a-z0-9]+(\/|$)/i.test(url) &&
-    !/\/comment\//i.test(url)
-  );
 }
 
 function normalizeUrl(url: string): string {
@@ -36,27 +27,6 @@ function normalizeUrl(url: string): string {
     .toLowerCase();
 }
 
-async function fetchGoogleCustomSearch(
-  query: string,
-  resultsPerQuery: number = 50
-): Promise<customsearch_v1.Schema$Search[]> {
-  const num = Math.min(resultsPerQuery, 10);
-  
-  const response = await customsearch.cse.list({
-    auth: process.env.GCS_KEY,
-    cx: "c691f007075074afc",
-    q: query,
-    num: num,
-    start: 1,
-  });
-
-  const results = response.data;
-  if (!results) {
-    throw new Error("No data returned from Google Custom Search");
-  }
-
-  return [results];
-}
 
 // Batch fetch multiple Reddit posts using OAuth endpoint
 async function fetchRedditPostsBatch(
@@ -262,69 +232,7 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
       keyword?: string;
     }> = [];
 
-    // Step 1: Fetch leads for keywords via Google Search
-    console.log(`[Auto-pilot] Fetching leads for ${keywords.length} keywords:`, keywords);
-    for (const keyword of keywords) {
-      try {
-        console.log(`[Auto-pilot] Fetching Google Search results for keyword: "${keyword}"`);
-        const googleDataArray = await fetchGoogleCustomSearch(keyword, 50);
-        const allItems = googleDataArray.flatMap((googleData) => googleData.items || []);
-        console.log(`[Auto-pilot] Google Search returned ${allItems.length} total items for keyword "${keyword}"`);
-
-        const redditPosts = allItems
-          .filter((data) => isRedditPostUrl(data.link ?? ""))
-          .slice(0, 50)
-          .map((item) => ({
-            title: item.title,
-            link: item.link,
-            snippet: item.snippet,
-            keyword,
-          }));
-
-        console.log(`[Auto-pilot] Found ${redditPosts.length} Reddit posts from Google Search for keyword "${keyword}"`);
-
-        if (redditAccessToken && redditPosts.length > 0) {
-          const postLinks = redditPosts.filter(p => p.link).map(p => p.link!);
-          console.log(`[Auto-pilot] Fetching Reddit post data for ${postLinks.length} posts...`);
-          const postDataMap = await fetchRedditPostsBatch(postLinks, redditAccessToken);
-          console.log(`[Auto-pilot] Successfully fetched Reddit data for ${postDataMap.size} posts`);
-          
-          for (const post of redditPosts) {
-            if (post.link) {
-              const postContent = postDataMap.get(post.link);
-              if (postContent) {
-                const createdUtc = postContent.created_utc;
-                const createdDate = createdUtc ? new Date(createdUtc * 1000).toISOString() : 'unknown';
-                const isWithinWindow = createdUtc && typeof createdUtc === 'number' && createdUtc >= twoHoursAgo;
-                
-                console.log(`[Auto-pilot] Post: "${post.title}" | Created: ${createdDate} (${createdUtc}) | Within 2h: ${isWithinWindow} | URL: ${post.link}`);
-                
-                allPosts.push({
-                  ...post,
-                  selftext: postContent.selftext || null,
-                  postData: {
-                    ups: postContent.ups || 0,
-                    num_comments: postContent.num_comments || 0,
-                    created_utc: postContent.created_utc,
-                    name: postContent.name,
-                  },
-                });
-              } else {
-                console.log(`[Auto-pilot] No Reddit data found for post: ${post.link}`);
-              }
-            }
-          }
-        } else if (!redditAccessToken) {
-          console.log(`[Auto-pilot] Skipping Reddit data fetch - no access token`);
-        }
-      } catch (error) {
-        console.error(`[Auto-pilot] Error fetching leads for keyword "${keyword}":`, error);
-      }
-    }
-
-    console.log(`[Auto-pilot] Total posts fetched from Google Search: ${allPosts.length}`);
-
-    // Step 2: Fetch leads from subreddits (if available)
+    // Step 1: Fetch leads from subreddits (if available)
     if (subreddits.length > 0 && redditAccessToken) {
       console.log(`[Auto-pilot] Fetching leads from ${subreddits.length} subreddits for ${keywords.length} keywords...`);
       
@@ -384,7 +292,7 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
       console.log(`[Auto-pilot] No Reddit access token, skipping subreddit fetching`);
     }
 
-    // Step 2.5: Filter out posts that are already in analytics (already posted/commented on)
+    // Step 2: Filter out posts that are already in analytics (already posted/commented on)
     console.log(`[Auto-pilot] Fetching analytics posts to filter out already-posted posts...`);
     const analyticsPosts = await getPostsByUserId(email);
     const analyticsUrlSet = new Set<string>();
@@ -597,6 +505,21 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
 
       console.log(`[Auto-pilot] ${aiFiltered.length} posts remaining after AI filter (out of ${timeFiltered.length} time-filtered posts)`);
 
+      // Deduplicate aiFiltered by URL to avoid posting multiple comments on the same post
+      const seenUrls = new Set<string>();
+      const uniqueAiFiltered = aiFiltered.filter((post) => {
+        if (!post.link) return false;
+        const normalizedUrl = normalizeUrl(post.link);
+        if (seenUrls.has(normalizedUrl)) {
+          console.log(`[Auto-pilot] Filtering out duplicate post: "${post.title}" | URL: ${post.link}`);
+          return false;
+        }
+        seenUrls.add(normalizedUrl);
+        return true;
+      });
+      
+      console.log(`[Auto-pilot] Deduplicated ${aiFiltered.length} posts to ${uniqueAiFiltered.length} unique posts`);
+
         // Step 5: Generate comments, post them, and save to database
         const productLink = dbUser.productDetails?.link || "";
         const productBenefits = dbUser.productDetails?.productBenefits || "";
@@ -613,20 +536,21 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
           console.log(`[Auto-pilot] Usage limit reached for user ${email}. Cannot post comments.`);
           return NextResponse.json({
             success: true,
-            message: `Found ${aiFiltered.length} posts but usage limit reached`,
-            posts: aiFiltered,
+            message: `Found ${uniqueAiFiltered.length} unique posts but usage limit reached`,
+            posts: uniqueAiFiltered,
             totalFound: allPostsFiltered.length,
             afterTimeFilter: timeFiltered.length,
             afterAiFilter: aiFiltered.length,
+            afterDeduplication: uniqueAiFiltered.length,
             postedCount: 0,
             failedCount: 0,
             limitReached: true,
           });
         }
 
-        // Process each filtered post
-        for (let i = 0; i < Math.min(aiFiltered.length, remaining); i++) {
-          const post = aiFiltered[i];
+        // Process each filtered post (now deduplicated)
+        for (let i = 0; i < Math.min(uniqueAiFiltered.length, remaining); i++) {
+          const post = uniqueAiFiltered[i];
           
           try {
             // Check if we have enough remaining quota
@@ -647,7 +571,7 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
             const postContent = `${post.title || ""}\n\n${post.selftext || post.snippet || ""}`;
             const thingId = post.postData.name; // e.g., "t3_abc123"
 
-            console.log(`[Auto-pilot] Generating comment for post ${i + 1}/${aiFiltered.length}...`);
+            console.log(`[Auto-pilot] Generating comment for post ${i + 1}/${uniqueAiFiltered.length}...`);
             
             // Generate comment using OpenAI
             const commentResponse = await (openaiClient as any).responses.create({
@@ -758,11 +682,11 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
             // Increment cron usage separately
             await incrementCronUsage(email, 1);
 
-            console.log(`[Auto-pilot] Successfully posted and saved post ${i + 1}/${aiFiltered.length}`);
+            console.log(`[Auto-pilot] Successfully posted and saved post ${i + 1}/${uniqueAiFiltered.length}`);
             postedCount++;
 
             // Add small delay between posts to avoid rate limiting
-            if (i < aiFiltered.length - 1) {
+            if (i < uniqueAiFiltered.length - 1) {
               await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
             }
 
@@ -774,11 +698,12 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
 
         return NextResponse.json({
           success: true,
-          message: `Processed ${aiFiltered.length} posts: ${postedCount} posted, ${failedCount} failed`,
-          posts: aiFiltered,
+          message: `Processed ${uniqueAiFiltered.length} unique posts: ${postedCount} posted, ${failedCount} failed`,
+          posts: uniqueAiFiltered,
           totalFound: allPostsFiltered.length,
           afterTimeFilter: timeFiltered.length,
           afterAiFilter: aiFiltered.length,
+          afterDeduplication: uniqueAiFiltered.length,
           postedCount,
           failedCount,
         });
