@@ -1708,7 +1708,7 @@ function PlaygroundContent() {
     await Promise.all(subredditPromises);
   };
 
-  // Handle auto-pilot: clear leads and refresh with 2-hour filter
+  // Handle auto-pilot: clear leads and refresh with 4-hour filter
   const handleAutoPilot = async () => {
     // Clear the leads table
     setLeadsLinks({});
@@ -1752,8 +1752,8 @@ function PlaygroundContent() {
 
       // Wait a bit longer for all post data to be fetched and state updated
       setTimeout(async () => {
-        // Filter to only posts from the past 2 hours
-        const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60); // 2 hours in seconds
+        // Filter to only posts from the past 4 hours
+        const fourHoursAgo = Math.floor(Date.now() / 1000) - (4 * 60 * 60); // 4 hours in seconds
 
         // Get current state
         let currentState: Record<string, Array<any>> = {};
@@ -1775,9 +1775,9 @@ function PlaygroundContent() {
 
         Object.entries(currentState).forEach(([keyword, links]) => {
           const filteredLinks = links.filter((link: any) => {
-            // Only keep posts that have postData with created_utc within past 2 hours
+            // Only keep posts that have postData with created_utc within past 4 hours
             if (link.postData && typeof link.postData.created_utc === 'number') {
-              return link.postData.created_utc >= twoHoursAgo;
+              return link.postData.created_utc >= fourHoursAgo;
             }
             // Remove posts without postData (they're likely old or failed to fetch)
             return false;
@@ -1911,6 +1911,8 @@ function PlaygroundContent() {
 
         // Prepare posts array for filter API (only unique posts)
         const postsForFilterAPI = postsToFilter.map(({ title, content }) => ({ title, content }));
+
+        console.log('[Auto-pilot] Posts sent to filter API:', postsForFilterAPI);
 
         // Call filter API
         try {
@@ -2219,6 +2221,7 @@ function PlaygroundContent() {
       });
 
       const pageData = await Promise.all(pageDataPromises);
+      console.log(`[Page ${leadsPage}] Page row data:`, pageData);
     };
 
     fetchAndLogPageData();

@@ -3,7 +3,7 @@ import { getUserByEmail } from "@/lib/db/users";
 import { getValidAccessToken, refreshAccessToken } from "@/lib/reddit/auth";
 import { google, customsearch_v1 } from "googleapis";
 import { createPost, PostStatus, getPostsByUserId } from "@/lib/db/posts";
-import { incrementUsage, getMaxPostsPerWeekForPlan, getUserUsage } from "@/lib/db/usage";
+import { incrementUsage, incrementCronUsage, getMaxPostsPerWeekForPlan, getUserUsage } from "@/lib/db/usage";
 import OpenAI from "openai";
 
 const openaiClient = new OpenAI({
@@ -754,6 +754,9 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
 
             // Increment usage
             await incrementUsage(email, 1, maxPerWeek);
+            
+            // Increment cron usage separately
+            await incrementCronUsage(email, 1);
 
             console.log(`[Auto-pilot] Successfully posted and saved post ${i + 1}/${aiFiltered.length}`);
             postedCount++;

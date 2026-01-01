@@ -50,7 +50,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<FilterPos
     const response = await (openai as any).responses.create({
       prompt: {
         "id": "pmpt_6954083f58708193b7fbe2c0ed6396530bbdd28382fe1384",
-        "version": "9",
+        "version": "11",
         "variables": {
           "posts": postsString,
           "idea": idea
