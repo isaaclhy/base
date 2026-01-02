@@ -16,7 +16,7 @@ export default function Home() {
         href="https://www.producthunt.com/products/signalscouter"
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center justify-center gap-2 bg-[#ff8c42] text-white py-2 px-4 text-sm font-medium hover:bg-[#ff7a2e] transition-colors"
+        className="flex items-center justify-center gap-2 bg-[#ff8c42] text-white py-2 px-4 text-sm font-medium hover:bg-[#ff7a2e] transition-colors text-center"
       >
         <span>🎉 We just launched on Product Hunt! Check out demo video</span>
       </a>
