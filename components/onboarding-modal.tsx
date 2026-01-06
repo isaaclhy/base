@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { X, Loader2, ChevronRight, CheckCircle2, Plus } from "lucide-react";
+import { X, Loader2, ChevronRight, ChevronLeft, CheckCircle2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSession } from "next-auth/react";
@@ -65,8 +65,11 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
   const [showSubredditDropdown, setShowSubredditDropdown] = useState(false);
   const subredditInputRef = useRef<HTMLInputElement>(null);
   const subredditDropdownRef = useRef<HTMLDivElement>(null);
+  const recommendedSubredditsScrollRef = useRef<HTMLDivElement>(null);
   const [recommendedSubreddits, setRecommendedSubreddits] = useState<Array<{ name: string; count: number; subscribers?: number }>>([]);
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
   const hasFetchedUserInfoRef = useRef(false); // Track if we've already fetched user info
 
   // Check if we're returning from Reddit OAuth
@@ -180,6 +183,26 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
       }
     }
   }, [currentStep, isOpen, redditUserInfo]);
+
+  // Check scroll state for recommended subreddits
+  useEffect(() => {
+    if (recommendedSubreddits.length > 0 && recommendedSubredditsScrollRef.current) {
+      const checkScrollState = () => {
+        if (recommendedSubredditsScrollRef.current) {
+          const { scrollLeft, scrollWidth, clientWidth } = recommendedSubredditsScrollRef.current;
+          setCanScrollLeft(scrollLeft > 0);
+          setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 1);
+        }
+      };
+      
+      // Check immediately
+      checkScrollState();
+      
+      // Also check on window resize
+      window.addEventListener('resize', checkScrollState);
+      return () => window.removeEventListener('resize', checkScrollState);
+    }
+  }, [recommendedSubreddits.length]);
 
   // Generate subreddit recommendations based on keywords when step 4 is reached
   useEffect(() => {
@@ -362,7 +385,7 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
 
   const handleAddKeyword = () => {
     const trimmedKeyword = keywordInput.trim();
-    if (trimmedKeyword && !keywords.includes(trimmedKeyword) && keywords.length < 20) {
+    if (trimmedKeyword && !keywords.includes(trimmedKeyword) && keywords.length < 5) {
       setKeywords([...keywords, trimmedKeyword]);
       setKeywordInput("");
     }
@@ -693,7 +716,7 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium text-foreground mb-2 block">
-                    Add Keywords * <span className="text-muted-foreground font-normal">({keywords.length}/20)</span>
+                    Add Keywords * <span className="text-muted-foreground font-normal">({keywords.length}/5)</span>
                   </label>
                   <p className="text-xs text-muted-foreground mb-3">
                     Add keywords that describe your product or target audience. These will be used to find relevant Reddit posts.
@@ -708,7 +731,7 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
                     />
                     <Button
                       onClick={handleAddKeyword}
-                      disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= 20}
+                      disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= 5}
                       size="sm"
                     >
                       Add
@@ -759,8 +782,19 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
                     <p className="text-xs text-muted-foreground mb-2">
                       Based on your keywords, these subreddits appear most frequently in relevant posts:
                     </p>
-                    <div className="overflow-x-auto pb-2 -mx-6 px-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                      <div className="flex gap-3 min-w-max">
+                    <div className="relative">
+                      <div
+                        ref={recommendedSubredditsScrollRef}
+                        className="overflow-x-auto pb-2 -mx-6 px-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth"
+                        onScroll={() => {
+                          if (recommendedSubredditsScrollRef.current) {
+                            const { scrollLeft, scrollWidth, clientWidth } = recommendedSubredditsScrollRef.current;
+                            setCanScrollLeft(scrollLeft > 0);
+                            setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 1);
+                          }
+                        }}
+                      >
+                        <div className="flex gap-3 min-w-max">
                         {recommendedSubreddits.map((rec) => {
                           const isAdded = subreddits.includes(rec.name.toLowerCase().replace(/^r\//, ""));
                           const isDisabled = isAdded || subreddits.length >= 15;
@@ -799,7 +833,42 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
                             </div>
                           );
                         })}
+                        </div>
                       </div>
+                      {/* Left scroll button */}
+                      {canScrollLeft && (
+                        <button
+                          onClick={() => {
+                            if (recommendedSubredditsScrollRef.current) {
+                              recommendedSubredditsScrollRef.current.scrollBy({
+                                left: -272, // w-64 (256px) + gap-3 (12px) = 268px, rounded to 272 for smooth scroll
+                                behavior: 'smooth'
+                              });
+                            }
+                          }}
+                          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-md hover:bg-background flex items-center justify-center transition-colors"
+                          aria-label="Scroll left"
+                        >
+                          <ChevronLeft className="h-5 w-5 text-foreground" />
+                        </button>
+                      )}
+                      {/* Right scroll button */}
+                      {canScrollRight && (
+                        <button
+                          onClick={() => {
+                            if (recommendedSubredditsScrollRef.current) {
+                              recommendedSubredditsScrollRef.current.scrollBy({
+                                left: 272, // w-64 (256px) + gap-3 (12px) = 268px, rounded to 272 for smooth scroll
+                                behavior: 'smooth'
+                              });
+                            }
+                          }}
+                          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-md hover:bg-background flex items-center justify-center transition-colors"
+                          aria-label="Scroll right"
+                        >
+                          <ChevronRight className="h-5 w-5 text-foreground" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

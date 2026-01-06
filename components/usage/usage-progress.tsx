@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ArrowUpCircle } from "lucide-react";
+import { ArrowUpCircle, Info } from "lucide-react";
 import { useSetPlaygroundTab } from "@/components/playground-layout";
 
 interface UsageData {
@@ -14,6 +14,7 @@ interface UsageData {
   plan?: "free" | "premium";
   syncCounter?: number;
   maxSyncsPerDay?: number;
+  nextSyncReset?: string;
 }
 
 export function UsageProgress() {
@@ -73,6 +74,44 @@ export function UsageProgress() {
   const maxSyncsPerDay = usage.maxSyncsPerDay ?? 2;
   const syncRemaining = Math.max(0, maxSyncsPerDay - syncCounter);
 
+  // Calculate next refresh times
+  const getNextWeekStart = () => {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Current Monday
+    const currentMonday = new Date(now);
+    currentMonday.setDate(diff);
+    currentMonday.setHours(0, 0, 0, 0);
+    
+    // If we're past Monday this week, get next Monday
+    const nextMonday = new Date(currentMonday);
+    if (now.getTime() >= currentMonday.getTime()) {
+      nextMonday.setDate(nextMonday.getDate() + 7);
+    }
+    return nextMonday;
+  };
+
+  const formatRefreshTime = (date: Date) => {
+    const now = new Date();
+    const diffMs = date.getTime() - now.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    
+    if (diffDays === 0 && diffHours === 0) {
+      const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      return `in ${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''}`;
+    } else if (diffDays === 0) {
+      return `in ${diffHours} hour${diffHours !== 1 ? 's' : ''}`;
+    } else if (diffDays === 1) {
+      return `tomorrow at ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+    } else {
+      return `on ${date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })} at ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+    }
+  };
+
+  const nextWeekStart = getNextWeekStart();
+  const nextSyncReset = usage.nextSyncReset ? new Date(usage.nextSyncReset) : null;
+
   return (
     <div className="px-4 pb-2">
       <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
@@ -82,7 +121,13 @@ export function UsageProgress() {
           </span>
         </div>
         <div className="mb-2 flex items-center justify-between text-xs">
-          <span className="font-medium text-foreground">Free Credits</span>
+          <div className="flex items-center gap-1.5 group relative">
+            <span className="font-medium text-foreground">Free Credits</span>
+            <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+            <div className="absolute left-0 top-full mt-2 w-48 px-2 py-1.5 text-xs rounded-md bg-popover border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity z-50 pointer-events-none">
+              Refreshes {formatRefreshTime(nextWeekStart)}
+            </div>
+          </div>
           <span className="text-muted-foreground">
             {remaining} / {usage?.maxCount ?? 30}
           </span>
@@ -101,7 +146,17 @@ export function UsageProgress() {
           />
         </div>
         <div className="mt-4 mb-2 flex items-center justify-between text-xs">
-          <span className="font-medium text-foreground">Sync Leads</span>
+          <div className="flex items-center gap-1.5 group relative">
+            <span className="font-medium text-foreground">Sync Leads</span>
+            {nextSyncReset && (
+              <>
+                <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                <div className="absolute left-0 top-full mt-2 w-48 px-2 py-1.5 text-xs rounded-md bg-popover border border-border shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity z-50 pointer-events-none">
+                  Refreshes {formatRefreshTime(nextSyncReset)}
+                </div>
+              </>
+            )}
+          </div>
           <span className="text-muted-foreground">
             {syncRemaining} / {maxSyncsPerDay}
           </span>

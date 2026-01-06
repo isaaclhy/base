@@ -9,13 +9,13 @@ import { Check } from "lucide-react";
 const features = {
   free: [
     "Unlimited Manual Reddit Post Searches",
-    "20 keywords",
+    "5 keywords",
     "30 generated comments",
     "Engagement tracker",
   ],
   premium: [
     "24/7 Automated Reddit Post search",
-    "30 keywords",
+    "10 keywords",
     "1,200 generated comments",
     "Engagement tracker",
     "Email notification on high potential posts",
@@ -23,7 +23,7 @@ const features = {
   pro: [
     "1 to 1 onboarding call",
     "24/7 Automated Reddit Post search",
-    "50 keywords",
+    "15 keywords",
     "2,000 generated comments",
     "Engagement tracker",
     "Email notification on high potential posts",

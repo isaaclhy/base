@@ -14,7 +14,7 @@ export interface UserUsage {
 }
 
 export const FREE_POST_LIMIT = 30;
-export const PREMIUM_POST_LIMIT = 300; // 1,200 per month ≈ 300 per week
+export const PREMIUM_POST_LIMIT = 1200; // 1,200 per week for premium plan
 export const PRO_POST_LIMIT = 500; // 2,000 per month ≈ 500 per week
 
 const DEFAULT_MAX_POSTS_PER_WEEK = FREE_POST_LIMIT;

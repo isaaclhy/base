@@ -503,88 +503,76 @@ function PlaygroundContent() {
     }
   }, [searchParams, status, session, router]);
 
-  // Load product details when authenticated (for use in Discovery page)
-  useEffect(() => {
-    if (status === "authenticated" && session?.user?.email) {
-      const loadProductDetails = async () => {
-        try {
-          const response = await fetch("/api/user/product-details");
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success && data.productDetails) {
-              setProductDetailsFromDb(data.productDetails);
-              // Also set productName, website and productDescription for Product tab
-              if (data.productDetails.productName) {
-                setProductName(data.productDetails.productName);
-              }
-              if (data.productDetails.link) {
-                setWebsite(data.productDetails.link);
-              }
-              if (data.productDetails.productDescription) {
-                setProductDescription(data.productDetails.productDescription);
-              }
-              if (data.productDetails.productBenefits) {
-                setProductBenefits(data.productDetails.productBenefits);
-              }
-              // Load keywords from the keywords field (array) or fallback to productDetails.keywords (legacy)
-              let loadedKeywords: string[] = [];
-              if (data.keywords && Array.isArray(data.keywords)) {
-                loadedKeywords = data.keywords;
-                // Only update if different to prevent unnecessary re-renders and layout shifts
-                setKeywords((prev) => {
-                  if (JSON.stringify(prev) !== JSON.stringify(loadedKeywords)) {
-                    return loadedKeywords;
-                  }
-                  return prev;
-                });
-              } else if (data.productDetails?.keywords) {
-                // Legacy: If keywords is a string, split by comma; if array, use as is
-                loadedKeywords = typeof data.productDetails.keywords === 'string'
-                  ? data.productDetails.keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k)
-                  : Array.isArray(data.productDetails.keywords)
-                    ? data.productDetails.keywords
-                    : [];
-                // Only update if different to prevent unnecessary re-renders and layout shifts
-                setKeywords((prev) => {
-                  if (JSON.stringify(prev) !== JSON.stringify(loadedKeywords)) {
-                    return loadedKeywords;
-                  }
-                  return prev;
-                });
-              }
-              
-              // Load subreddits from database
-              if (data.subreddits && Array.isArray(data.subreddits)) {
-                // Only update if different to prevent unnecessary re-renders and layout shifts
-                setSubreddits((prev) => {
-                  if (JSON.stringify(prev) !== JSON.stringify(data.subreddits)) {
-                    return data.subreddits;
-                  }
-                  return prev;
-                });
-              }
-              
-              // Store original values for dirty checking
-              setOriginalProductDetails({
-                productName: data.productDetails.productName || "",
-                website: data.productDetails.link || "",
-                productDescription: data.productDetails.productDescription || "",
-                productBenefits: data.productDetails.productBenefits || "",
-                keywords: loadedKeywords,
-              });
-            } else {
-              setProductDetailsFromDb(null);
-              setOriginalProductDetails({
-                productName: "",
-                website: "",
-                productDescription: "",
-                productBenefits: "",
-                keywords: [],
-              });
-            }
+  // Load product details function (reusable)
+  const loadProductDetails = useCallback(async () => {
+    if (!session?.user?.email) return;
+    
+    try {
+      const response = await fetch("/api/user/product-details");
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.productDetails) {
+          setProductDetailsFromDb(data.productDetails);
+          // Also set productName, website and productDescription for Product tab
+          if (data.productDetails.productName) {
+            setProductName(data.productDetails.productName);
           }
-        } catch (error) {
-          console.error("Error loading product details:", error);
+          if (data.productDetails.link) {
+            setWebsite(data.productDetails.link);
+          }
+          if (data.productDetails.productDescription) {
+            setProductDescription(data.productDetails.productDescription);
+          }
+          if (data.productDetails.productBenefits) {
+            setProductBenefits(data.productDetails.productBenefits);
+          }
+          // Load keywords from the keywords field (array) or fallback to productDetails.keywords (legacy)
+          let loadedKeywords: string[] = [];
+          if (data.keywords && Array.isArray(data.keywords)) {
+            loadedKeywords = data.keywords;
+            // Only update if different to prevent unnecessary re-renders and layout shifts
+            setKeywords((prev) => {
+              if (JSON.stringify(prev) !== JSON.stringify(loadedKeywords)) {
+                return loadedKeywords;
+              }
+              return prev;
+            });
+          } else if (data.productDetails?.keywords) {
+            // Legacy: If keywords is a string, split by comma; if array, use as is
+            loadedKeywords = typeof data.productDetails.keywords === 'string'
+              ? data.productDetails.keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k)
+              : Array.isArray(data.productDetails.keywords)
+                ? data.productDetails.keywords
+                : [];
+            // Only update if different to prevent unnecessary re-renders and layout shifts
+            setKeywords((prev) => {
+              if (JSON.stringify(prev) !== JSON.stringify(loadedKeywords)) {
+                return loadedKeywords;
+              }
+              return prev;
+            });
+          }
+          
+          // Load subreddits from database
+          if (data.subreddits && Array.isArray(data.subreddits)) {
+            // Only update if different to prevent unnecessary re-renders and layout shifts
+            setSubreddits((prev) => {
+              if (JSON.stringify(prev) !== JSON.stringify(data.subreddits)) {
+                return data.subreddits;
+              }
+              return prev;
+            });
+          }
+          
+          // Store original values for dirty checking
+          setOriginalProductDetails({
+            productName: data.productDetails.productName || "",
+            website: data.productDetails.link || "",
+            productDescription: data.productDetails.productDescription || "",
+            productBenefits: data.productDetails.productBenefits || "",
+            keywords: loadedKeywords,
+          });
+        } else {
           setProductDetailsFromDb(null);
           setOriginalProductDetails({
             productName: "",
@@ -594,11 +582,36 @@ function PlaygroundContent() {
             keywords: [],
           });
         }
-      };
-      
+      }
+    } catch (error) {
+      console.error("Error loading product details:", error);
+      setProductDetailsFromDb(null);
+      setOriginalProductDetails({
+        productName: "",
+        website: "",
+        productDescription: "",
+        productBenefits: "",
+        keywords: [],
+      });
+    }
+  }, [session?.user?.email]);
+
+  // Load product details when authenticated (for use in Discovery page)
+  useEffect(() => {
+    if (status === "authenticated" && session?.user?.email) {
       loadProductDetails();
     }
-  }, [status, session]);
+  }, [status, session, loadProductDetails]);
+
+  // Reload product details when onboarding completes
+  useEffect(() => {
+    if (onboardingCompleted === true && status === "authenticated" && session?.user?.email) {
+      // Small delay to ensure backend has saved the data
+      setTimeout(() => {
+        loadProductDetails();
+      }, 500);
+    }
+  }, [onboardingCompleted, status, session, loadProductDetails]);
 
   // Load user plan for premium feature checks
   useEffect(() => {
@@ -626,6 +639,7 @@ function PlaygroundContent() {
       setUserPlan(null);
     }
   }, [status, session]);
+
 
   // Check onboarding status
   useEffect(() => {
@@ -2081,9 +2095,44 @@ function PlaygroundContent() {
 
   // Handle leads search
   const handleLeadsSearch = async () => {
+    // If keywords state is empty, try reloading from database first
     if (!keywords || keywords.length === 0) {
-      setShowNoKeywordsModal(true);
-      return;
+      try {
+        const response = await fetch("/api/user/product-details");
+        if (response.ok) {
+          const data = await response.json();
+          let loadedKeywords: string[] = [];
+          
+          // Load keywords from the response
+          if (data.keywords && Array.isArray(data.keywords)) {
+            loadedKeywords = data.keywords;
+          } else if (data.productDetails?.keywords) {
+            loadedKeywords = typeof data.productDetails.keywords === 'string'
+              ? data.productDetails.keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k)
+              : Array.isArray(data.productDetails.keywords)
+                ? data.productDetails.keywords
+                : [];
+          }
+          
+          // If we found keywords, update state and continue
+          if (loadedKeywords.length > 0) {
+            setKeywords(loadedKeywords);
+            // Continue with the sync (don't return)
+          } else {
+            // No keywords found, show modal
+            setShowNoKeywordsModal(true);
+            return;
+          }
+        } else {
+          // API call failed, show modal
+          setShowNoKeywordsModal(true);
+          return;
+        }
+      } catch (error) {
+        console.error("Error reloading product details:", error);
+        setShowNoKeywordsModal(true);
+        return;
+      }
     }
 
     // Check sync limit
@@ -3138,17 +3187,53 @@ function PlaygroundContent() {
   // Handle checkout success
   useEffect(() => {
     const checkout = searchParams?.get("checkout");
-    if (checkout === "success") {
+    const sessionId = searchParams?.get("session_id");
+    
+    if (checkout === "success" && sessionId) {
       setShowCheckoutSuccessModal(true);
-      // Refresh usage immediately to get updated plan from database
-      refreshUsage();
-      // Reload page after a short delay to refresh session with updated plan
-      // This ensures the session callback fetches the latest plan from MongoDB
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
+      
+      // Verify checkout session and update plan if webhook hasn't processed yet
+      const verifyAndUpdatePlan = async () => {
+        try {
+          const response = await fetch(`/api/stripe/verify-checkout?session_id=${sessionId}`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+              console.log("Checkout verified and plan updated");
+              // Refresh usage to get updated plan
+              refreshUsage();
+              // Reload page to refresh session with updated plan
+              setTimeout(() => {
+                window.location.reload();
+              }, 500);
+            } else {
+              // If verification failed, still reload after delay in case webhook processes
+              console.log("Checkout verification pending, will reload");
+              setTimeout(() => {
+                window.location.reload();
+              }, 2000);
+            }
+          } else {
+            // If API call failed, reload anyway
+            setTimeout(() => {
+              window.location.reload();
+            }, 2000);
+          }
+        } catch (error) {
+          console.error("Error verifying checkout:", error);
+          // Still reload to check if webhook processed
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+        }
+      };
+      
+      verifyAndUpdatePlan();
+      
+      // Clean up URL params
       const params = new URLSearchParams(searchParams.toString());
       params.delete("checkout");
+      params.delete("session_id");
       const newQuery = params.toString();
       router.replace(`${pathname}${newQuery ? `?${newQuery}` : ""}`, { scroll: false });
     }
@@ -4849,7 +4934,7 @@ function PlaygroundContent() {
                         </Button>
                       </div>
                       <p className="text-xs text-muted-foreground mb-2">
-                        Add keywords related to your product niche {keywords.length > 0 && `(${keywords.length}/${userPlan === "pro" ? 50 : userPlan === "premium" ? 30 : 20})`}
+                        Add keywords related to your product niche {keywords.length > 0 && `(${keywords.length}/${userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5})`}
                       </p>
                       <div className="w-full space-y-1">
                         <div className="relative">
@@ -4895,9 +4980,9 @@ function PlaygroundContent() {
                                 e.preventDefault();
                                 const trimmed = keywordInput.trim();
                                 if (trimmed && !keywords.includes(trimmed)) {
-                                  const maxKeywords = userPlan === "pro" ? 50 : userPlan === "premium" ? 30 : 20;
+                                  const maxKeywords = userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5;
                                   if (keywords.length >= maxKeywords) {
-                                    showToast(`Maximum of ${maxKeywords} keywords allowed`, { variant: "error" });
+                                    showToast(`Maximum of ${maxKeywords} keywords allowed for ${userPlan || "free"} plan`, { variant: "error" });
                                     return;
                                   }
                                   const newKeywords = [...keywords, trimmed];
@@ -4917,9 +5002,9 @@ function PlaygroundContent() {
                             onClick={() => {
                               const trimmed = keywordInput.trim();
                               if (trimmed && !keywords.includes(trimmed)) {
-                                const maxKeywords = userPlan === "pro" ? 50 : userPlan === "premium" ? 30 : 20;
+                                const maxKeywords = userPlan === "pro" ? 50 : userPlan === "premium" ? 30 : 5;
                                 if (keywords.length >= maxKeywords) {
-                                  showToast(`Maximum of ${maxKeywords} keywords allowed`, { variant: "error" });
+                                  showToast(`Maximum of ${maxKeywords} keywords allowed for ${userPlan || "free"} plan`, { variant: "error" });
                                   return;
                                 }
                                 const newKeywords = [...keywords, trimmed];
@@ -4929,7 +5014,7 @@ function PlaygroundContent() {
                                 saveKeywords(newKeywords);
                               }
                             }}
-                            disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= (userPlan === "pro" ? 50 : userPlan === "premium" ? 30 : 20)}
+                            disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= (userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5)}
                             className="shrink-0"
                           >
                             <Plus className="h-4 w-4" />
