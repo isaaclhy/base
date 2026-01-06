@@ -45,12 +45,9 @@ export async function DELETE(request: NextRequest) {
     const postsDeleteResult = await postsCollection.deleteMany({ userId: email });
     console.log(`Deleted ${postsDeleteResult.deletedCount} posts for user: ${email}`);
 
-    // 2. Delete usage history and preferences
-    const usageCollection = db.collection('usage');
-    const usageDeleteResult = await usageCollection.deleteOne({ userId: email });
-    if (usageDeleteResult.deletedCount > 0) {
-      console.log(`Deleted usage data for user: ${email}`);
-    }
+    // 2. Usage history is preserved (not deleted) for analytics purposes
+    // const usageCollection = db.collection('usage');
+    // const usageDeleteResult = await usageCollection.deleteOne({ userId: email });
 
     // 3. Delete the user account and profile information
     const deleted = await deleteUserByEmail(email);
@@ -66,7 +63,7 @@ export async function DELETE(request: NextRequest) {
       success: true,
       deleted: {
         posts: postsDeleteResult.deletedCount,
-        usage: usageDeleteResult.deletedCount,
+        usage: 0, // Usage data is preserved
         user: deleted ? 1 : 0,
         subscription: user.stripeSubscriptionId ? 'cancelled' : 'none'
       }

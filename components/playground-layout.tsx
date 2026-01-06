@@ -19,6 +19,7 @@ import {
 import { UserInfoCard } from "@/components/auth/user-info-card";
 import { UsageProgress } from "@/components/usage/usage-progress";
 import { PlanCard } from "@/components/usage/plan-card";
+import { LeadsStatsCard } from "@/components/usage/leads-stats-card";
 
 interface PlaygroundLayoutProps {
   children: React.ReactNode;
@@ -147,9 +148,7 @@ export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
         {/* Sidebar Navigation */}
         {isSidebarVisible && (
           <>
-            <div className="pt-4">
-              <UsageProgress />
-            </div>
+            <LeadsStatsCard />
             <nav className="flex-1 space-y-1 overflow-y-auto p-4">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
@@ -160,7 +159,9 @@ export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
                     className={cn(
                       "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors",
                       activeTab === tab.id
-                        ? "bg-primary text-primary-foreground"
+                        ? tab.id === "leads"
+                          ? "bg-[rgba(0,0,0,0.8)] text-white"
+                          : "bg-primary text-primary-foreground"
                         : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                     )}
                   >
@@ -170,6 +171,9 @@ export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
                 );
               })}
             </nav>
+            <div className="pt-4">
+              <UsageProgress />
+            </div>
             <PlanCard />
             <UserInfoCard />
           </>

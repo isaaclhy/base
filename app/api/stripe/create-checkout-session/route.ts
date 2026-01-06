@@ -14,13 +14,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const priceId = process.env.STRIPE_PRICE_ID;
-    if (!priceId) {
-      return NextResponse.json(
-        { error: "Stripe price ID is not configured." },
-        { status: 500 }
-      );
-    }
+    const priceId = "price_1Smit4IkxwGMep15ryH0rrho"; // Premium plan price ID
 
     const dbUser = await getUserByEmail(session.user.email);
 

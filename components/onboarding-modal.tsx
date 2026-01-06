@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { X, Loader2, ChevronRight, CheckCircle2 } from "lucide-react";
+import { X, Loader2, ChevronRight, CheckCircle2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSession } from "next-auth/react";
@@ -30,20 +30,34 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
   // Step 1: Reddit connection
   const [isConnectingReddit, setIsConnectingReddit] = useState(false);
   const [isRedditConnected, setIsRedditConnected] = useState(false);
+  const [redditUserInfo, setRedditUserInfo] = useState<{
+    name?: string;
+    icon_img?: string;
+    total_karma?: number;
+    subreddit_count?: number;
+  } | null>(null);
 
   // Reset loading state when modal opens
   useEffect(() => {
     if (isOpen) {
       setIsConnectingReddit(false);
+      // Reset the fetch flag when modal opens (in case user disconnects and reconnects)
+      if (currentStep === 1) {
+        hasFetchedUserInfoRef.current = false;
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, currentStep]);
   
   // Step 2: Product info
   const [productName, setProductName] = useState("");
   const [productLink, setProductLink] = useState("");
   const [productDescription, setProductDescription] = useState("");
   
-  // Step 3: Subreddits
+  // Step 3: Keywords
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [keywordInput, setKeywordInput] = useState("");
+  
+  // Step 4: Subreddits
   const [subreddits, setSubreddits] = useState<string[]>([]);
   const [subredditInput, setSubredditInput] = useState("");
   const [subredditSuggestions, setSubredditSuggestions] = useState<SubredditSuggestion[]>([]);
@@ -51,6 +65,9 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
   const [showSubredditDropdown, setShowSubredditDropdown] = useState(false);
   const subredditInputRef = useRef<HTMLInputElement>(null);
   const subredditDropdownRef = useRef<HTMLDivElement>(null);
+  const [recommendedSubreddits, setRecommendedSubreddits] = useState<Array<{ name: string; count: number; subscribers?: number }>>([]);
+  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
+  const hasFetchedUserInfoRef = useRef(false); // Track if we've already fetched user info
 
   // Check if we're returning from Reddit OAuth
   useEffect(() => {
@@ -67,6 +84,24 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
             if (response.ok) {
               const data = await response.json();
               setIsRedditConnected(data.connected);
+              // If connected, fetch user info
+              if (data.connected) {
+                try {
+                  const userInfoResponse = await fetch("/api/reddit/me");
+                  if (userInfoResponse.ok) {
+                    const userInfoData = await userInfoResponse.json();
+                    if (userInfoData.success && userInfoData.user) {
+                      setRedditUserInfo({
+                        name: userInfoData.user.name,
+                        icon_img: userInfoData.user.icon_img,
+                        total_karma: userInfoData.user.total_karma,
+                      });
+                    }
+                  }
+                } catch (error) {
+                  console.error("Error fetching Reddit user info:", error);
+                }
+              }
               // If not connected yet and we haven't retried too many times, retry after a delay
               if (!data.connected && retryCount < 3) {
                 setTimeout(() => checkConnection(retryCount + 1), 1000);
@@ -99,21 +134,150 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
           if (response.ok) {
             const data = await response.json();
             setIsRedditConnected(data.connected);
-            // If connected, ensure loading state is reset
-            if (data.connected) {
+            // If connected, ensure loading state is reset and fetch user info (only once)
+            if (data.connected && !hasFetchedUserInfoRef.current && !redditUserInfo) {
               setIsConnectingReddit(false);
+              hasFetchedUserInfoRef.current = true; // Mark as fetched
+              // Fetch Reddit user info
+              try {
+                const userInfoResponse = await fetch("/api/reddit/me");
+                if (userInfoResponse.ok) {
+                  const userInfoData = await userInfoResponse.json();
+                  if (userInfoData.success && userInfoData.user) {
+                    setRedditUserInfo({
+                      name: userInfoData.user.name,
+                      icon_img: userInfoData.user.icon_img,
+                      total_karma: userInfoData.user.total_karma,
+                      subreddit_count: userInfoData.user.subreddit_count,
+                    });
+                  }
+                }
+              } catch (error) {
+                console.error("Error fetching Reddit user info:", error);
+              }
             }
           }
         } catch (error) {
           console.error("Error checking Reddit connection:", error);
         }
       };
-      checkRedditConnection();
-      // Poll every 2 seconds to check if Reddit was connected after redirect
-      const interval = setInterval(checkRedditConnection, 2000);
-      return () => clearInterval(interval);
+      
+      // Only check once if we already have user info, otherwise poll
+      if (redditUserInfo || hasFetchedUserInfoRef.current) {
+        checkRedditConnection(); // Just check connection status once
+      } else {
+        checkRedditConnection();
+        // Poll every 2 seconds to check if Reddit was connected after redirect
+        // Stop polling once we have user info
+        const interval = setInterval(() => {
+          if (!redditUserInfo && !hasFetchedUserInfoRef.current) {
+            checkRedditConnection();
+          } else {
+            clearInterval(interval);
+          }
+        }, 2000);
+        return () => clearInterval(interval);
+      }
     }
-  }, [currentStep, isOpen]);
+  }, [currentStep, isOpen, redditUserInfo]);
+
+  // Generate subreddit recommendations based on keywords when step 4 is reached
+  useEffect(() => {
+    if (currentStep === 4 && keywords.length > 0 && recommendedSubreddits.length === 0 && !isLoadingRecommendations) {
+      const generateRecommendations = async () => {
+        setIsLoadingRecommendations(true);
+        try {
+          const subredditCounts = new Map<string, number>();
+
+          // Search for each keyword concurrently using Google Custom Search (10 results per keyword, no date restrictions)
+          const searchPromises = keywords.map(async (keyword) => {
+            try {
+              const response = await fetch("/api/google/search", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  searchQuery: `site:reddit.com ${keyword}`,
+                  resultsPerQuery: 10,
+                  noDateRestrict: true, // No date restrictions
+                }),
+              });
+
+              if (response.ok) {
+                const data = await response.json();
+                const results = data.results || [];
+                
+                console.log(`[Keyword: "${keyword}"] Results returned: ${results.length} (expected: 10)`);
+
+                // Extract subreddit names from Reddit URLs and count them
+                results.forEach((result: any) => {
+                  if (result.link) {
+                    // Extract subreddit from Reddit URL: https://www.reddit.com/r/{subreddit}/comments/...
+                    const urlMatch = result.link.match(/reddit\.com\/r\/([^\/]+)\//i);
+                    if (urlMatch) {
+                      const subredditName = urlMatch[1].toLowerCase();
+                      subredditCounts.set(
+                        subredditName,
+                        (subredditCounts.get(subredditName) || 0) + 1
+                      );
+                    }
+                  }
+                });
+              } else {
+                console.error(`[Keyword: "${keyword}"] API returned status: ${response.status}`);
+              }
+            } catch (error) {
+              console.error(`Error searching for keyword "${keyword}":`, error);
+            }
+          });
+
+          // Wait for all searches to complete concurrently
+          await Promise.all(searchPromises);
+
+          // Log the map of counts
+          console.log("Subreddit counts map:", Object.fromEntries(subredditCounts));
+
+          // Convert to array and sort by count (display all, not just top 5)
+          const sortedSubreddits = Array.from(subredditCounts.entries())
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count); // Sort by count descending
+
+          // Fetch subscriber counts for each recommended subreddit
+          const subredditsWithInfo = await Promise.all(
+            sortedSubreddits.map(async (rec) => {
+              try {
+                const response = await fetch(`/api/reddit/search-subreddits?q=${encodeURIComponent(rec.name)}`);
+                if (response.ok) {
+                  const data = await response.json();
+                  const matchingSubreddit = data.subreddits?.find(
+                    (s: any) => s.name.toLowerCase() === rec.name.toLowerCase()
+                  );
+                  if (matchingSubreddit) {
+                    return {
+                      ...rec,
+                      subscribers: matchingSubreddit.subscribers || 0,
+                    };
+                  }
+                }
+              } catch (error) {
+                console.error(`Error fetching subreddit info for ${rec.name}:`, error);
+              }
+              return { ...rec, subscribers: 0 };
+            })
+          );
+
+          setRecommendedSubreddits(subredditsWithInfo);
+        } catch (error) {
+          console.error("Error generating subreddit recommendations:", error);
+        } finally {
+          setIsLoadingRecommendations(false);
+        }
+      };
+
+      generateRecommendations();
+    }
+  }, [currentStep, keywords, recommendedSubreddits.length, isLoadingRecommendations]);
 
   // Debounced subreddit search
   useEffect(() => {
@@ -196,6 +360,25 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
     setSubreddits(subreddits.filter((s) => s !== subredditName));
   };
 
+  const handleAddKeyword = () => {
+    const trimmedKeyword = keywordInput.trim();
+    if (trimmedKeyword && !keywords.includes(trimmedKeyword) && keywords.length < 20) {
+      setKeywords([...keywords, trimmedKeyword]);
+      setKeywordInput("");
+    }
+  };
+
+  const handleRemoveKeyword = (keyword: string) => {
+    setKeywords(keywords.filter((k) => k !== keyword));
+  };
+
+  const handleKeywordInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleAddKeyword();
+    }
+  };
+
   const handleStep1Next = async () => {
     if (!isRedditConnected) {
       return;
@@ -204,7 +387,7 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
   };
 
   const handleStep2Next = async () => {
-    if (!productName.trim() || !productLink.trim() || !productDescription.trim()) {
+    if (!productName.trim() || !productDescription.trim()) {
       return;
     }
 
@@ -231,6 +414,31 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
   };
 
   const handleStep3Next = async () => {
+    if (keywords.length === 0) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/user/product-details", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          keywords: keywords,
+        }),
+      });
+
+      if (response.ok) {
+        setCurrentStep(4);
+      }
+    } catch (error) {
+      console.error("Error saving keywords:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleStep4Next = async () => {
     if (subreddits.length < 3) {
       return;
     }
@@ -307,7 +515,7 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <span className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
-                Step {currentStep} of 3
+                Step {currentStep} of 4
               </span>
             </div>
           </div>
@@ -316,7 +524,7 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
           <div className="h-1 bg-muted">
             <div
               className="h-full bg-primary transition-all duration-300"
-              style={{ width: `${(currentStep / 3) * 100}%` }}
+              style={{ width: `${(currentStep / 4) * 100}%` }}
             />
           </div>
 
@@ -333,9 +541,39 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
                     Connect your Reddit account to search for subreddits and start finding leads.
                   </p>
                   {isRedditConnected ? (
-                    <div className="flex items-center justify-center gap-2 text-primary">
-                      <CheckCircle2 className="h-5 w-5" />
-                      <span className="text-sm font-medium">Reddit account connected!</span>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-center gap-2 text-primary">
+                        <CheckCircle2 className="h-5 w-5" />
+                        <span className="text-sm font-medium">Reddit account connected!</span>
+                      </div>
+                      {redditUserInfo && (
+                        <div className="flex items-center justify-center gap-3 p-4 rounded-lg bg-muted/50 border border-border">
+                          {redditUserInfo.icon_img && (
+                            <img
+                              src={redditUserInfo.icon_img.replace(/&amp;/g, '&')}
+                              alt={redditUserInfo.name || "Reddit user"}
+                              className="w-12 h-12 rounded-full"
+                            />
+                          )}
+                          <div className="flex flex-col gap-1">
+                            <span className="text-sm font-semibold text-foreground">
+                              u/{redditUserInfo.name}
+                            </span>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                              {redditUserInfo.total_karma !== undefined && (
+                                <span>
+                                  {redditUserInfo.total_karma.toLocaleString()} karma
+                                </span>
+                              )}
+                              {redditUserInfo.subreddit_count !== undefined && (
+                                <span>
+                                  {redditUserInfo.subreddit_count.toLocaleString()} subreddit{redditUserInfo.subreddit_count !== 1 ? 's' : ''}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <Button
@@ -373,7 +611,7 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
                 </div>
                 <div>
                   <label className="text-sm font-medium text-foreground mb-2 block">
-                    Product Website/Link *
+                    Product Website/Link
                   </label>
                   <Input
                     value={productLink}
@@ -450,9 +688,121 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
               </div>
             )}
 
-            {/* Step 3: Subreddits */}
+            {/* Step 3: Keywords */}
             {currentStep === 3 && (
               <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-2 block">
+                    Add Keywords * <span className="text-muted-foreground font-normal">({keywords.length}/20)</span>
+                  </label>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Add keywords that describe your product or target audience. These will be used to find relevant Reddit posts.
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      value={keywordInput}
+                      onChange={(e) => setKeywordInput(e.target.value)}
+                      onKeyDown={handleKeywordInputKeyDown}
+                      placeholder="Enter a keyword and press Enter..."
+                      className="w-full"
+                    />
+                    <Button
+                      onClick={handleAddKeyword}
+                      disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= 20}
+                      size="sm"
+                    >
+                      Add
+                    </Button>
+                  </div>
+                </div>
+                {keywords.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {keywords.map((keyword) => (
+                      <div
+                        key={keyword}
+                        className="flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm"
+                      >
+                        <span>{keyword}</span>
+                        <button
+                          onClick={() => handleRemoveKeyword(keyword)}
+                          className="ml-1 hover:text-primary/80"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {keywords.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No keywords added. Add at least one keyword to continue.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Step 4: Subreddits */}
+            {currentStep === 4 && (
+              <div className="space-y-4">
+                {/* Recommended Subreddits */}
+                {isLoadingRecommendations && (
+                  <div className="flex items-center justify-center gap-2 p-4 rounded-lg bg-muted/50 border border-border">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Analyzing your keywords to recommend subreddits...</span>
+                  </div>
+                )}
+                {!isLoadingRecommendations && recommendedSubreddits.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground block">
+                      Recommended Subreddits
+                    </label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Based on your keywords, these subreddits appear most frequently in relevant posts:
+                    </p>
+                    <div className="overflow-x-auto pb-2 -mx-6 px-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                      <div className="flex gap-3 min-w-max">
+                        {recommendedSubreddits.map((rec) => {
+                          const isAdded = subreddits.includes(rec.name.toLowerCase().replace(/^r\//, ""));
+                          const isDisabled = isAdded || subreddits.length >= 15;
+                          return (
+                            <div
+                              key={rec.name}
+                              className="flex-shrink-0 w-64 rounded-lg border border-border bg-card p-4 shadow-sm hover:shadow-md transition-shadow relative items-center flex flex-row justify-between"
+                            >
+                              <div className="space-y-2 flex flex-col">
+                                <div className="pr-8">
+                                  <h4 className="text-sm font-semibold text-foreground">
+                                    r/{rec.name}
+                                  </h4>
+                                  {rec.subscribers !== undefined && (
+                                    <div className="text-xs text-muted-foreground mt-1">
+                                      {rec.subscribers.toLocaleString()} members
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleAddSubreddit(rec.name)}
+                                disabled={isDisabled}
+                                className={`w-6 h-6 rounded-full flex items-center justify-center border transition-colors disabled:opacity-50 disabled:cursor-not-allowed p-0 ${
+                                  isAdded 
+                                    ? "bg-black border-black hover:bg-black/90" 
+                                    : "bg-white border-border hover:bg-muted"
+                                }`}
+                              >
+                                {isAdded ? (
+                                  <CheckCircle2 className="h-3 w-3 text-white" />
+                                ) : (
+                                  <Plus className="h-3 w-3 text-foreground" />
+                                )}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label className="text-sm font-medium text-foreground mb-2 block">
                     Select Subreddits to Engage With * <span className="text-muted-foreground font-normal">({subreddits.length}/15)</span>
@@ -560,7 +910,7 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
             {currentStep === 2 && (
               <Button
                 onClick={handleStep2Next}
-                disabled={isLoading || !productName.trim() || !productLink.trim() || !productDescription.trim()}
+                disabled={isLoading || !productName.trim() || !productDescription.trim()}
               >
                 {isLoading ? (
                   <>
@@ -578,6 +928,24 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
             {currentStep === 3 && (
               <Button
                 onClick={handleStep3Next}
+                disabled={isLoading || keywords.length === 0}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    Next
+                    <ChevronRight className="h-4 w-4 ml-2" />
+                  </>
+                )}
+              </Button>
+            )}
+            {currentStep === 4 && (
+              <Button
+                onClick={handleStep4Next}
                 disabled={isLoading || subreddits.length < 3}
               >
                 {isLoading ? (

@@ -36,9 +36,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           const data = await response.json();
           const posts: RedditPost[] = data.data?.children?.map((child: any) => child.data) || [];
           
-          // Filter posts from this week (created_utc within last 7 days)
-          const oneWeekAgo = Math.floor(Date.now() / 1000) - (7 * 24 * 60 * 60);
-          const recentPosts = posts.filter((post: RedditPost) => post.created_utc >= oneWeekAgo);
+        // Filter posts from the past 4 days (created_utc within last 4 days)
+        const fourDaysAgo = Math.floor(Date.now() / 1000) - (4 * 24 * 60 * 60);
+        const recentPosts = posts.filter((post: RedditPost) => post.created_utc >= fourDaysAgo);
           
           // Convert to the format expected by the frontend
           const results = recentPosts.slice(0, limit).map((post: RedditPost) => ({
@@ -75,9 +75,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const data = await response.json();
     const posts: RedditPost[] = data.data?.children?.map((child: any) => child.data) || [];
     
-    // Filter posts from this week
-    const oneWeekAgo = Math.floor(Date.now() / 1000) - (7 * 24 * 60 * 60);
-    const recentPosts = posts.filter((post: RedditPost) => post.created_utc >= oneWeekAgo);
+    // Filter posts from the past 4 days
+    const fourDaysAgo = Math.floor(Date.now() / 1000) - (4 * 24 * 60 * 60);
+    const recentPosts = posts.filter((post: RedditPost) => post.created_utc >= fourDaysAgo);
     
     const results = recentPosts.slice(0, limit).map((post: RedditPost) => ({
       title: post.title,

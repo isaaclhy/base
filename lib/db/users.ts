@@ -1,7 +1,7 @@
 import { getDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 
-export type UserPlan = "free" | "premium";
+export type UserPlan = "free" | "premium" | "pro";
 
 export interface User {
   _id?: ObjectId;

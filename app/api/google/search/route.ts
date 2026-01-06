@@ -12,7 +12,8 @@ function isRedditPostUrl(url: string) {
 
 async function fetchGoogleCustomSearch(
   query: string,
-  resultsPerQuery: number = 7
+  resultsPerQuery: number = 7,
+  noDateRestrict: boolean = false
 ): Promise<customsearch_v1.Schema$Search[]> {
   // Google Custom Search API allows max 10 results per request
   // To get more than 10 results, we need to make multiple requests
@@ -25,15 +26,21 @@ async function fetchGoogleCustomSearch(
   for (let i = 0; i < requestsNeeded; i++) {
     const startIndex = i * maxPerRequest + 1;
     const numResults = Math.min(maxPerRequest, totalResults - (i * maxPerRequest));
-        
-    const response = await customsearch.cse.list({
+    
+    const requestParams: any = {
       auth: process.env.GCS_KEY,
-      cx: "c691f007075074afc",
+      cx: "84be52ff9627b480b",
       q: query,
       num: numResults,
       start: startIndex,
-      dateRestrict: "w1", // Limit results to past week
-    });
+    };
+    
+    // Only add dateRestrict if not disabled
+    if (!noDateRestrict) {
+      requestParams.dateRestrict = "w1"; // Limit results to past week
+    }
+        
+    const response = await customsearch.cse.list(requestParams);
 
     const results = response.data;
     if (!results) {
@@ -58,7 +65,7 @@ export async function POST(
   request: NextRequest
 ): Promise<NextResponse<PostResponse>> {
   try {
-    const { searchQuery, resultsPerQuery } = await request.json();
+    const { searchQuery, resultsPerQuery, noDateRestrict } = await request.json();
 
     if (!searchQuery) {
       return NextResponse.json({ error: "No query provided" }, { status: 400 });
@@ -66,7 +73,7 @@ export async function POST(
 
     // Fetch only the top few results per query (default 7 for better coverage)
     const resultsPerSearch = resultsPerQuery || 7;
-    const googleDataArray = await fetchGoogleCustomSearch(searchQuery, resultsPerSearch);
+    const googleDataArray = await fetchGoogleCustomSearch(searchQuery, resultsPerSearch, noDateRestrict || false);
     console.log("GOOGLE DATA ", googleDataArray);
 
     // Combine all results

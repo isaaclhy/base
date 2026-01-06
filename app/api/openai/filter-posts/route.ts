@@ -44,94 +44,150 @@ export async function POST(request: NextRequest): Promise<NextResponse<FilterPos
       );
     }
 
-    // Format posts for the prompt
-    const postsString = JSON.stringify(posts);
+    // Batch posts to avoid exceeding OpenAI's input limit (1048576 characters for posts variable)
+    const MAX_POSTS_STRING_LENGTH = 200000; // Smaller batches for better reliability
+    const batches: Array<Array<{ title: string; content: string }>> = [];
 
-    const response = await (openai as any).responses.create({
-      prompt: {
-        "id": "pmpt_6954083f58708193b7fbe2c0ed6396530bbdd28382fe1384",
-        "version": "11",
-        "variables": {
-          "posts": postsString,
-          "idea": idea
+    // Split posts into batches, checking the actual JSON string length
+    let currentBatch: Array<{ title: string; content: string }> = [];
+
+    for (const post of posts) {
+      // Test if adding this post would exceed the limit
+      const testBatch = [...currentBatch, post];
+      const testBatchString = JSON.stringify(testBatch);
+      
+      // If adding this post would exceed the limit, start a new batch
+      if (testBatchString.length > MAX_POSTS_STRING_LENGTH && currentBatch.length > 0) {
+        batches.push(currentBatch);
+        currentBatch = [post];
+      } else {
+        currentBatch.push(post);
+      }
+    }
+
+    // Add the last batch if it has posts
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch);
+    }
+
+    // Process each batch in parallel and collect all results
+    const batchPromises = batches.map(async (batch, batchIndex) => {
+      // Format posts for the prompt
+      const postsString = JSON.stringify(batch);
+
+      try {
+        const response = await (openai as any).responses.create({
+          prompt: {
+            "id": "pmpt_6954083f58708193b7fbe2c0ed6396530bbdd28382fe1384",
+            "version": "11",
+            "variables": {
+              "posts": postsString,
+              "idea": idea
+            }
+          }
+        });
+
+        if (response.error) {
+          console.error(`[Filter Posts] OpenAI API error for batch ${batchIndex + 1}:`, response.error);
+          // If a batch fails, treat all posts in that batch as "NO"
+          return { batchIndex, results: new Array(batch.length).fill('NO') };
         }
+
+        // Extract the output - handle different possible response structures
+        let output: string;
+        try {
+          // Try to extract from the expected structure
+          if (response.output && Array.isArray(response.output)) {
+            const message = response.output.find((res: any) => res.type === 'message');
+            if (message && message.content && Array.isArray(message.content)) {
+              const outputText = message.content.find((res: any) => res.type === 'output_text');
+              if (outputText && outputText.text) {
+                output = outputText.text;
+              } else {
+                throw new Error('Could not find output_text in message content');
+              }
+            } else {
+              throw new Error('Could not find message in output');
+            }
+          } else if (response.data) {
+            // Fallback: try response.data
+            output = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+          } else if (typeof response === 'string') {
+            output = response;
+          } else {
+            throw new Error('Unexpected response structure');
+          }
+        } catch (extractError) {
+          console.error(`[Filter Posts] Error extracting output for batch ${batchIndex + 1}:`, extractError);
+          // Last resort: try to stringify the whole response
+          output = JSON.stringify(response);
+        }
+
+        // Parse the response - should be an array of YES/MAYBE/NO
+        let batchResults: string[];
+        try {
+          const parsed = JSON.parse(output);
+          if (Array.isArray(parsed)) {
+            batchResults = parsed.map((r: any) => String(r).trim().toUpperCase());
+          } else if (typeof parsed === 'string') {
+            // If it's a single string, split by newlines or commas
+            batchResults = parsed.split(/\n|,/).map((r: string) => r.trim().toUpperCase()).filter(Boolean);
+          } else {
+            throw new Error('Unexpected response format');
+          }
+        } catch (e) {
+          // If JSON parsing fails, try to parse as plain text
+          const lines = output.split(/\n/).filter((line: string) => line.trim().length > 0);
+          batchResults = lines.map((line: string) => {
+            // Extract YES/MAYBE/NO from each line
+            const match = line.match(/\b(YES|NO|MAYBE)\b/i);
+            return match ? match[1].toUpperCase() : line.trim().toUpperCase();
+          }).filter(Boolean);
+        }
+
+        // Validate that we have the right number of results for this batch
+        if (batchResults.length !== batch.length) {
+          console.warn(`[Filter Posts] Batch ${batchIndex + 1}: Expected ${batch.length} results, got ${batchResults.length}`);
+          // Pad with NO if we got fewer results, or trim if we got more
+          if (batchResults.length < batch.length) {
+            batchResults = [...batchResults, ...Array(batch.length - batchResults.length).fill('NO')];
+          } else {
+            batchResults = batchResults.slice(0, batch.length);
+          }
+        }
+
+        return { batchIndex, results: batchResults };
+      } catch (error) {
+        console.error(`[Filter Posts] Error processing batch ${batchIndex + 1}:`, error);
+        // If a batch fails, treat all posts in that batch as "NO"
+        return { batchIndex, results: new Array(batch.length).fill('NO') };
       }
     });
 
-    if (response.error) {
-      console.error('OpenAI API error:', response.error);
-      return NextResponse.json({ error: response.error?.message || 'OpenAI error' }, { status: 500 });
-    }
+    // Wait for all batches to complete
+    const batchResults = await Promise.all(batchPromises);
 
-    // Extract the output - handle different possible response structures
-    console.log('[Filter Posts] Full OpenAI response:', JSON.stringify(response, null, 2));
-    
-    let output: string;
-    try {
-      // Try to extract from the expected structure
-      if (response.output && Array.isArray(response.output)) {
-        const message = response.output.find((res: any) => res.type === 'message');
-        if (message && message.content && Array.isArray(message.content)) {
-          const outputText = message.content.find((res: any) => res.type === 'output_text');
-          if (outputText && outputText.text) {
-            output = outputText.text;
-          } else {
-            throw new Error('Could not find output_text in message content');
-          }
-        } else {
-          throw new Error('Could not find message in output');
-        }
-      } else if (response.data) {
-        // Fallback: try response.data
-        output = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-      } else if (typeof response === 'string') {
-        output = response;
-      } else {
-        throw new Error('Unexpected response structure');
-      }
-    } catch (extractError) {
-      console.error('[Filter Posts] Error extracting output:', extractError);
-      // Last resort: try to stringify the whole response
-      output = JSON.stringify(response);
-    }
+    // Sort results by batchIndex to maintain order
+    batchResults.sort((a, b) => a.batchIndex - b.batchIndex);
 
-    console.log('[Filter Posts] Raw OpenAI output:', output);
+    // Combine all results in order
+    const allResults: string[] = [];
+    batchResults.forEach(({ results }) => {
+      allResults.push(...results);
+    });
 
-    // Parse the response - should be an array of YES/MAYBE/NO
-    let results: string[];
-    try {
-      const parsed = JSON.parse(output);
-      if (Array.isArray(parsed)) {
-        results = parsed.map((r: any) => String(r).trim().toUpperCase());
-      } else if (typeof parsed === 'string') {
-        // If it's a single string, split by newlines or commas
-        results = parsed.split(/\n|,/).map((r: string) => r.trim().toUpperCase()).filter(Boolean);
-      } else {
-        throw new Error('Unexpected response format');
-      }
-    } catch (e) {
-      // If JSON parsing fails, try to parse as plain text
-      console.log('[Filter Posts] Output is not JSON, trying to parse as plain text');
-      const lines = output.split(/\n/).filter((line: string) => line.trim().length > 0);
-      results = lines.map((line: string) => {
-        // Extract YES/MAYBE/NO from each line
-        const match = line.match(/\b(YES|NO|MAYBE)\b/i);
-        return match ? match[1].toUpperCase() : line.trim().toUpperCase();
-      }).filter(Boolean);
-    }
-
-    // Validate that we have the right number of results
-    if (results.length !== posts.length) {
-      console.warn(`[Filter Posts] Expected ${posts.length} results, got ${results.length}`);
+    // Validate that we have the right number of results total
+    if (allResults.length !== posts.length) {
+      console.warn(`[Filter Posts] Total: Expected ${posts.length} results, got ${allResults.length}`);
       // Pad with NO if we got fewer results, or trim if we got more
-      if (results.length < posts.length) {
-        results = [...results, ...Array(posts.length - results.length).fill('NO')];
+      if (allResults.length < posts.length) {
+        allResults.push(...Array(posts.length - allResults.length).fill('NO'));
       } else {
-        results = results.slice(0, posts.length);
+        allResults.splice(posts.length);
       }
     }
 
-    return NextResponse.json({ results });
+    return NextResponse.json({ results: allResults });
   } catch (err) {
     console.error('API Error:', err);
     return NextResponse.json({ error: `${err}` }, { status: 500 });
