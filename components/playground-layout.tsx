@@ -66,7 +66,7 @@ interface Tab {
 }
 
 const tabs: Tab[] = [
-  { id: "product", label: "Product", icon: Package },
+  { id: "product", label: "Dashboard", icon: Package },
   // { id: "dashboard", label: "Discovery", icon: LayoutDashboard },
   { id: "leads", label: "Leads", icon: Users },
   { id: "create", label: "Create", icon: Plus },

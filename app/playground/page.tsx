@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, useTransition } from "react";
-import { ExternalLink, X, Loader2, CheckCircle2, Send, Trash2, ChevronLeft, ChevronRight, Settings, ChevronDown, Plus, ArrowUp, MessageSquare, CheckSquare, Check, Circle } from "lucide-react";
+import { ExternalLink, X, Loader2, CheckCircle2, Send, Trash2, ChevronLeft, ChevronRight, Settings, ChevronDown, Plus, ArrowUp, MessageSquare, CheckSquare, Check, Circle, Package, Hash, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatTextarea } from "@/components/ui/chat-textarea";
 import PlaygroundLayout, { usePlaygroundTab, usePlaygroundSidebar, useRefreshUsage, useSetPlaygroundTab } from "@/components/playground-layout";
@@ -303,6 +303,7 @@ function PlaygroundContent() {
     const debounceTimer = setTimeout(searchSubreddits, 300);
     return () => clearTimeout(debounceTimer);
   }, [subredditInput]);
+
   const [toast, setToast] = useState<{ visible: boolean; message: string; link?: string | null; variant?: "success" | "error" } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -388,6 +389,18 @@ function PlaygroundContent() {
   const [showNoKeywordsModal, setShowNoKeywordsModal] = useState(false);
   const [showNoRowsSelectedModal, setShowNoRowsSelectedModal] = useState(false);
   const [bulkPersona, setBulkPersona] = useState<"Founder" | "User">("Founder");
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [showKeywordsModal, setShowKeywordsModal] = useState(false);
+  const [showSubredditsModal, setShowSubredditsModal] = useState(false);
+  const [recommendedKeywordsModal, setRecommendedKeywordsModal] = useState<string[]>([]);
+  const recommendedKeywordsModalScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeftKeywordsModal, setCanScrollLeftKeywordsModal] = useState(false);
+  const [canScrollRightKeywordsModal, setCanScrollRightKeywordsModal] = useState(false);
+  const [recommendedSubredditsModal, setRecommendedSubredditsModal] = useState<Array<{ name: string; count: number; subscribers?: number }>>([]);
+  const [isLoadingSubredditRecommendations, setIsLoadingSubredditRecommendations] = useState(false);
+  const recommendedSubredditsModalScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeftSubredditsModal, setCanScrollLeftSubredditsModal] = useState(false);
+  const [canScrollRightSubredditsModal, setCanScrollRightSubredditsModal] = useState(false);
   const [bulkOperationStatus, setBulkOperationStatus] = useState<Record<string, "haven't started" | "generating" | "posting" | "completed" | "error">>({});
   const [bulkGeneratedComments, setBulkGeneratedComments] = useState<Record<string, string>>({});
   const [bulkModalLeads, setBulkModalLeads] = useState<Array<typeof distinctLeadsLinks[number]>>([]);
@@ -507,95 +520,95 @@ function PlaygroundContent() {
   const loadProductDetails = useCallback(async () => {
     if (!session?.user?.email) return;
     
-    try {
-      const response = await fetch("/api/user/product-details");
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.productDetails) {
-          setProductDetailsFromDb(data.productDetails);
-          // Also set productName, website and productDescription for Product tab
-          if (data.productDetails.productName) {
-            setProductName(data.productDetails.productName);
-          }
-          if (data.productDetails.link) {
-            setWebsite(data.productDetails.link);
-          }
-          if (data.productDetails.productDescription) {
-            setProductDescription(data.productDetails.productDescription);
-          }
+        try {
+          const response = await fetch("/api/user/product-details");
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.productDetails) {
+              setProductDetailsFromDb(data.productDetails);
+              // Also set productName, website and productDescription for Product tab
+              if (data.productDetails.productName) {
+                setProductName(data.productDetails.productName);
+              }
+              if (data.productDetails.link) {
+                setWebsite(data.productDetails.link);
+              }
+              if (data.productDetails.productDescription) {
+                setProductDescription(data.productDetails.productDescription);
+              }
           if (data.productDetails.productBenefits) {
             setProductBenefits(data.productDetails.productBenefits);
-          }
-          // Load keywords from the keywords field (array) or fallback to productDetails.keywords (legacy)
-          let loadedKeywords: string[] = [];
-          if (data.keywords && Array.isArray(data.keywords)) {
-            loadedKeywords = data.keywords;
-            // Only update if different to prevent unnecessary re-renders and layout shifts
-            setKeywords((prev) => {
-              if (JSON.stringify(prev) !== JSON.stringify(loadedKeywords)) {
-                return loadedKeywords;
               }
-              return prev;
-            });
-          } else if (data.productDetails?.keywords) {
-            // Legacy: If keywords is a string, split by comma; if array, use as is
-            loadedKeywords = typeof data.productDetails.keywords === 'string'
-              ? data.productDetails.keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k)
-              : Array.isArray(data.productDetails.keywords)
-                ? data.productDetails.keywords
-                : [];
-            // Only update if different to prevent unnecessary re-renders and layout shifts
-            setKeywords((prev) => {
-              if (JSON.stringify(prev) !== JSON.stringify(loadedKeywords)) {
-                return loadedKeywords;
+              // Load keywords from the keywords field (array) or fallback to productDetails.keywords (legacy)
+              let loadedKeywords: string[] = [];
+              if (data.keywords && Array.isArray(data.keywords)) {
+                loadedKeywords = data.keywords;
+                // Only update if different to prevent unnecessary re-renders and layout shifts
+                setKeywords((prev) => {
+                  if (JSON.stringify(prev) !== JSON.stringify(loadedKeywords)) {
+                    return loadedKeywords;
+                  }
+                  return prev;
+                });
+              } else if (data.productDetails?.keywords) {
+                // Legacy: If keywords is a string, split by comma; if array, use as is
+                loadedKeywords = typeof data.productDetails.keywords === 'string'
+                  ? data.productDetails.keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k)
+                  : Array.isArray(data.productDetails.keywords)
+                    ? data.productDetails.keywords
+                    : [];
+                // Only update if different to prevent unnecessary re-renders and layout shifts
+                setKeywords((prev) => {
+                  if (JSON.stringify(prev) !== JSON.stringify(loadedKeywords)) {
+                    return loadedKeywords;
+                  }
+                  return prev;
+                });
               }
-              return prev;
-            });
-          }
-          
-          // Load subreddits from database
-          if (data.subreddits && Array.isArray(data.subreddits)) {
-            // Only update if different to prevent unnecessary re-renders and layout shifts
-            setSubreddits((prev) => {
-              if (JSON.stringify(prev) !== JSON.stringify(data.subreddits)) {
-                return data.subreddits;
+              
+              // Load subreddits from database
+              if (data.subreddits && Array.isArray(data.subreddits)) {
+                // Only update if different to prevent unnecessary re-renders and layout shifts
+                setSubreddits((prev) => {
+                  if (JSON.stringify(prev) !== JSON.stringify(data.subreddits)) {
+                    return data.subreddits;
+                  }
+                  return prev;
+                });
               }
-              return prev;
-            });
-          }
-          
-          // Store original values for dirty checking
-          setOriginalProductDetails({
-            productName: data.productDetails.productName || "",
-            website: data.productDetails.link || "",
-            productDescription: data.productDetails.productDescription || "",
+              
+              // Store original values for dirty checking
+              setOriginalProductDetails({
+                productName: data.productDetails.productName || "",
+                website: data.productDetails.link || "",
+                productDescription: data.productDetails.productDescription || "",
             productBenefits: data.productDetails.productBenefits || "",
-            keywords: loadedKeywords,
-          });
-        } else {
+                keywords: loadedKeywords,
+              });
+            } else {
+              setProductDetailsFromDb(null);
+              setOriginalProductDetails({
+                productName: "",
+                website: "",
+                productDescription: "",
+            productBenefits: "",
+                keywords: [],
+              });
+            }
+          }
+        } catch (error) {
+          console.error("Error loading product details:", error);
           setProductDetailsFromDb(null);
           setOriginalProductDetails({
             productName: "",
             website: "",
             productDescription: "",
-            productBenefits: "",
+        productBenefits: "",
             keywords: [],
           });
         }
-      }
-    } catch (error) {
-      console.error("Error loading product details:", error);
-      setProductDetailsFromDb(null);
-      setOriginalProductDetails({
-        productName: "",
-        website: "",
-        productDescription: "",
-        productBenefits: "",
-        keywords: [],
-      });
-    }
   }, [session?.user?.email]);
-
+      
   // Load product details when authenticated (for use in Discovery page)
   useEffect(() => {
     if (status === "authenticated" && session?.user?.email) {
@@ -640,6 +653,45 @@ function PlaygroundContent() {
     }
   }, [status, session]);
 
+  // Check scroll state for recommended keywords modal
+  useEffect(() => {
+    if (recommendedKeywordsModal.length > 0 && recommendedKeywordsModalScrollRef.current) {
+      const checkScrollState = () => {
+        if (recommendedKeywordsModalScrollRef.current) {
+          const { scrollLeft, scrollWidth, clientWidth } = recommendedKeywordsModalScrollRef.current;
+          setCanScrollLeftKeywordsModal(scrollLeft > 0);
+          setCanScrollRightKeywordsModal(scrollLeft < scrollWidth - clientWidth - 1);
+        }
+      };
+      
+      // Check immediately
+      checkScrollState();
+      
+      // Also check on window resize
+      window.addEventListener('resize', checkScrollState);
+      return () => window.removeEventListener('resize', checkScrollState);
+    }
+  }, [recommendedKeywordsModal.length]);
+
+  // Check scroll state for recommended subreddits modal
+  useEffect(() => {
+    if (recommendedSubredditsModal.length > 0 && recommendedSubredditsModalScrollRef.current) {
+      const checkScrollState = () => {
+        if (recommendedSubredditsModalScrollRef.current) {
+          const { scrollLeft, scrollWidth, clientWidth } = recommendedSubredditsModalScrollRef.current;
+          setCanScrollLeftSubredditsModal(scrollLeft > 0);
+          setCanScrollRightSubredditsModal(scrollLeft < scrollWidth - clientWidth - 1);
+        }
+      };
+      
+      // Check immediately
+      checkScrollState();
+      
+      // Also check on window resize
+      window.addEventListener('resize', checkScrollState);
+      return () => window.removeEventListener('resize', checkScrollState);
+    }
+  }, [recommendedSubredditsModal.length]);
 
   // Check onboarding status
   useEffect(() => {
@@ -966,8 +1018,8 @@ function PlaygroundContent() {
           // Sync was interrupted - warn user and clear incomplete data
           console.warn("[Sync Leads] Previous sync was interrupted. Clearing incomplete data.");
           try {
-            localStorage.removeItem("leadsLinks");
-            localStorage.removeItem("leadsLinksUserEmail");
+        localStorage.removeItem("leadsLinks");
+        localStorage.removeItem("leadsLinksUserEmail");
             localStorage.removeItem("leadsFilterSignals");
             localStorage.removeItem("syncLeadsInProgress");
             localStorage.removeItem("newLeadsSinceLastSync");
@@ -991,7 +1043,7 @@ function PlaygroundContent() {
             } catch (parseError) {
               console.error("Error parsing saved leadsLinks:", parseError);
               // Clear invalid data
-          localStorage.removeItem("leadsLinks");
+        localStorage.removeItem("leadsLinks");
           localStorage.removeItem("leadsLinksUserEmail");
             }
           }
@@ -3238,10 +3290,10 @@ function PlaygroundContent() {
             if (data.success) {
               console.log("Checkout verified and plan updated");
               // Refresh usage to get updated plan
-              refreshUsage();
+      refreshUsage();
               // Reload page to refresh session with updated plan
-              setTimeout(() => {
-                window.location.reload();
+      setTimeout(() => {
+        window.location.reload();
               }, 500);
             } else {
               // If verification failed, still reload after delay in case webhook processes
@@ -4643,14 +4695,13 @@ function PlaygroundContent() {
 
     setIsGeneratingKeywords(true);
     try {
-      const response = await fetch("/api/openai/keywords", {
+      const response = await fetch("/api/openai/suggest-keywords", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          productDescription: productDescription,
-          numKeywords: 15,
+          product: productDescription,
         }),
       });
 
@@ -4660,20 +4711,10 @@ function PlaygroundContent() {
       }
 
       const data = await response.json();
-      if (data.success && data.keywords && Array.isArray(data.keywords)) {
-        // Merge with existing keywords, avoiding duplicates
-        const existingKeywordsSet = new Set(keywords.map((k: string) => k.toLowerCase()));
-        const newKeywords = data.keywords.filter((k: string) => {
-          const lower = k.toLowerCase().trim();
-          return lower && !existingKeywordsSet.has(lower);
-        });
-        
-        // Limit to 20 total keywords
-        const combined = [...keywords, ...newKeywords].slice(0, 20);
-        setKeywords(combined);
-        // Auto-save the generated keywords
-        await saveKeywords(combined);
-        showToast(`Generated ${newKeywords.length} keywords!`, { variant: "success" });
+      if (data.keywords && Array.isArray(data.keywords)) {
+        // Set recommended keywords (don't auto-add to user's keywords)
+        setRecommendedKeywordsModal(data.keywords);
+        showToast(`Generated ${data.keywords.length} keyword suggestions!`, { variant: "success" });
       } else {
         throw new Error("No keywords received from API");
       }
@@ -4741,183 +4782,244 @@ function PlaygroundContent() {
     }
   };
 
+  // Generate recommended subreddits based on keywords
+  const generateRecommendedSubreddits = async () => {
+    if (keywords.length === 0) {
+      showToast("Please add keywords first to get subreddit recommendations", { variant: "error" });
+      return;
+    }
+
+    setIsLoadingSubredditRecommendations(true);
+    try {
+      const subredditCounts = new Map<string, number>();
+
+      // Search for each keyword concurrently using Google Custom Search (10 results per keyword, no date restrictions)
+      const searchPromises = keywords.map(async (keyword) => {
+        try {
+          const response = await fetch("/api/google/search", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              searchQuery: `site:reddit.com ${keyword}`,
+              resultsPerQuery: 10,
+              noDateRestrict: true, // No date restrictions
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const results = data.results || [];
+            
+            // Extract subreddit names from Reddit URLs and count them
+            results.forEach((result: any) => {
+              if (result.link) {
+                // Extract subreddit from Reddit URL: https://www.reddit.com/r/{subreddit}/comments/...
+                const urlMatch = result.link.match(/reddit\.com\/r\/([^\/]+)\//i);
+                if (urlMatch) {
+                  const subredditName = urlMatch[1].toLowerCase();
+                  subredditCounts.set(
+                    subredditName,
+                    (subredditCounts.get(subredditName) || 0) + 1
+                  );
+                }
+              }
+            });
+          }
+        } catch (error) {
+          console.error(`Error searching for keyword "${keyword}":`, error);
+        }
+      });
+
+      // Wait for all searches to complete concurrently
+      await Promise.all(searchPromises);
+
+      // Convert to array and sort by count
+      const sortedSubreddits = Array.from(subredditCounts.entries())
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count); // Sort by count descending
+
+      // Fetch subscriber counts for each recommended subreddit
+      const subredditsWithInfo = await Promise.all(
+        sortedSubreddits.map(async (rec) => {
+          try {
+            const response = await fetch(`/api/reddit/search-subreddits?q=${encodeURIComponent(rec.name)}`);
+            if (response.ok) {
+              const data = await response.json();
+              const matchingSubreddit = data.subreddits?.find(
+                (s: any) => s.name.toLowerCase() === rec.name.toLowerCase()
+              );
+              if (matchingSubreddit) {
+                return {
+                  ...rec,
+                  subscribers: matchingSubreddit.subscribers || 0,
+                };
+              }
+            }
+          } catch (error) {
+            console.error(`Error fetching subreddit info for ${rec.name}:`, error);
+          }
+          return { ...rec, subscribers: 0 };
+        })
+      );
+
+      setRecommendedSubredditsModal(subredditsWithInfo);
+      showToast(`Generated ${subredditsWithInfo.length} subreddit recommendations!`, { variant: "success" });
+    } catch (error) {
+      console.error("Error generating subreddit recommendations:", error);
+      showToast(error instanceof Error ? error.message : "Failed to generate subreddit recommendations", { variant: "error" });
+    } finally {
+      setIsLoadingSubredditRecommendations(false);
+    }
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case "product":
         return (
-          <div className="flex h-full flex-col">
-            {/* Main content area - scrollable */}
+          <>
           <div className={cn(
               "flex h-full flex-col",
               !sidebarOpen && "pl-2"
             )}>
               {/* Fixed header with title */}
               <div className={cn(
-                "sticky top-0 z-10 bg-background pb-2",
+                "sticky top-0 z-10 bg-background pb-4",
                 !sidebarOpen && "pl-14"
               )}>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <h3 className="text-lg font-semibold">
-                    Product
+                  Dashboard
                   </h3>
-                  <Button
-                    onClick={async () => {
-                      setIsSavingProductDetails(true);
-                      try {
-                        const response = await fetch("/api/user/product-details", {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/json",
-                          },
-                          body: JSON.stringify({
-                            productName: productName || undefined,
-                            link: website || undefined,
-                            productDescription: productDescription || undefined,
-                            productBenefits: productBenefits || undefined,
-                            keywords: keywords.length > 0 ? keywords : undefined,
-                          }),
-                        });
-
-                        if (!response.ok) {
-                          const errorData = await response.json();
-                          throw new Error(errorData.error || "Failed to save product details");
-                        }
-
-                        const data = await response.json();
-                        if (data.success) {
-                          // Update original values after successful save
-                          setOriginalProductDetails({
-                            productName: productName || "",
-                            website: website || "",
-                            productDescription: productDescription || "",
-                            productBenefits: productBenefits || "",
-                            keywords: keywords,
-                          });
-                          // Show success toast (auto-dismisses after 5 seconds)
-                          showToast("Product details saved successfully!", { variant: "success" });
-                        }
-                      } catch (error) {
-                        console.error("Error saving product details:", error);
-                        showToast(error instanceof Error ? error.message : "Failed to save product details", { variant: "error" });
-                      } finally {
-                        setIsSavingProductDetails(false);
-                      }
-                    }}
-                    disabled={
-                      isSavingProductDetails || 
-                      isLoadingProductDetails || 
-                      !originalProductDetails ||
-                      (originalProductDetails.productName === (productName || "") &&
-                       originalProductDetails.website === (website || "") &&
-                       originalProductDetails.productDescription === (productDescription || "") &&
-                        originalProductDetails.productBenefits === (productBenefits || "") &&
-                       JSON.stringify(originalProductDetails.keywords.sort()) === JSON.stringify([...keywords].sort()))
-                    }
-                    className="bg-black text-white hover:bg-black/90 disabled:opacity-50 self-start sm:self-auto"
-                    size="sm"
-                  >
-                    {isSavingProductDetails ? "Saving..." : "Save Changes"}
-                  </Button>
-                </div>
               </div>
               
-              {/* Content area that spans remaining space */}
+              {/* Three cards */}
               <div className={cn(
-                "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
+                "flex-1 overflow-y-auto pt-2 pb-6 px-1",
                 !sidebarOpen && "pl-14"
-          )}>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-1">
-                  {/* Left Column */}
-                  <div className="space-y-4">
+              )}>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-5xl">
+                  {/* Product Card */}
+                  <button
+                    onClick={() => setShowProductModal(true)}
+                    className="p-6 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-left cursor-pointer h-full"
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2 rounded-md bg-primary/10">
+                        <Package className="h-5 w-5 text-primary" />
+                      </div>
+                      <h4 className="text-lg font-semibold">Product</h4>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {productName || "No product name set"}
+                    </p>
+                  </button>
+
+                  {/* Keywords Card */}
+                  <button
+                    onClick={() => setShowKeywordsModal(true)}
+                    className="p-6 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-left cursor-pointer h-full"
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2 rounded-md bg-primary/10">
+                        <Hash className="h-5 w-5 text-primary" />
+                </div>
+                      <h4 className="text-lg font-semibold">Keywords</h4>
+              </div>
+                    <p className="text-sm text-muted-foreground">
+                      {keywords.length > 0 ? `${keywords.length} keyword${keywords.length !== 1 ? 's' : ''}` : "No keywords set"}
+                    </p>
+                  </button>
+
+                  {/* Subreddits Card */}
+                  <button
+                    onClick={() => setShowSubredditsModal(true)}
+                    className="p-6 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-left cursor-pointer h-full"
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2 rounded-md bg-primary/10">
+                        <Users className="h-5 w-5 text-primary" />
+                      </div>
+                      <h4 className="text-lg font-semibold">Subreddits</h4>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {subreddits.length > 0 ? `${subreddits.length} subreddit${subreddits.length !== 1 ? 's' : ''}` : "No subreddits set"}
+                    </p>
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            {/* Product Modal */}
+            {showProductModal && (
+              <>
+                <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" onClick={() => setShowProductModal(false)} />
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                  <div className="relative w-full max-w-2xl rounded-lg border border-border bg-card shadow-lg max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between border-b border-border px-6 py-4">
+                      <h3 className="text-lg font-semibold">Edit Product</h3>
+                      <button
+                        onClick={() => setShowProductModal(false)}
+                        className="rounded-full p-1 hover:bg-muted"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
               <div>
-                      <label htmlFor="product-name" className="block text-sm font-medium text-foreground mb-1">
-                        Product Name
-                      </label>
+                        <label className="block text-sm font-medium mb-1">Product Name</label>
                       <Input
-                        id="product-name"
-                        type="text"
                         value={productName}
                         onChange={(e) => setProductName(e.target.value)}
                         placeholder="Enter your product name"
-                        className="w-full"
                       />
               </div>
               <div>
-                      <label htmlFor="product-website" className="block text-sm font-medium text-foreground mb-1">
-                        Product Website
-                      </label>
+                        <label className="block text-sm font-medium mb-1">Product Website</label>
                       <Input
-                        id="product-website"
                         type="url"
                         value={website}
                         onChange={(e) => setWebsite(e.target.value)}
                         placeholder="https://example.com"
-                        className="w-full"
                       />
               </div>
                     <div>
-                      <label htmlFor="product-description" className="block text-sm font-medium text-foreground mb-1">
-                        Product Description
-                      </label>
-                      <div className="relative w-full rounded-md border border-input focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2">
+                        <label className="block text-sm font-medium mb-1">Product Description</label>
+                        <div className="relative">
                         <textarea
-                          id="product-description"
                           value={productDescription}
                           onChange={(e) => setProductDescription(e.target.value)}
-                          placeholder={isGeneratingProductDescription ? "Generating product description..." : "Describe your product and what it does..."}
+                            placeholder={isGeneratingProductDescription ? "Generating..." : "Describe your product..."}
                           disabled={isGeneratingProductDescription}
-                          className="w-full min-h-[150px] rounded-md border-0 bg-background px-3 py-2 pb-12 text-sm placeholder:text-muted-foreground focus:outline-none resize-y disabled:opacity-50 disabled:cursor-not-allowed"
-                          rows={6}
+                            className="w-full min-h-[150px] rounded-md border border-input bg-background px-3 py-2 pb-12 text-sm resize-y"
                         />
                         {isGeneratingProductDescription && (
                           <div className="absolute inset-0 flex items-center justify-center bg-background/50 rounded-md">
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              <span>Generating...</span>
-                            </div>
+                              <Loader2 className="h-4 w-4 animate-spin" />
                           </div>
                         )}
                         <Button
                           type="button"
                           size="sm"
-                          className="absolute bottom-2 right-2 bg-black text-white hover:bg-black/90 text-xs h-7 disabled:opacity-50 disabled:cursor-not-allowed"
-                          disabled={isGeneratingProductDescription || !website || !website.trim()}
+                            className="absolute bottom-2 right-2 bg-black text-white hover:bg-black/90 text-xs h-7"
+                            disabled={isGeneratingProductDescription || !website?.trim()}
                           onClick={async () => {
-                            if (!website || !website.trim()) {
-                              showToast("Please enter a website first", { variant: "error" });
-                              return;
-                            }
-                            
+                              if (!website?.trim()) return;
                             setIsGeneratingProductDescription(true);
                             try {
                               const response = await fetch("/api/openai/product", {
                                 method: "POST",
-                                headers: {
-                                  "Content-Type": "application/json",
-                                },
-                                body: JSON.stringify({
-                                  website: website,
-                                }),
-                              });
-
-                              if (!response.ok) {
-                                const errorData = await response.json();
-                                throw new Error(errorData.error || "Failed to generate product description");
-                              }
-
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ website }),
+                                });
+                                if (response.ok) {
                               const data = await response.json();
                               if (data.success && data.description) {
                                 setProductDescription(data.description);
-                                showToast("Product description generated successfully!", { variant: "success" });
-                              } else {
-                                throw new Error("No description received from API");
+                                  }
                               }
                             } catch (error) {
-                              console.error("Error generating product description:", error);
-                              showToast(error instanceof Error ? error.message : "Failed to generate product description", { variant: "error" });
+                                console.error("Error generating description:", error);
                             } finally {
                               setIsGeneratingProductDescription(false);
                             }
@@ -4927,77 +5029,239 @@ function PlaygroundContent() {
                         </Button>
                       </div>
                     </div>
-                    <div>
-                      <label htmlFor="product-benefits" className="block text-sm font-medium text-foreground mb-1">
-                        Product Benefits/Results
-                      </label>
-                      <textarea
-                        id="product-benefits"
-                        value={productBenefits}
-                        onChange={(e) => setProductBenefits(e.target.value)}
-                        placeholder="Enter metrics and achievements (e.g., 89 signups in a day, revenue up by 50%, 1000 users gained in a week, etc.)"
-                        className="w-full min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 resize-y"
-                        rows={5}
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Specify metrics and achievements users can achieve with your product
-                      </p>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Product Benefits/Results</label>
+                        <textarea
+                          value={productBenefits}
+                          onChange={(e) => setProductBenefits(e.target.value)}
+                          placeholder="Enter metrics and achievements..."
+                          className="w-full min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm resize-y"
+                        />
+                  </div>
+                    </div>
+                    <div className="border-t border-border px-6 py-4 flex justify-end gap-2">
+                      <Button variant="outline" onClick={() => setShowProductModal(false)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={async () => {
+                          setIsSavingProductDetails(true);
+                          try {
+                            const response = await fetch("/api/user/product-details", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                productName: productName || undefined,
+                                link: website || undefined,
+                                productDescription: productDescription || undefined,
+                                productBenefits: productBenefits || undefined,
+                              }),
+                            });
+                            if (response.ok) {
+                              const data = await response.json();
+                              if (data.success) {
+                                setOriginalProductDetails({
+                                  productName: productName || "",
+                                  website: website || "",
+                                  productDescription: productDescription || "",
+                                  productBenefits: productBenefits || "",
+                                  keywords: keywords,
+                                });
+                                showToast("Product details saved!", { variant: "success" });
+                                setShowProductModal(false);
+                              }
+                            }
+                          } catch (error) {
+                            console.error("Error saving:", error);
+                            showToast("Failed to save", { variant: "error" });
+                          } finally {
+                            setIsSavingProductDetails(false);
+                          }
+                        }}
+                        disabled={isSavingProductDetails}
+                      >
+                        {isSavingProductDetails ? "Saving..." : "Save"}
+                      </Button>
                     </div>
                   </div>
-                  
-                  {/* Right Column */}
-                  <div className="space-y-6">
-                  <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label htmlFor="product-keywords" className="block text-sm font-medium text-foreground">
-                          Keywords
-                        </label>
+                </div>
+              </>
+            )}
+
+            {/* Keywords Modal */}
+            {showKeywordsModal && (
+              <>
+                <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" onClick={() => {
+                  setShowKeywordsModal(false);
+                  setRecommendedKeywordsModal([]);
+                }} />
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                  <div className="relative w-full max-w-2xl rounded-lg border border-border bg-card shadow-lg max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between border-b border-border px-6 py-4">
+                      <h3 className="text-lg font-semibold">Edit Keywords</h3>
+                      <button
+                        onClick={() => {
+                          setShowKeywordsModal(false);
+                          setRecommendedKeywordsModal([]);
+                        }}
+                        className="rounded-full p-1 hover:bg-muted"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-sm font-medium">Keywords</label>
                     <Button
-                          type="button"
                           size="sm"
                           variant="outline"
                           onClick={generateKeywords}
-                          disabled={isGeneratingKeywords || !productDescription || !productDescription.trim()}
-                          className="text-xs h-7"
+                          disabled={isGeneratingKeywords || !productDescription?.trim()}
                         >
                           {isGeneratingKeywords ? (
                             <>
                               <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
-                              Generating...
+                              Suggesting...
                             </>
                           ) : (
                             <>
                               <Plus className="h-3 w-3 mr-1.5" />
-                              AI Generate
+                              AI Suggest
                             </>
                           )}
                         </Button>
                       </div>
+                      
+                      {/* Recommended Keywords Section */}
+                      {isGeneratingKeywords && (
+                        <div className="flex items-center justify-center gap-2 p-4 rounded-lg bg-muted/50 border border-border">
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">Generating keyword suggestions...</span>
+                        </div>
+                      )}
+                      {!isGeneratingKeywords && recommendedKeywordsModal.length > 0 && (
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground block">
+                            Recommended Keywords
+                          </label>
                       <p className="text-xs text-muted-foreground mb-2">
-                        Add keywords related to your product niche {keywords.length > 0 && `(${keywords.length}/${userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5})`}
+                            Click the + button to add keywords to your list:
                       </p>
-                      <div className="w-full space-y-1">
                         <div className="relative">
-                          <div className="min-h-[40px] max-h-[180px] overflow-y-auto flex flex-wrap gap-2 items-start py-1 pb-10" style={{ minHeight: keywords.length > 0 ? 'auto' : '40px' }}>
+                            <div
+                              ref={recommendedKeywordsModalScrollRef}
+                              className="overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth"
+                              onScroll={() => {
+                                if (recommendedKeywordsModalScrollRef.current) {
+                                  const { scrollLeft, scrollWidth, clientWidth } = recommendedKeywordsModalScrollRef.current;
+                                  setCanScrollLeftKeywordsModal(scrollLeft > 0);
+                                  setCanScrollRightKeywordsModal(scrollLeft < scrollWidth - clientWidth - 1);
+                                }
+                              }}
+                            >
+                              <div className="flex gap-3 min-w-max">
+                                {recommendedKeywordsModal.map((keyword) => {
+                                  const normalizedRecommended = keyword.toLowerCase().trim();
+                                  const isAdded = keywords.some(k => k.toLowerCase().trim() === normalizedRecommended);
+                                  const maxKeywords = userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5;
+                                  const isDisabled = isAdded || keywords.length >= maxKeywords;
+                                  return (
+                                    <div
+                                      key={keyword}
+                                      className="flex-shrink-0 w-64 rounded-lg border border-border bg-card p-4 shadow-sm hover:shadow-md transition-shadow relative items-center flex flex-row justify-between"
+                                    >
+                                      <div className="space-y-2 flex flex-col">
+                                        <div className="pr-8">
+                                          <h4 className="text-sm font-semibold text-foreground">
+                                            {keyword}
+                                          </h4>
+                                        </div>
+                                      </div>
+                                      <button
+                                        onClick={() => {
+                                          if (!isAdded && keywords.length < maxKeywords) {
+                                            const trimmedKeyword = keyword.toLowerCase().trim();
+                                            if (!keywords.some(k => k.toLowerCase().trim() === trimmedKeyword)) {
+                                              const newKeywords = [...keywords, trimmedKeyword];
+                                              setKeywords(newKeywords);
+                                              saveKeywords(newKeywords);
+                                            }
+                                          }
+                                        }}
+                                        disabled={isDisabled}
+                                        className={`w-6 h-6 rounded-full flex items-center justify-center border transition-colors disabled:opacity-50 disabled:cursor-not-allowed p-0 ${
+                                          isAdded 
+                                            ? "bg-black border-black hover:bg-black/90" 
+                                            : "bg-white border-border hover:bg-muted"
+                                        }`}
+                                      >
+                                        {isAdded ? (
+                                          <CheckCircle2 className="h-3 w-3 text-white" />
+                                        ) : (
+                                          <Plus className="h-3 w-3 text-foreground" />
+                                        )}
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            {/* Left scroll button */}
+                            {canScrollLeftKeywordsModal && (
+                              <button
+                                onClick={() => {
+                                  if (recommendedKeywordsModalScrollRef.current) {
+                                    recommendedKeywordsModalScrollRef.current.scrollBy({
+                                      left: -272,
+                                      behavior: 'smooth'
+                                    });
+                                  }
+                                }}
+                                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-md hover:bg-background flex items-center justify-center transition-colors"
+                                aria-label="Scroll left"
+                              >
+                                <ChevronLeft className="h-5 w-5 text-foreground" />
+                              </button>
+                            )}
+                            {/* Right scroll button */}
+                            {canScrollRightKeywordsModal && (
+                              <button
+                                onClick={() => {
+                                  if (recommendedKeywordsModalScrollRef.current) {
+                                    recommendedKeywordsModalScrollRef.current.scrollBy({
+                                      left: 272,
+                                      behavior: 'smooth'
+                                    });
+                                  }
+                                }}
+                                className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-md hover:bg-background flex items-center justify-center transition-colors"
+                                aria-label="Scroll right"
+                              >
+                                <ChevronRight className="h-5 w-5 text-foreground" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <p className="text-xs text-muted-foreground">
+                        Add keywords ({keywords.length}/{userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5})
+                      </p>
+                      <div className="min-h-[100px] max-h-[300px] overflow-y-auto flex flex-wrap gap-2 p-3 border border-input rounded-md">
                             {keywords.length === 0 ? (
-                              <p className="text-sm text-muted-foreground italic">No keywords added. Enter keywords related to your product niche.</p>
+                          <p className="text-sm text-muted-foreground italic">No keywords added</p>
                             ) : (
                               keywords.map((keyword, index) => (
-                                <div
-                                  key={index}
-                                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-3 py-1 text-sm text-foreground"
-                                >
+                            <div key={index} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-3 py-1 text-sm">
                                   <span>{keyword}</span>
                                   <button
                                     type="button"
                                     onClick={() => {
                                       const newKeywords = keywords.filter((_, i) => i !== index);
                                       setKeywords(newKeywords);
-                                      // Auto-save keywords when removed
                                       saveKeywords(newKeywords);
                                     }}
-                                    className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5 transition-colors"
-                                    aria-label={`Remove ${keyword}`}
+                                className="rounded-full hover:bg-muted-foreground/20 p-0.5"
                                   >
                                     <X className="h-3 w-3" />
                                   </button>
@@ -5005,14 +5269,8 @@ function PlaygroundContent() {
                               ))
                             )}
                           </div>
-                          {keywords.length > 0 && (
-                            <div className="absolute bottom-0 left-0 right-0 h-8 pointer-events-none bg-gradient-to-t from-background to-transparent" />
-                          )}
-                        </div>
-                        <div className="flex gap-2 pt-1">
+                      <div className="flex gap-2">
                           <Input
-                            id="product-keywords"
-                            type="text"
                             value={keywordInput}
                             onChange={(e) => setKeywordInput(e.target.value)}
                             onKeyDown={(e) => {
@@ -5020,74 +5278,218 @@ function PlaygroundContent() {
                                 e.preventDefault();
                                 const trimmed = keywordInput.trim();
                                 if (trimmed && !keywords.includes(trimmed)) {
-                                  const maxKeywords = userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5;
-                                  if (keywords.length >= maxKeywords) {
-                                    showToast(`Maximum of ${maxKeywords} keywords allowed for ${userPlan || "free"} plan`, { variant: "error" });
+                                const maxKeywords = userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5;
+                                if (keywords.length >= maxKeywords) {
+                                  showToast(`Maximum of ${maxKeywords} keywords allowed`, { variant: "error" });
                                     return;
                                   }
                                   const newKeywords = [...keywords, trimmed];
                                   setKeywords(newKeywords);
                                   setKeywordInput("");
-                                  // Auto-save keywords
                                   saveKeywords(newKeywords);
                                 }
                               }
                             }}
                             placeholder="Enter a keyword"
-                            className="flex-1"
                           />
                           <Button
-                            type="button"
-                            size="sm"
                             onClick={() => {
                               const trimmed = keywordInput.trim();
                               if (trimmed && !keywords.includes(trimmed)) {
-                                const maxKeywords = userPlan === "pro" ? 50 : userPlan === "premium" ? 30 : 5;
-                                if (keywords.length >= maxKeywords) {
-                                  showToast(`Maximum of ${maxKeywords} keywords allowed for ${userPlan || "free"} plan`, { variant: "error" });
+                              const maxKeywords = userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5;
+                              if (keywords.length >= maxKeywords) {
+                                showToast(`Maximum of ${maxKeywords} keywords allowed`, { variant: "error" });
                                   return;
                                 }
                                 const newKeywords = [...keywords, trimmed];
                                 setKeywords(newKeywords);
                                 setKeywordInput("");
-                                // Auto-save keywords
                                 saveKeywords(newKeywords);
                               }
                             }}
-                            disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= (userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5)}
-                            className="shrink-0"
+                          disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= (userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5)}
                           >
                             <Plus className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
-              </div>
-                  <div>
-                      <label htmlFor="product-subreddits" className="block text-sm font-medium text-foreground mb-1">
-                        Target Subreddits
-                      </label>
-                      <div className="w-full space-y-1">
-                        <div className="relative">
-                          <div className="min-h-[40px] max-h-[180px] overflow-y-auto flex flex-wrap gap-2 items-start py-1 pb-10" style={{ minHeight: subreddits.length > 0 ? 'auto' : '40px' }}>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Subreddits Modal */}
+            {showSubredditsModal && (
+              <>
+                <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" onClick={() => {
+                  setShowSubredditsModal(false);
+                  setRecommendedSubredditsModal([]);
+                }} />
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                  <div className="relative w-full max-w-2xl rounded-lg border border-border bg-card shadow-lg max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between border-b border-border px-6 py-4">
+                      <h3 className="text-lg font-semibold">Edit Subreddits</h3>
+                      <button
+                        onClick={() => {
+                          setShowSubredditsModal(false);
+                          setRecommendedSubredditsModal([]);
+                        }}
+                        className="rounded-full p-1 hover:bg-muted"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-sm font-medium">Target Subreddits</label>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={generateRecommendedSubreddits}
+                          disabled={isLoadingSubredditRecommendations || keywords.length === 0}
+                        >
+                          {isLoadingSubredditRecommendations ? (
+                            <>
+                              <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
+                              Suggesting...
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="h-3 w-3 mr-1.5" />
+                              AI Suggest
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      
+                      {/* Recommended Subreddits Section */}
+                      {isLoadingSubredditRecommendations && (
+                        <div className="flex items-center justify-center gap-2 p-4 rounded-lg bg-muted/50 border border-border">
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">Analyzing your keywords to recommend subreddits...</span>
+                        </div>
+                      )}
+                      {!isLoadingSubredditRecommendations && recommendedSubredditsModal.length > 0 && (
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground block">
+                            Recommended Subreddits
+                          </label>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            Based on your keywords, these subreddits appear most frequently in relevant posts:
+                          </p>
+                          <div className="relative">
+                            <div
+                              ref={recommendedSubredditsModalScrollRef}
+                              className="overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth"
+                              onScroll={() => {
+                                if (recommendedSubredditsModalScrollRef.current) {
+                                  const { scrollLeft, scrollWidth, clientWidth } = recommendedSubredditsModalScrollRef.current;
+                                  setCanScrollLeftSubredditsModal(scrollLeft > 0);
+                                  setCanScrollRightSubredditsModal(scrollLeft < scrollWidth - clientWidth - 1);
+                                }
+                              }}
+                            >
+                              <div className="flex gap-3 min-w-max">
+                                {recommendedSubredditsModal.map((rec) => {
+                                  const recName = rec.name.toLowerCase().replace(/^r\//, "");
+                                  const isAdded = subreddits.includes(recName);
+                                  const isDisabled = isAdded || subreddits.length >= 15;
+                                  return (
+                                    <div
+                                      key={rec.name}
+                                      className="flex-shrink-0 w-64 rounded-lg border border-border bg-card p-4 shadow-sm hover:shadow-md transition-shadow relative items-center flex flex-row justify-between"
+                                    >
+                                      <div className="space-y-2 flex flex-col">
+                                        <div className="pr-8">
+                                          <h4 className="text-sm font-semibold text-foreground">
+                                            r/{rec.name}
+                                          </h4>
+                                          {rec.subscribers !== undefined && (
+                                            <div className="text-xs text-muted-foreground mt-1">
+                                              {rec.subscribers.toLocaleString()} members
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <button
+                                        onClick={() => {
+                                          if (!isAdded && subreddits.length < 15) {
+                                            const newSubreddits = [...subreddits, recName];
+                                            setSubreddits(newSubreddits);
+                                            saveSubreddits(newSubreddits);
+                                          }
+                                        }}
+                                        disabled={isDisabled}
+                                        className={`w-6 h-6 rounded-full flex items-center justify-center border transition-colors disabled:opacity-50 disabled:cursor-not-allowed p-0 ${
+                                          isAdded 
+                                            ? "bg-black border-black hover:bg-black/90" 
+                                            : "bg-white border-border hover:bg-muted"
+                                        }`}
+                                      >
+                                        {isAdded ? (
+                                          <CheckCircle2 className="h-3 w-3 text-white" />
+                                        ) : (
+                                          <Plus className="h-3 w-3 text-foreground" />
+                                        )}
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            {/* Left scroll button */}
+                            {canScrollLeftSubredditsModal && (
+                              <button
+                                onClick={() => {
+                                  if (recommendedSubredditsModalScrollRef.current) {
+                                    recommendedSubredditsModalScrollRef.current.scrollBy({
+                                      left: -272,
+                                      behavior: 'smooth'
+                                    });
+                                  }
+                                }}
+                                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-md hover:bg-background flex items-center justify-center transition-colors"
+                                aria-label="Scroll left"
+                              >
+                                <ChevronLeft className="h-5 w-5 text-foreground" />
+                              </button>
+                            )}
+                            {/* Right scroll button */}
+                            {canScrollRightSubredditsModal && (
+                              <button
+                                onClick={() => {
+                                  if (recommendedSubredditsModalScrollRef.current) {
+                                    recommendedSubredditsModalScrollRef.current.scrollBy({
+                                      left: 272,
+                                      behavior: 'smooth'
+                                    });
+                                  }
+                                }}
+                                className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-md hover:bg-background flex items-center justify-center transition-colors"
+                                aria-label="Scroll right"
+                              >
+                                <ChevronRight className="h-5 w-5 text-foreground" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="min-h-[100px] max-h-[300px] overflow-y-auto flex flex-wrap gap-2 p-3 border border-input rounded-md">
                             {subreddits.length === 0 ? (
-                              <p className="text-sm text-muted-foreground italic">No subreddits selected. Search and add subreddits to get started.</p>
+                          <p className="text-sm text-muted-foreground italic">No subreddits selected</p>
                             ) : (
                               subreddits.map((subreddit, index) => (
-                                <div
-                                  key={index}
-                                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-3 py-1 text-sm text-foreground"
-                                >
+                            <div key={index} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-3 py-1 text-sm">
                                   <span>r/{subreddit}</span>
                                   <button
                                     type="button"
                                   onClick={() => {
                                     const newSubreddits = subreddits.filter((_, i) => i !== index);
                                     setSubreddits(newSubreddits);
-                                    // Auto-save subreddits when removed
                                     saveSubreddits(newSubreddits);
                                   }}
-                                    className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5 transition-colors"
-                                    aria-label={`Remove ${subreddit}`}
+                                className="rounded-full hover:bg-muted-foreground/20 p-0.5"
                                   >
                                     <X className="h-3 w-3" />
                                   </button>
@@ -5095,16 +5497,9 @@ function PlaygroundContent() {
                               ))
                             )}
                           </div>
-                          {subreddits.length > 0 && (
-                            <div className="absolute bottom-0 left-0 right-0 h-8 pointer-events-none bg-gradient-to-t from-background to-transparent" />
-                          )}
-                        </div>
-                        <div className="relative flex gap-2 pt-1">
-                          <div className="relative flex-1" style={{ zIndex: 40 }}>
+                      <div className="relative">
                             <Input
                               ref={subredditInputRef}
-                              id="product-subreddits"
-                              type="text"
                               value={subredditInput}
                               onChange={(e) => {
                                 setSubredditInput(e.target.value);
@@ -5135,38 +5530,17 @@ function PlaygroundContent() {
                                   setShowSubredditDropdown(true);
                                 }
                               }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' && subredditSuggestions.length > 0) {
-                                  e.preventDefault();
-                                  const firstSuggestion = subredditSuggestions[0];
-                                  if (firstSuggestion && !subreddits.includes(firstSuggestion.name)) {
-                                    if (subreddits.length >= 15) {
-                                      showToast("Maximum of 15 subreddits allowed", { variant: "error" });
-                                      return;
-                                    }
-                                    const newSubreddits = [...subreddits, firstSuggestion.name];
-                                    setSubreddits(newSubreddits);
-                                    setSubredditInput("");
-                                    setShowSubredditDropdown(false);
-                                    // Auto-save subreddits
-                                    saveSubreddits(newSubreddits);
-                                  }
-                                } else if (e.key === 'Escape') {
-                                  setShowSubredditDropdown(false);
-                                }
-                              }}
                               placeholder="Search for subreddits..."
-                              className="flex-1"
                             />
                             {isLoadingSubreddits && (
                               <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            <Loader2 className="h-4 w-4 animate-spin" />
                               </div>
                             )}
                             {showSubredditDropdown && subredditSuggestions.length > 0 && subredditDropdownPosition && (
                               <div
                                 ref={subredditDropdownRef}
-                                className="fixed z-40 bg-background border border-border rounded-md shadow-lg max-h-60 overflow-y-auto"
+                            className="fixed z-50 bg-background border border-border rounded-md shadow-lg max-h-60 overflow-y-auto"
                                 style={{
                                   top: `${subredditDropdownPosition.top}px`,
                                   left: `${subredditDropdownPosition.left}px`,
@@ -5176,7 +5550,6 @@ function PlaygroundContent() {
                                 {subredditSuggestions.map((sub, index) => (
                                   <button
                                     key={index}
-                                    type="button"
                                     onClick={() => {
                                       if (!subreddits.includes(sub.name)) {
                                         if (subreddits.length >= 15) {
@@ -5187,7 +5560,6 @@ function PlaygroundContent() {
                                         setSubreddits(newSubreddits);
                                         setSubredditInput("");
                                         setShowSubredditDropdown(false);
-                                        // Auto-save subreddits
                                         saveSubreddits(newSubreddits);
                                       }
                                     }}
@@ -5197,31 +5569,22 @@ function PlaygroundContent() {
                                       <span className="text-sm font-medium">{sub.displayName}</span>
                                       {sub.subscribers > 0 && (
                                         <span className="text-xs text-muted-foreground">
-                                          {sub.subscribers >= 1000 
-                                            ? `${(sub.subscribers / 1000).toFixed(1)}k members`
-                                            : `${sub.subscribers} members`}
+                                      {sub.subscribers >= 1000 ? `${(sub.subscribers / 1000).toFixed(1)}k members` : `${sub.subscribers} members`}
                                         </span>
                                       )}
                                     </div>
-                                    {subreddits.includes(sub.name) && (
-                                      <Check className="h-4 w-4 text-primary" />
-                                    )}
+                                {subreddits.includes(sub.name) && <Check className="h-4 w-4 text-primary" />}
                                   </button>
                                 ))}
                               </div>
                             )}
                           </div>
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          Search and add subreddits where you want to engage
-                        </p>
-                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-            </div>
-          </div>
+              </>
+            )}
+          </>
         );
       case "create":
         return (

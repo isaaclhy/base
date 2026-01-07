@@ -259,6 +259,20 @@ export function UserInfoCard() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    className="w-full justify-start gap-2 text-xs"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      handleSignOut();
+                    }}
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign out
+                  </Button>
+                </div>
+                <div className="p-1 border-t border-border">
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     className="w-full justify-start gap-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
                     onClick={handleDeleteAccount}
                     disabled={isDeleting}
@@ -281,15 +295,6 @@ export function UserInfoCard() {
           )}
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="w-full justify-start gap-2 text-xs"
-        onClick={handleSignOut}
-      >
-        <LogOut className="h-4 w-4" />
-        Sign out
-      </Button>
 
       {/* Delete Account Confirmation Modal */}
       {showDeleteModal && (
