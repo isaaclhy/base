@@ -960,47 +960,69 @@ function PlaygroundContent() {
     
       // Only restore if the saved email matches the current user's email
       if (savedLeadsLinksUserEmail === currentUserEmail) {
-        const savedLeadsLinks = localStorage.getItem("leadsLinks");
-    if (savedLeadsLinks) {
+        // Check if a sync was in progress when page was refreshed
+        const syncInProgress = localStorage.getItem("syncLeadsInProgress");
+        if (syncInProgress === "true") {
+          // Sync was interrupted - warn user and clear incomplete data
+          console.warn("[Sync Leads] Previous sync was interrupted. Clearing incomplete data.");
           try {
-            const parsed = JSON.parse(savedLeadsLinks);
-            if (parsed && typeof parsed === 'object') {
-              setLeadsLinks(parsed);
+            localStorage.removeItem("leadsLinks");
+            localStorage.removeItem("leadsLinksUserEmail");
+            localStorage.removeItem("leadsFilterSignals");
+            localStorage.removeItem("syncLeadsInProgress");
+            localStorage.removeItem("newLeadsSinceLastSync");
+            // Note: We can't show toast here because session might not be ready yet
+            // The toast will be shown after a delay to ensure session is ready
+            setTimeout(() => {
+              showToast("Previous sync was interrupted. Please sync again.", { variant: "error" });
+            }, 1000);
+          } catch (e) {
+            console.error("Error clearing incomplete sync data:", e);
+          }
+        } else {
+          // Sync completed normally, restore data
+          const savedLeadsLinks = localStorage.getItem("leadsLinks");
+    if (savedLeadsLinks) {
+            try {
+              const parsed = JSON.parse(savedLeadsLinks);
+              if (parsed && typeof parsed === 'object') {
+                setLeadsLinks(parsed);
+              }
+            } catch (parseError) {
+              console.error("Error parsing saved leadsLinks:", parseError);
+              // Clear invalid data
+          localStorage.removeItem("leadsLinks");
+          localStorage.removeItem("leadsLinksUserEmail");
+            }
+          }
+        
+          // Also restore filter signals (only if sync completed normally)
+          try {
+            const savedSignals = localStorage.getItem("leadsFilterSignals");
+            if (savedSignals) {
+              const parsedSignals = JSON.parse(savedSignals);
+              if (parsedSignals && typeof parsedSignals === 'object') {
+                setLeadsFilterSignals(parsedSignals);
+              }
             }
           } catch (parseError) {
-            console.error("Error parsing saved leadsLinks:", parseError);
-            // Clear invalid data
-        localStorage.removeItem("leadsLinks");
-        localStorage.removeItem("leadsLinksUserEmail");
+            console.error("Error parsing saved leadsFilterSignals:", parseError);
+            localStorage.removeItem("leadsFilterSignals");
           }
-        }
-        
-        // Also restore filter signals
-        try {
-          const savedSignals = localStorage.getItem("leadsFilterSignals");
-          if (savedSignals) {
-            const parsedSignals = JSON.parse(savedSignals);
-            if (parsedSignals && typeof parsedSignals === 'object') {
-              setLeadsFilterSignals(parsedSignals);
-            }
-          }
-        } catch (parseError) {
-          console.error("Error parsing saved leadsFilterSignals:", parseError);
-          localStorage.removeItem("leadsFilterSignals");
-        }
 
-        // Also restore last sync time
-        try {
-          const savedSyncTime = localStorage.getItem("lastLeadsSyncTime");
-          if (savedSyncTime) {
-            const parsedTime = new Date(savedSyncTime);
-            if (!isNaN(parsedTime.getTime())) {
-              setLastLeadsSyncTime(parsedTime);
+          // Also restore last sync time (only if sync completed normally)
+          try {
+            const savedSyncTime = localStorage.getItem("lastLeadsSyncTime");
+            if (savedSyncTime) {
+              const parsedTime = new Date(savedSyncTime);
+              if (!isNaN(parsedTime.getTime())) {
+                setLastLeadsSyncTime(parsedTime);
+              }
             }
+          } catch (parseError) {
+            console.error("Error parsing saved lastLeadsSyncTime:", parseError);
+            localStorage.removeItem("lastLeadsSyncTime");
           }
-        } catch (parseError) {
-          console.error("Error parsing saved lastLeadsSyncTime:", parseError);
-          localStorage.removeItem("lastLeadsSyncTime");
         }
       } else if (savedLeadsLinksUserEmail && currentUserEmail) {
         // Different user, clear the old data
@@ -2159,11 +2181,12 @@ function PlaygroundContent() {
     setIsLoadingLeads(true);
     setLeadsPage(1);
 
-    // Reset new leads count when starting a new sync
+    // Mark sync as in progress in localStorage
     try {
+      localStorage.setItem("syncLeadsInProgress", "true");
       localStorage.setItem("newLeadsSinceLastSync", "0");
     } catch (e) {
-      console.error("Error resetting newLeadsSinceLastSync:", e);
+      console.error("Error setting sync in progress flag:", e);
     }
 
     // Get initial count of leads before sync
@@ -2563,9 +2586,23 @@ function PlaygroundContent() {
         console.error("Error incrementing sync counter:", syncError);
         // Don't fail the whole operation if sync counter increment fails
       }
+
+      // Mark sync as completed
+      try {
+        localStorage.removeItem("syncLeadsInProgress");
+      } catch (e) {
+        console.error("Error clearing sync in progress flag:", e);
+      }
     } catch (error) {
       console.error("Error syncing leads:", error);
       showToast("Error fetching leads. Please try again.", { variant: "error" });
+      
+      // Clear sync in progress flag on error
+      try {
+        localStorage.removeItem("syncLeadsInProgress");
+      } catch (e) {
+        console.error("Error clearing sync in progress flag on error:", e);
+      }
     } finally {
       // Set isLoadingLeads to false AFTER state update to ensure distinctLeadsLinks re-runs
       // with the latest leadsLinks state that includes postData
@@ -3897,11 +3934,12 @@ function PlaygroundContent() {
     // Check cache first
     const cached = getCachedPost(linkItem.link);
     if (cached && (cached.selftext || cached.postData)) {
-      // Update selectedDiscoveryPost with cached data
+      // Update selectedDiscoveryPost with cached data, including Reddit title
       setSelectedDiscoveryPost((prev) => {
         if (!prev || prev.uniqueKey !== linkItem.uniqueKey) return prev;
         return {
           ...prev,
+          title: cached.postData?.title || prev.title, // Use Reddit API title if available
           selftext: cached.selftext || prev.selftext,
           postData: cached.postData || prev.postData,
         };
@@ -3936,11 +3974,12 @@ function PlaygroundContent() {
             // Cache the full post
             cachePost(linkItem.link, { selftext: post.selftext || null, postData: post });
 
-            // Update selectedDiscoveryPost with full data
+            // Update selectedDiscoveryPost with full data, including Reddit title
             setSelectedDiscoveryPost((prev) => {
               if (!prev || prev.uniqueKey !== linkItem.uniqueKey) return prev;
               return {
                 ...prev,
+                title: post.title || prev.title, // Use Reddit API title (full title, not truncated)
                 selftext: post.selftext || null,
                 postData: post,
               };
@@ -3956,11 +3995,12 @@ function PlaygroundContent() {
             // Cache the full post
             cachePost(linkItem.link, { selftext: post.selftext || null, postData: post });
 
-            // Update selectedDiscoveryPost with full data
+            // Update selectedDiscoveryPost with full data, including Reddit title
             setSelectedDiscoveryPost((prev) => {
               if (!prev || prev.uniqueKey !== linkItem.uniqueKey) return prev;
               return {
                 ...prev,
+                title: post.title || prev.title, // Use Reddit API title (full title, not truncated)
                 selftext: post.selftext || null,
                 postData: post,
               };
@@ -6092,7 +6132,7 @@ function PlaygroundContent() {
                           ref={leadsTableScrollRef}
                           className={cn(
                             "overflow-x-auto flex-1 overflow-y-auto min-h-0",
-                            isLoadingLeads && "blur-sm"
+                            isLoadingLeads && "blur-sm pointer-events-none select-none"
                           )}
                         >
                           <table className="w-full border-collapse table-fixed">
@@ -6307,7 +6347,7 @@ function PlaygroundContent() {
                         {distinctLeadsLinks.length > 0 && (
                           <div className={cn(
                             "flex items-center justify-between border-t border-border px-3 py-1.5 bg-card",
-                            isLoadingLeads && "blur-sm"
+                            isLoadingLeads && "blur-sm pointer-events-none select-none"
                           )}>
                             <div className="text-xs text-muted-foreground">
                               Showing {(leadsPage - 1) * LEADS_ITEMS_PER_PAGE + 1} to{" "}
@@ -6858,10 +6898,10 @@ function PlaygroundContent() {
               isDiscoveryDrawerVisible ? "translate-x-0" : "translate-x-full opacity-0"
             )}
           >
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div className="flex items-start justify-between border-b border-border px-4 py-3 gap-3">
               <div className="flex flex-col gap-2 flex-1 min-w-0">
-                <div className="min-w-0">
-                  <h3 className="text-lg font-semibold text-foreground break-words whitespace-normal">
+                <div className="min-w-0 w-full">
+                  <h3 className="text-lg font-semibold text-foreground break-words whitespace-normal overflow-wrap-anywhere w-full">
                     {selectedDiscoveryPost.title?.replace(/:\s*r\/[^\s]+/i, '').trim() || "No title"}
                   </h3>
                   {selectedDiscoveryPost.postData?.created_utc && (
@@ -7302,11 +7342,11 @@ function PlaygroundContent() {
                 <div className="space-y-4 mb-6">
                   {upgradeModalContext.limitReached ? (
                     <p className="text-sm text-muted-foreground">
-                      You've reached your weekly limit of {upgradeModalContext.maxCount || 30} Free Credits. {upgradeModalContext.selectedCount ? `You selected ${upgradeModalContext.selectedCount} leads, but need more credits. ` : ''}Upgrade to Premium to get 10,000 Free Credits per month and never worry about limits again.
+                      You've reached your weekly limit of {upgradeModalContext.maxCount || 30} Free Credits. {upgradeModalContext.selectedCount ? `You selected ${upgradeModalContext.selectedCount} leads, but need more credits. ` : ''}Upgrade to Premium to get 600 generated comments per week and never worry about limits again.
                     </p>
                   ) : (
                     <p className="text-sm text-muted-foreground">
-                      You have {upgradeModalContext.remaining} Free Credits remaining this week, but you selected {upgradeModalContext.selectedCount || 0} leads. Upgrade to Premium for 10,000 Free Credits per month and unlock more features.
+                      You have {upgradeModalContext.remaining} Free Credits remaining this week, but you selected {upgradeModalContext.selectedCount || 0} leads. Upgrade to Premium for 600 generated comments per week and unlock more features.
                     </p>
                   )}
                 </div>
@@ -7359,7 +7399,7 @@ function PlaygroundContent() {
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                        <span>10,000 Free Credits</span>
+                        <span>600 generated comments</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getUserUsage, getMaxPostsPerWeekForPlan, getNextDayStart } from "@/lib/db/usage";
+import { getUserUsage, getMaxPostsPerWeekForPlan, getNextDayStart, getMaxSyncsPerDayForPlan } from "@/lib/db/usage";
 import { getUserByEmail } from "@/lib/db/users";
 
 export async function GET(request: NextRequest) {
@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
 
     const plan = dbUser?.plan ?? "free";
     const maxCount = getMaxPostsPerWeekForPlan(plan);
+    const maxSyncsPerDay = getMaxSyncsPerDayForPlan(plan);
 
     return NextResponse.json({
       currentCount: usage.currentCount,
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
       weekStartDate: usage.weekStartDate,
       plan,
       syncCounter: usage.syncCounter ?? 0,
-      maxSyncsPerDay: 2,
+      maxSyncsPerDay,
       nextSyncReset: getNextDayStart().toISOString(), // When the sync counter will reset next
       totalLeadsGenerated: usage.totalLeadsGenerated ?? 0,
     });

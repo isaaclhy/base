@@ -10,11 +10,13 @@ const features = {
   free: [
     "Unlimited reddit post search",
     "30 Free Credits",
+    "2 lead syncs per day",
     "Usage analytics",
   ],
   premium: [
     "Unlimited reddit post search",
-    "10,000 Free Credits",
+    "600 generated comments",
+    "5 lead syncs per day",
     "Usage analytics",
   ],
 };

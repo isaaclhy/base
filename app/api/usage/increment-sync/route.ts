@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { incrementSyncCounter, MAX_SYNCS_PER_DAY } from "@/lib/db/usage";
+import { incrementSyncCounter, getMaxSyncsPerDayForPlan } from "@/lib/db/usage";
+import { getUserByEmail } from "@/lib/db/users";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,15 +14,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await incrementSyncCounter(session.user.email);
+    const dbUser = await getUserByEmail(session.user.email);
+    const plan = dbUser?.plan ?? "free";
+    const maxSyncsPerDay = getMaxSyncsPerDayForPlan(plan);
+
+    const result = await incrementSyncCounter(session.user.email, maxSyncsPerDay);
 
     // Return response with sync info and limit status
     return NextResponse.json({
       success: true,
       syncCounter: result.usage.syncCounter ?? 0,
       limitReached: result.limitReached,
-      remaining: Math.max(0, MAX_SYNCS_PER_DAY - (result.usage.syncCounter ?? 0)),
-      maxSyncsPerDay: MAX_SYNCS_PER_DAY,
+      remaining: Math.max(0, maxSyncsPerDay - (result.usage.syncCounter ?? 0)),
+      maxSyncsPerDay,
     });
   } catch (error) {
     console.error("Error incrementing sync counter:", error);

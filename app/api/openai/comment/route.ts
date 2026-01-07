@@ -48,7 +48,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<GenerateC
     // Check if user has reached the limit
     if (remaining === 0) {
       const upgradeMessage = plan === "free" 
-        ? "Please wait until next week or upgrade to Premium for 10,000 Free Credits per month."
+        ? "Please wait until next week or upgrade to Premium for 600 generated comments per week."
         : "Please wait until next week or upgrade to Pro for additional credits.";
       
       return NextResponse.json(

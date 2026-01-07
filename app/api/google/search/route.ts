@@ -37,7 +37,7 @@ async function fetchGoogleCustomSearch(
     
     // Only add dateRestrict if not disabled
     if (!noDateRestrict) {
-      requestParams.dateRestrict = "w1"; // Limit results to past week
+      requestParams.dateRestrict = "d4"; // Limit results to past 4 days
     }
         
     const response = await customsearch.cse.list(requestParams);

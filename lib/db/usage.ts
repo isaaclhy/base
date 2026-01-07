@@ -14,7 +14,7 @@ export interface UserUsage {
 }
 
 export const FREE_POST_LIMIT = 30;
-export const PREMIUM_POST_LIMIT = 1200; // 1,200 per week for premium plan
+export const PREMIUM_POST_LIMIT = 600; // 600 per week for premium plan
 export const PRO_POST_LIMIT = 500; // 2,000 per month ≈ 500 per week
 
 const DEFAULT_MAX_POSTS_PER_WEEK = FREE_POST_LIMIT;
@@ -261,21 +261,28 @@ export async function incrementCronUsage(userId: string, count: number = 1): Pro
   return updatedUsage as UserUsage;
 }
 
-export const MAX_SYNCS_PER_DAY = 2;
+export function getMaxSyncsPerDayForPlan(plan: "free" | "premium" | "pro"): number {
+  if (plan === "pro") return 10;
+  if (plan === "premium") return 5;
+  return 2;
+}
 
 /**
  * Check if user can sync leads (max 2 per day)
  */
-export async function canSyncLeads(userId: string): Promise<boolean> {
+export async function canSyncLeads(userId: string, maxSyncsPerDay: number): Promise<boolean> {
   const usage = await getUserUsage(userId);
-  return (usage.syncCounter ?? 0) < MAX_SYNCS_PER_DAY;
+  return (usage.syncCounter ?? 0) < maxSyncsPerDay;
 }
 
 /**
  * Increment sync counter for leads (max 2 per day)
  * Returns the updated usage and whether the limit was reached
  */
-export async function incrementSyncCounter(userId: string): Promise<{ usage: UserUsage; limitReached: boolean }> {
+export async function incrementSyncCounter(
+  userId: string,
+  maxSyncsPerDay: number
+): Promise<{ usage: UserUsage; limitReached: boolean }> {
   const db = await getDatabase();
   const usageCollection = db.collection<UserUsage>("usage");
 
@@ -284,7 +291,7 @@ export async function incrementSyncCounter(userId: string): Promise<{ usage: Use
 
   // Check if user has reached the daily sync limit
   const currentSyncCount = currentUsage.syncCounter ?? 0;
-  if (currentSyncCount >= MAX_SYNCS_PER_DAY) {
+  if (currentSyncCount >= maxSyncsPerDay) {
     return {
       usage: currentUsage,
       limitReached: true,
@@ -312,7 +319,7 @@ export async function incrementSyncCounter(userId: string): Promise<{ usage: Use
 
   return {
     usage: updatedUsage as UserUsage,
-    limitReached: (updatedUsage.syncCounter ?? 0) >= MAX_SYNCS_PER_DAY,
+    limitReached: (updatedUsage.syncCounter ?? 0) >= maxSyncsPerDay,
   };
 }
 

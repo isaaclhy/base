@@ -56,6 +56,11 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
   // Step 3: Keywords
   const [keywords, setKeywords] = useState<string[]>([]);
   const [keywordInput, setKeywordInput] = useState("");
+  const [recommendedKeywords, setRecommendedKeywords] = useState<string[]>([]);
+  const [isLoadingKeywordSuggestions, setIsLoadingKeywordSuggestions] = useState(false);
+  const recommendedKeywordsScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeftKeywords, setCanScrollLeftKeywords] = useState(false);
+  const [canScrollRightKeywords, setCanScrollRightKeywords] = useState(false);
   
   // Step 4: Subreddits
   const [subreddits, setSubreddits] = useState<string[]>([]);
@@ -79,14 +84,14 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
       setIsConnectingReddit(false);
       
       if (searchParams.get("reddit_connected") === "success") {
-        setCurrentStep(1);
+      setCurrentStep(1);
         // Check connection status immediately and retry if needed
         const checkConnection = async (retryCount = 0) => {
-          try {
-            const response = await fetch("/api/reddit/status");
-            if (response.ok) {
-              const data = await response.json();
-              setIsRedditConnected(data.connected);
+        try {
+          const response = await fetch("/api/reddit/status");
+          if (response.ok) {
+            const data = await response.json();
+            setIsRedditConnected(data.connected);
               // If connected, fetch user info
               if (data.connected) {
                 try {
@@ -112,12 +117,12 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
             } else if (retryCount < 3) {
               // Retry on error
               setTimeout(() => checkConnection(retryCount + 1), 1000);
-            }
-          } catch (error) {
-            console.error("Error checking Reddit connection:", error);
+          }
+        } catch (error) {
+          console.error("Error checking Reddit connection:", error);
             if (retryCount < 3) {
               setTimeout(() => checkConnection(retryCount + 1), 1000);
-            }
+        }
           }
         };
         checkConnection();
@@ -169,8 +174,8 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
       if (redditUserInfo || hasFetchedUserInfoRef.current) {
         checkRedditConnection(); // Just check connection status once
       } else {
-        checkRedditConnection();
-        // Poll every 2 seconds to check if Reddit was connected after redirect
+      checkRedditConnection();
+      // Poll every 2 seconds to check if Reddit was connected after redirect
         // Stop polling once we have user info
         const interval = setInterval(() => {
           if (!redditUserInfo && !hasFetchedUserInfoRef.current) {
@@ -179,10 +184,65 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
             clearInterval(interval);
           }
         }, 2000);
-        return () => clearInterval(interval);
-      }
+      return () => clearInterval(interval);
+    }
     }
   }, [currentStep, isOpen, redditUserInfo]);
+
+  // Generate keyword suggestions based on product description when step 3 is reached
+  useEffect(() => {
+    if (currentStep === 3 && productDescription && productDescription.trim().length > 0 && recommendedKeywords.length === 0 && !isLoadingKeywordSuggestions) {
+      const generateKeywordSuggestions = async () => {
+        setIsLoadingKeywordSuggestions(true);
+        try {
+          const response = await fetch("/api/openai/suggest-keywords", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              product: productDescription,
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.keywords && Array.isArray(data.keywords)) {
+              setRecommendedKeywords(data.keywords);
+            }
+          } else {
+            console.error("Error fetching keyword suggestions:", response.status);
+          }
+        } catch (error) {
+          console.error("Error generating keyword suggestions:", error);
+        } finally {
+          setIsLoadingKeywordSuggestions(false);
+        }
+      };
+
+      generateKeywordSuggestions();
+    }
+  }, [currentStep, productDescription, recommendedKeywords.length, isLoadingKeywordSuggestions]);
+
+  // Check scroll state for recommended keywords
+  useEffect(() => {
+    if (recommendedKeywords.length > 0 && recommendedKeywordsScrollRef.current) {
+      const checkScrollState = () => {
+        if (recommendedKeywordsScrollRef.current) {
+          const { scrollLeft, scrollWidth, clientWidth } = recommendedKeywordsScrollRef.current;
+          setCanScrollLeftKeywords(scrollLeft > 0);
+          setCanScrollRightKeywords(scrollLeft < scrollWidth - clientWidth - 1);
+        }
+      };
+      
+      // Check immediately
+      checkScrollState();
+      
+      // Also check on window resize
+      window.addEventListener('resize', checkScrollState);
+      return () => window.removeEventListener('resize', checkScrollState);
+    }
+  }, [recommendedKeywords.length]);
 
   // Check scroll state for recommended subreddits
   useEffect(() => {
@@ -565,9 +625,9 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
                   </p>
                   {isRedditConnected ? (
                     <div className="space-y-4">
-                      <div className="flex items-center justify-center gap-2 text-primary">
-                        <CheckCircle2 className="h-5 w-5" />
-                        <span className="text-sm font-medium">Reddit account connected!</span>
+                    <div className="flex items-center justify-center gap-2 text-primary">
+                      <CheckCircle2 className="h-5 w-5" />
+                      <span className="text-sm font-medium">Reddit account connected!</span>
                       </div>
                       {redditUserInfo && (
                         <div className="flex items-center justify-center gap-3 p-4 rounded-lg bg-muted/50 border border-border">
@@ -714,12 +774,120 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
             {/* Step 3: Keywords */}
             {currentStep === 3 && (
               <div className="space-y-4">
+                {/* Recommended Keywords */}
+                {isLoadingKeywordSuggestions && (
+                  <div className="flex items-center justify-center gap-2 p-4 rounded-lg bg-muted/50 border border-border">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Generating keyword suggestions based on your product description...</span>
+                  </div>
+                )}
+                {!isLoadingKeywordSuggestions && recommendedKeywords.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground block">
+                      Recommended Keywords
+                    </label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Based on your product description, here are some suggested keywords:
+                    </p>
+                    <div className="relative">
+                      <div
+                        ref={recommendedKeywordsScrollRef}
+                        className="overflow-x-auto pb-2 -mx-6 px-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth"
+                        onScroll={() => {
+                          if (recommendedKeywordsScrollRef.current) {
+                            const { scrollLeft, scrollWidth, clientWidth } = recommendedKeywordsScrollRef.current;
+                            setCanScrollLeftKeywords(scrollLeft > 0);
+                            setCanScrollRightKeywords(scrollLeft < scrollWidth - clientWidth - 1);
+                          }
+                        }}
+                      >
+                        <div className="flex gap-3 min-w-max">
+                          {recommendedKeywords.map((keyword) => {
+                            const normalizedRecommended = keyword.toLowerCase().trim();
+                            const isAdded = keywords.some(k => k.toLowerCase().trim() === normalizedRecommended);
+                            const isDisabled = isAdded || keywords.length >= 5;
+                            return (
+                              <div
+                                key={keyword}
+                                className="flex-shrink-0 w-64 rounded-lg border border-border bg-card p-4 shadow-sm hover:shadow-md transition-shadow relative items-center flex flex-row justify-between"
+                              >
+                                <div className="space-y-2 flex flex-col">
+                                  <div className="pr-8">
+                                    <h4 className="text-sm font-semibold text-foreground">
+                                      {keyword}
+                                    </h4>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    if (!isAdded && keywords.length < 5) {
+                                      const trimmedKeyword = keyword.toLowerCase().trim();
+                                      if (!keywords.includes(trimmedKeyword)) {
+                                        setKeywords([...keywords, trimmedKeyword]);
+                                      }
+                                    }
+                                  }}
+                                  disabled={isDisabled}
+                                  className={`w-6 h-6 rounded-full flex items-center justify-center border transition-colors disabled:opacity-50 disabled:cursor-not-allowed p-0 ${
+                                    isAdded 
+                                      ? "bg-black border-black hover:bg-black/90" 
+                                      : "bg-white border-border hover:bg-muted"
+                                  }`}
+                                >
+                                  {isAdded ? (
+                                    <CheckCircle2 className="h-3 w-3 text-white" />
+                                  ) : (
+                                    <Plus className="h-3 w-3 text-foreground" />
+                                  )}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      {/* Left scroll button */}
+                      {canScrollLeftKeywords && (
+                        <button
+                          onClick={() => {
+                            if (recommendedKeywordsScrollRef.current) {
+                              recommendedKeywordsScrollRef.current.scrollBy({
+                                left: -272,
+                                behavior: 'smooth'
+                              });
+                            }
+                          }}
+                          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-md hover:bg-background flex items-center justify-center transition-colors"
+                          aria-label="Scroll left"
+                        >
+                          <ChevronLeft className="h-5 w-5 text-foreground" />
+                        </button>
+                      )}
+                      {/* Right scroll button */}
+                      {canScrollRightKeywords && (
+                        <button
+                          onClick={() => {
+                            if (recommendedKeywordsScrollRef.current) {
+                              recommendedKeywordsScrollRef.current.scrollBy({
+                                left: 272,
+                                behavior: 'smooth'
+                              });
+                            }
+                          }}
+                          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-md hover:bg-background flex items-center justify-center transition-colors"
+                          aria-label="Scroll right"
+                        >
+                          <ChevronRight className="h-5 w-5 text-foreground" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label className="text-sm font-medium text-foreground mb-2 block">
                     Add Keywords * <span className="text-muted-foreground font-normal">({keywords.length}/5)</span>
                   </label>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Add keywords that describe your product or target audience. These will be used to find relevant Reddit posts.
+                    Please enter broad keywords for best results
                   </p>
                   <div className="flex gap-2">
                     <Input
