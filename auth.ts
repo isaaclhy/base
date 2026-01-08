@@ -37,13 +37,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async session({ session, token }) {
       if (session.user && token.sub) {
         session.user.id = token.sub;
-
+        
         if (session.user.email) {
           try {
             const dbUser = await getUserByEmail(session.user.email);
             session.user.plan = dbUser?.plan ?? "free";
           } catch {
-            session.user.plan = "free";
+              session.user.plan = "free";
           }
         }
       }

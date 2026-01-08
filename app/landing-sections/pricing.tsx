@@ -15,7 +15,6 @@ const features = {
     "Engagement tracker",
   ],
   premium: [
-    "24/7 Automated Reddit Post search",
     "10 keywords",
     "600 generated comments",
     "5 lead syncs per day",

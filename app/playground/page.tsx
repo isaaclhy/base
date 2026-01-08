@@ -15,7 +15,10 @@ import { useSession } from "next-auth/react";
 import { signIn } from "next-auth/react";
 import { OnboardingModal } from "@/components/onboarding-modal";
 
-const normalizeUrl = (url: string): string => {
+const normalizeUrl = (url: string | null | undefined): string => {
+  if (!url || typeof url !== 'string') {
+    return '';
+  }
   return url
     .split('?')[0]
     .replace(/\/$/, '')
@@ -1082,7 +1085,7 @@ function PlaygroundContent() {
         localStorage.removeItem("leadsLinksUserEmail");
         localStorage.removeItem("leadsFilterSignals");
       }
-    } catch (e) {
+        } catch (e) {
       console.error("Error restoring leadsLinks from localStorage:", e);
     }
     
@@ -1489,15 +1492,18 @@ function PlaygroundContent() {
                 created_utc: cached.postData.created_utc || null,
                 name: cached.postData.name || null, // Needed for posting comments
                 is_self: cached.postData.is_self !== undefined ? cached.postData.is_self : null, // Needed for filtering self-posts
+                title: cached.postData.title || null, // Include title from cache
               };
 
-              // Update state with minimal stats only (don't save selftext or full postData)
+              // Update state with minimal stats and Reddit API title if available
             setLeadsLinks((prev) => {
               const updated = { ...prev };
               if (updated[keyword] && updated[keyword][index]) {
                 updated[keyword][index] = {
                   ...updated[keyword][index],
                     postData: minimalPostData as RedditPost,
+                    // Update title with Reddit API title from cache if available
+                    title: cached.postData?.title || updated[keyword][index].title,
                   };
                 }
                 safeSetLocalStorage("leadsLinks", updated);
@@ -1514,7 +1520,7 @@ function PlaygroundContent() {
                 setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [link.link!]: true }));
               }
               return; // Skip selftext check, already added to fetch list
-            }
+          }
           }
 
           // If we have minimal stats but are missing selftext, also fetch
@@ -1525,6 +1531,29 @@ function PlaygroundContent() {
             const postFullname = `t3_${postId}`;
             allPostsNeedingFetch.push({ url: link.link, keyword, linkIndex: index, postFullname });
             setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [link.link!]: true }));
+          }
+        }
+
+          // If we have minimal stats AND selftext, but title is still Google snippet, update from cache if available
+          if (hasMinimalStats && hasSelftext && cached && cached.postData && cached.postData.title) {
+            // Check if current title looks like a Google snippet (shorter, might have "..." or different format)
+            // Or simply update if we have Reddit API title in cache
+            const redditTitle = cached.postData.title;
+            const currentTitle = link.title;
+            
+            // Update title from cache if it exists and is different (likely Reddit API title is longer/more complete)
+            if (redditTitle && redditTitle !== currentTitle) {
+              setLeadsLinks((prev) => {
+                const updated = { ...prev };
+                if (updated[keyword] && updated[keyword][index]) {
+                  updated[keyword][index] = {
+                    ...updated[keyword][index],
+                    title: redditTitle,
+                  };
+                }
+                safeSetLocalStorage("leadsLinks", updated);
+                return updated;
+              });
             }
           }
         }
@@ -1554,7 +1583,7 @@ function PlaygroundContent() {
     }
 
     // Accumulate all post data before updating state (so leads only show after all fetching completes)
-    const postDataUpdates = new Map<string, { keyword: string; linkIndex: number; postData: any }>();
+    const postDataUpdates = new Map<string, { keyword: string; linkIndex: number; postData: any; title?: string | null }>();
 
     // Process all batches concurrently
     await Promise.all(
@@ -1587,7 +1616,14 @@ function PlaygroundContent() {
               const { url, keyword, linkIndex } = postInfo;
 
                 // Cache the full post (for on-demand fetching when drawer opens)
-              cachePost(url, { selftext: post.selftext || null, postData: post });
+                // Ensure title is included in cached postData
+              cachePost(url, { 
+                selftext: post.selftext || null, 
+                postData: {
+                  ...post,
+                  title: post.title || null // Explicitly ensure title is included
+                }
+              });
 
                 // Only save minimal stats (ups, num_comments, created_utc, name, is_self)
                 const minimalPostData = {
@@ -1596,16 +1632,18 @@ function PlaygroundContent() {
                   created_utc: post.created_utc || null,
                   name: post.name || null, // Needed for posting comments
                   is_self: post.is_self !== undefined ? post.is_self : null, // Needed for filtering self-posts
+                  title: post.title || null, // Include title from Reddit API
                 };
 
-                // Store update to apply later
+                // Store update to apply later (including Reddit API title)
                 postDataUpdates.set(`${keyword}:${linkIndex}`, {
                   keyword,
                   linkIndex,
                   postData: minimalPostData as RedditPost,
+                  title: post.title || null, // Reddit API title
                 });
-              }
-            });
+            }
+          });
 
             // Mark any posts that weren't returned as failed (clear loading state)
           batch.forEach(({ url, postFullname }) => {
@@ -1636,11 +1674,13 @@ function PlaygroundContent() {
     if (postDataUpdates.size > 0) {
                 setLeadsLinks((prev) => {
                   const updated = { ...prev };
-        postDataUpdates.forEach(({ keyword, linkIndex, postData }) => {
+        postDataUpdates.forEach(({ keyword, linkIndex, postData, title }) => {
                   if (updated[keyword] && updated[keyword][linkIndex]) {
                     updated[keyword][linkIndex] = {
                       ...updated[keyword][linkIndex],
               postData: postData,
+                      // Update title with Reddit API title if available
+                      title: title || updated[keyword][linkIndex].title,
                     };
                   }
         });
@@ -1663,7 +1703,7 @@ function PlaygroundContent() {
         );
         if (postInfo) {
           setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [postInfo.url]: false }));
-        }
+            }
       });
     }
   };
@@ -2296,9 +2336,6 @@ function PlaygroundContent() {
        */
       await batchFetchLeadsPostContent();
 
-      // Wait a moment for state updates to complete
-      await new Promise(resolve => setTimeout(resolve, 500));
-
       /**
        * STEP 4 — Build postsToFilter with post IDs
        */
@@ -2363,9 +2400,24 @@ function PlaygroundContent() {
           }
 
           const cached = getCachedPost(link.link);
+          // Prioritize Reddit API title from cache (most reliable) or postData or updated link.title over Google snippet
+          // Check cache first (has full Reddit API data), then check if link.title was updated by batchFetchLeadsPostContent,
+          // then check postData, finally fallback to original link.title
+          const redditTitleFromCache = cached?.postData?.title || null;
+          const redditTitleFromState = link.title && link.title !== link.snippet ? link.title : null; // If title was updated, it won't match snippet
+          const redditTitleFromPostData = link.postData?.title || null;
+          const titleToUse = redditTitleFromCache || redditTitleFromState || redditTitleFromPostData || link.title;
+          
+          // Debug: Log what title source we're using
+          if (!redditTitleFromCache && !redditTitleFromState && !redditTitleFromPostData) {
+            console.log(`[Sync Leads] No Reddit title found for ${postId}, using snippet:`, link.title?.substring(0, 50));
+            console.log(`[Sync Leads] Cache check:`, { hasCache: !!cached, hasPostData: !!cached?.postData, hasTitle: !!cached?.postData?.title });
+            console.log(`[Sync Leads] Link state:`, { title: link.title?.substring(0, 50), hasPostData: !!link.postData, postDataTitle: link.postData?.title?.substring(0, 50) });
+          }
+          
           postsToFilter.push({
             postId,
-            title: link.title,
+            title: titleToUse,
             content: cached?.selftext || "",
             keyword,
             linkIndex: index,
@@ -2381,6 +2433,13 @@ function PlaygroundContent() {
       }
 
       console.log(`[Sync Leads] Posts to filter: ${postsToFilter.length}`);
+
+      // Console.log all posts that would be sent to filter API
+      console.log(`[Sync Leads] Posts that would be sent to filter API:`, postsToFilter.map(p => ({
+        id: p.postId,
+        title: p.title,
+        url: p.url
+      })));
 
       /**
        * STEP 5 — CALL FILTER API WITH BATCHING (using post IDs)
@@ -2586,6 +2645,27 @@ function PlaygroundContent() {
 
       console.log(`[Sync Leads] Final leads count: ${Object.values(updatedLeadsLinks).flat().length}`);
       console.log(`[Sync Leads] New posts added: ${newPostsCount}`);
+
+      // Console.log array of leads with title and id
+      const leadsArray = Object.values(updatedLeadsLinks).flat().map((link: any) => {
+        // Extract Reddit post ID from URL (format: https://reddit.com/r/.../comments/{postId}/...)
+        let postId: string | null = null;
+        if (link.link) {
+          const match = link.link.match(/comments\/([^\/?#]+)/i);
+          if (match && match[1]) {
+            postId = match[1]; // Just the post ID, not the t3_ prefix
+          }
+        }
+        
+        const title = link.title || link.postData?.title || null;
+        
+        return {
+          title,
+          id: postId
+        };
+      });
+      
+      console.log(`[Sync Leads] Leads array:`, leadsArray);
 
       // Show toast with new posts count
       if (newPostsCount > 0) {
@@ -3522,18 +3602,19 @@ function PlaygroundContent() {
     }
   };
 
-  // Helper function to cache post - only stores minimal fields we actually use
+  // Helper function to cache post - stores minimal fields we actually use, including title
   const cachePost = (url: string, post: { selftext?: string | null; postData?: RedditPost | null }) => {
     try {
       const cacheKey = normalizeUrl(url);
 
-      // Only store the fields we actually use from postData
+      // Store the fields we actually use from postData, including title for filtering
       const minimalPostData = post.postData ? {
         ups: post.postData.ups || 0,
         num_comments: post.postData.num_comments || 0,
         created_utc: post.postData.created_utc || null,
         name: post.postData.name || null, // Needed for posting comments
         is_self: post.postData.is_self !== undefined ? post.postData.is_self : null, // Needed for filtering self-posts
+        title: post.postData.title || null, // Include title from Reddit API for filtering
       } : null;
 
       const cachedData = {
@@ -4389,7 +4470,7 @@ function PlaygroundContent() {
 
     // Process all failed leads in parallel
     await Promise.all(failedLeads.map(leadItem => processLead(leadItem)));
-
+    
     // Refresh analytics and usage once after all operations complete
     await refreshAnalytics();
     refreshUsage();
@@ -4795,18 +4876,18 @@ function PlaygroundContent() {
 
       // Search for each keyword concurrently using Google Custom Search (10 results per keyword, no date restrictions)
       const searchPromises = keywords.map(async (keyword) => {
-        try {
+                      try {
           const response = await fetch("/api/google/search", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify({
               searchQuery: `site:reddit.com ${keyword}`,
               resultsPerQuery: 10,
               noDateRestrict: true, // No date restrictions
-            }),
-          });
+                          }),
+                        });
 
           if (response.ok) {
             const data = await response.json();
@@ -4846,7 +4927,7 @@ function PlaygroundContent() {
           try {
             const response = await fetch(`/api/reddit/search-subreddits?q=${encodeURIComponent(rec.name)}`);
             if (response.ok) {
-              const data = await response.json();
+                        const data = await response.json();
               const matchingSubreddit = data.subreddits?.find(
                 (s: any) => s.name.toLowerCase() === rec.name.toLowerCase()
               );
@@ -4856,8 +4937,8 @@ function PlaygroundContent() {
                   subscribers: matchingSubreddit.subscribers || 0,
                 };
               }
-            }
-          } catch (error) {
+                        }
+                      } catch (error) {
             console.error(`Error fetching subreddit info for ${rec.name}:`, error);
           }
           return { ...rec, subscribers: 0 };
@@ -4869,9 +4950,9 @@ function PlaygroundContent() {
     } catch (error) {
       console.error("Error generating subreddit recommendations:", error);
       showToast(error instanceof Error ? error.message : "Failed to generate subreddit recommendations", { variant: "error" });
-    } finally {
+                      } finally {
       setIsLoadingSubredditRecommendations(false);
-    }
+                      }
   };
 
   const renderContent = () => {
@@ -4897,7 +4978,7 @@ function PlaygroundContent() {
               <div className={cn(
                 "flex-1 overflow-y-auto pt-2 pb-6 px-1",
                 !sidebarOpen && "pl-14"
-              )}>
+          )}>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-5xl">
                   {/* Product Card */}
                   <button
@@ -5011,7 +5092,7 @@ function PlaygroundContent() {
                                 method: "POST",
                                   headers: { "Content-Type": "application/json" },
                                   body: JSON.stringify({ website }),
-                                });
+                              });
                                 if (response.ok) {
                               const data = await response.json();
                               if (data.success && data.description) {
@@ -5313,7 +5394,7 @@ function PlaygroundContent() {
                     </Button>
                   </div>
                 </div>
-                  </div>
+              </div>
                 </div>
               </>
             )}
@@ -5373,11 +5454,11 @@ function PlaygroundContent() {
                         <div className="space-y-2">
                           <label className="text-sm font-medium text-foreground block">
                             Recommended Subreddits
-                          </label>
+                      </label>
                           <p className="text-xs text-muted-foreground mb-2">
                             Based on your keywords, these subreddits appear most frequently in relevant posts:
                           </p>
-                          <div className="relative">
+                        <div className="relative">
                             <div
                               ref={recommendedSubredditsModalScrollRef}
                               className="overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth"
@@ -5580,8 +5661,8 @@ function PlaygroundContent() {
                             )}
                           </div>
                         </div>
+                      </div>
                     </div>
-                  </div>
               </>
             )}
           </>
@@ -7265,7 +7346,7 @@ function PlaygroundContent() {
               <div className="flex flex-col gap-2 flex-1 min-w-0">
                 <div className="min-w-0 w-full">
                   <h3 className="text-lg font-semibold text-foreground break-words whitespace-normal overflow-wrap-anywhere w-full">
-                    {selectedDiscoveryPost.title?.replace(/:\s*r\/[^\s]+/i, '').trim() || "No title"}
+                    {selectedDiscoveryPost.title?.replace(/[:\s]*r\/[^\s]+/gi, '').trim() || "No title"}
                   </h3>
                   {selectedDiscoveryPost.postData?.created_utc && (
                     <p className="text-xs text-muted-foreground">
