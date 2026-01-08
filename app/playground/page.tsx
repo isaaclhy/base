@@ -1621,7 +1621,7 @@ function PlaygroundContent() {
                 selftext: post.selftext || null, 
                 postData: {
                   ...post,
-                  title: post.title || null // Explicitly ensure title is included
+                  title: post.title || ""// Explicitly ensure title is included
                 }
               });
 
