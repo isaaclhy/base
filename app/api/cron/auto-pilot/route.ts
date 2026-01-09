@@ -753,10 +753,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       totalFailed,
       results: results.map((r, i) => ({
         email: users[i].email,
+        success: r.success,
         yesPosts: r.yesPosts,
         posted: r.posted,
         failed: r.failed,
-        ...r
+        yesPostsList: r.yesPostsList,
+        error: r.error,
       })),
     });
   } catch (error) {
