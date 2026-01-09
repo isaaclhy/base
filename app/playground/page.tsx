@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, useTransition } from "react";
-import { ExternalLink, X, Loader2, CheckCircle2, Send, Trash2, ChevronLeft, ChevronRight, Settings, ChevronDown, Plus, ArrowUp, MessageSquare, CheckSquare, Check, Circle, Package, Hash, Users } from "lucide-react";
+import { ExternalLink, X, Loader2, CheckCircle2, Send, Trash2, ChevronLeft, ChevronRight, Settings, ChevronDown, Plus, ArrowUp, MessageSquare, CheckSquare, Check, Circle, Package, Hash, Users, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatTextarea } from "@/components/ui/chat-textarea";
 import PlaygroundLayout, { usePlaygroundTab, usePlaygroundSidebar, useRefreshUsage, useSetPlaygroundTab } from "@/components/playground-layout";
@@ -364,6 +364,7 @@ function PlaygroundContent() {
   const [engagementFilter, setEngagementFilter] = useState<"all" | "notifications" | "messages">("all");
   const [isDiscoveryDrawerVisible, setIsDiscoveryDrawerVisible] = useState(false);
   const [drawerPersona, setDrawerPersona] = useState<"Founder" | "User">("Founder");
+  const [subredditPromotionStatus, setSubredditPromotionStatus] = useState<{ allowsPromotion: boolean | null; isLoading: boolean }>({ allowsPromotion: null, isLoading: false });
   const [discoveryPage, setDiscoveryPage] = useState(1);
   const DISCOVERY_ITEMS_PER_PAGE = 20;
   const [isSavingProductDetails, setIsSavingProductDetails] = useState(false);
@@ -382,6 +383,8 @@ function PlaygroundContent() {
   const [leadsSortBy, setLeadsSortBy] = useState<"relevance" | "date-desc" | "date-asc" | "upvotes-desc" | "upvotes-asc" | "comments-desc" | "comments-asc" | "title-asc" | "title-desc">("date-desc");
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+  const filterDropdownRef = useRef<HTMLDivElement>(null);
   const leadsTableScrollRef = useRef<HTMLDivElement>(null);
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [leadsFilterSignals, setLeadsFilterSignals] = useState<Record<string, "YES" | "MAYBE" | "NO">>({});
@@ -864,16 +867,19 @@ function PlaygroundContent() {
       if (sortDropdownRef.current && !sortDropdownRef.current.contains(event.target as Node)) {
         setIsSortDropdownOpen(false);
       }
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(event.target as Node)) {
+        setIsFilterDropdownOpen(false);
+      }
     };
 
-    if (isSortDropdownOpen) {
+    if (isSortDropdownOpen || isFilterDropdownOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     }
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [isSortDropdownOpen]);
+  }, [isSortDropdownOpen, isFilterDropdownOpen]);
 
   // Load previous ideas from localStorage on mount
   useEffect(() => {
@@ -1220,6 +1226,19 @@ function PlaygroundContent() {
       setIsGeneratingComment((prev) => ({ ...prev, [linkKey]: true }));
 
       try {
+        // Extract subreddit name from postData or link
+        let subredditName: string | undefined = undefined;
+        if (linkItem.postData?.subreddit) {
+          subredditName = linkItem.postData.subreddit;
+        } else if (linkItem.postData?.subreddit_name_prefixed) {
+          subredditName = linkItem.postData.subreddit_name_prefixed.replace(/^r\//, "");
+        } else if (linkItem.link) {
+          const subredditMatch = linkItem.link.match(/reddit\.com\/r\/([^/]+)/);
+          if (subredditMatch) {
+            subredditName = subredditMatch[1];
+          }
+        }
+        
         const response = await fetch("/api/openai/comment", {
           method: "POST",
           headers: {
@@ -1231,6 +1250,7 @@ function PlaygroundContent() {
             postContent: postContent,
             persona: persona ? persona.toLowerCase() : "founder", // Convert to lowercase for API
             selftext: linkItem.selftext || undefined,
+            subreddit: subredditName,
           }),
         });
 
@@ -1618,7 +1638,7 @@ function PlaygroundContent() {
                 // Cache the full post (for on-demand fetching when drawer opens)
                 // Ensure title is included in cached postData
               cachePost(url, { 
-                selftext: post.selftext || null, 
+                    selftext: post.selftext || null,
                 postData: {
                   ...post,
                   title: post.title || ""// Explicitly ensure title is included
@@ -4152,6 +4172,121 @@ function PlaygroundContent() {
     }
   };
 
+  // Check subreddit promotion status by fetching rules and using OpenAI
+  const checkSubredditPromotionStatus = async (subredditName: string) => {
+    if (!subredditName) return;
+    
+    // Remove 'r/' prefix if present
+    const cleanSubredditName = subredditName.replace(/^r\//, "").replace(/^r/, "");
+    if (!cleanSubredditName) return;
+    
+    setSubredditPromotionStatus({ allowsPromotion: null, isLoading: true });
+    
+    try {
+      // First, check if we have a cached result in the database
+      const cachedResponse = await fetch(`/api/subreddit-rules/get?subreddit=${encodeURIComponent(cleanSubredditName)}`);
+      if (cachedResponse.ok) {
+        const cachedData = await cachedResponse.json();
+        if (cachedData.rule && typeof cachedData.rule.allowPromoting === 'boolean') {
+          // Found cached result, use it immediately and skip API calls
+          setSubredditPromotionStatus({ 
+            allowsPromotion: cachedData.rule.allowPromoting, 
+            isLoading: false 
+          });
+          return; // Return early, no need to call Reddit API or OpenAI
+        }
+      }
+      
+      // No cached result found, fetch from Reddit API and analyze with OpenAI
+      // Fetch subreddit rules
+      const rulesResponse = await fetch(`/api/reddit/subreddit-rules?subreddit=${encodeURIComponent(cleanSubredditName)}`);
+      
+      if (!rulesResponse.ok) {
+        console.error("Failed to fetch subreddit rules");
+        setSubredditPromotionStatus({ allowsPromotion: null, isLoading: false });
+        return;
+      }
+      
+      const rulesData = await rulesResponse.json();
+      
+      // Extract all rule descriptions and combine them
+      const allRules = rulesData.rules || [];
+      const rulesText = allRules
+        .map((rule: any) => rule.description || "")
+        .filter((desc: string) => desc.trim().length > 0)
+        .join("\n\n");
+      
+      if (!rulesText || rulesText.trim().length === 0) {
+        // No rules found - default to allowing promotion
+        console.log("No rules found for subreddit, defaulting to allow promotion");
+        setSubredditPromotionStatus({ allowsPromotion: true, isLoading: false });
+        
+        // Save the default result to the database
+        try {
+          await fetch("/api/subreddit-rules/save", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              subredditName: cleanSubredditName,
+              allowPromoting: true,
+            }),
+          });
+        } catch (saveError) {
+          console.error("Error saving default subreddit rule to database:", saveError);
+          // Don't fail the whole operation if save fails
+        }
+        return;
+      }
+      
+      // Send to OpenAI check-subreddit-rules endpoint
+      const checkResponse = await fetch("/api/openai/check-subreddit-rules", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          rules: rulesText,
+        }),
+      });
+      
+      if (!checkResponse.ok) {
+        console.error("Failed to check subreddit promotion status");
+        setSubredditPromotionStatus({ allowsPromotion: null, isLoading: false });
+        return;
+      }
+      
+      const checkData = await checkResponse.json();
+      const allowsPromotion = checkData.allowsPromotion || false;
+      
+      setSubredditPromotionStatus({ 
+        allowsPromotion, 
+        isLoading: false 
+      });
+      
+      // Save the result to the database
+      try {
+        await fetch("/api/subreddit-rules/save", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            subredditName: cleanSubredditName,
+            allowPromoting: allowsPromotion,
+          }),
+        });
+      } catch (saveError) {
+        console.error("Error saving subreddit rule to database:", saveError);
+        // Don't fail the whole operation if save fails
+      }
+    } catch (error) {
+      console.error("Error checking subreddit promotion status:", error);
+      setSubredditPromotionStatus({ allowsPromotion: null, isLoading: false });
+    }
+  };
+
   // Handler for bulk commenting
   const handleBulkComment = async () => {
     if (selectedLeads.size === 0) {
@@ -4197,6 +4332,19 @@ function PlaygroundContent() {
           return;
         }
 
+        // Extract subreddit name from postData or link
+        let subredditName: string | undefined = undefined;
+        if (leadItem.postData?.subreddit) {
+          subredditName = leadItem.postData.subreddit;
+        } else if (leadItem.postData?.subreddit_name_prefixed) {
+          subredditName = leadItem.postData.subreddit_name_prefixed.replace(/^r\//, "");
+        } else if (leadItem.link) {
+          const subredditMatch = leadItem.link.match(/reddit\.com\/r\/([^/]+)/);
+          if (subredditMatch) {
+            subredditName = subredditMatch[1];
+          }
+        }
+
         const response = await fetch("/api/openai/comment", {
           method: "POST",
           headers: {
@@ -4208,6 +4356,7 @@ function PlaygroundContent() {
             postContent: postContent,
             persona: bulkPersona.toLowerCase(),
             selftext: leadItem.selftext || undefined,
+            subreddit: subredditName,
           }),
         });
 
@@ -4383,6 +4532,19 @@ function PlaygroundContent() {
             return;
           }
 
+          // Extract subreddit name from postData or link
+          let subredditName: string | undefined = undefined;
+          if (leadItem.postData?.subreddit) {
+            subredditName = leadItem.postData.subreddit;
+          } else if (leadItem.postData?.subreddit_name_prefixed) {
+            subredditName = leadItem.postData.subreddit_name_prefixed.replace(/^r\//, "");
+          } else if (leadItem.link) {
+            const subredditMatch = leadItem.link.match(/reddit\.com\/r\/([^/]+)/);
+            if (subredditMatch) {
+              subredditName = subredditMatch[1];
+            }
+          }
+
           const response = await fetch("/api/openai/comment", {
             method: "POST",
             headers: {
@@ -4394,6 +4556,7 @@ function PlaygroundContent() {
               postContent: postContent,
               persona: bulkPersona.toLowerCase(),
               selftext: leadItem.selftext || undefined,
+              subreddit: subredditName,
             }),
           });
 
@@ -4979,7 +5142,7 @@ function PlaygroundContent() {
                 "flex-1 overflow-y-auto pt-2 pb-6 px-1",
                 !sidebarOpen && "pl-14"
           )}>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-5xl">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
                   {/* Product Card */}
                   <button
                     onClick={() => setShowProductModal(true)}
@@ -5373,13 +5536,14 @@ function PlaygroundContent() {
                             }}
                             placeholder="Enter a keyword"
                           />
+                          <div className="relative group">
                           <Button
                             onClick={() => {
                               const trimmed = keywordInput.trim();
                               if (trimmed && !keywords.includes(trimmed)) {
-                              const maxKeywords = userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5;
-                              if (keywords.length >= maxKeywords) {
-                                showToast(`Maximum of ${maxKeywords} keywords allowed`, { variant: "error" });
+                                const maxKeywords = userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5;
+                                if (keywords.length >= maxKeywords) {
+                                  showToast(`Maximum of ${maxKeywords} keywords allowed`, { variant: "error" });
                                   return;
                                 }
                                 const newKeywords = [...keywords, trimmed];
@@ -5388,11 +5552,17 @@ function PlaygroundContent() {
                                 saveKeywords(newKeywords);
                               }
                             }}
-                          disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= (userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5)}
+                            disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= (userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5)}
                           >
                             <Plus className="h-4 w-4" />
                     </Button>
+                            {keywords.length >= (userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5) && keywordInput.trim() && !keywords.includes(keywordInput.trim()) && (
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-popover border border-border rounded-md shadow-lg text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                                Max keywords reached
                   </div>
+                            )}
+                </div>
+              </div>
                 </div>
               </div>
                 </div>
@@ -5800,6 +5970,14 @@ function PlaygroundContent() {
                               const postContent = `${post.title}\n\n${post.selftext || ""}`;
                               const selftext = post.selftext || "";
 
+                              // Extract subreddit name from post
+                              let subredditName: string | undefined = undefined;
+                              if (post.subreddit) {
+                                subredditName = post.subreddit;
+                              } else if (post.subreddit_name_prefixed) {
+                                subredditName = post.subreddit_name_prefixed.replace(/^r\//, "");
+                              }
+
                               // Step 2: Generate comment using OpenAI
                               const generateResponse = await fetch("/api/openai/comment", {
                                 method: "POST",
@@ -5812,6 +5990,7 @@ function PlaygroundContent() {
                                   postContent: postContent,
                                   persona: createPersona,
                                   selftext: selftext,
+                                  subreddit: subredditName,
                                 }),
                               });
 
@@ -6258,47 +6437,64 @@ function PlaygroundContent() {
                         })()}
                       </span>
                     )}
-                    {/* Signal filter buttons */}
-                    <div className="flex items-center gap-2 ml-2">
+                    {/* Signal filter dropdown */}
+                    <div className="relative ml-2" ref={filterDropdownRef}>
                       <Button
-                        onClick={() => setLeadsSignalFilter("all")}
-                        size="sm"
-                        variant={leadsSignalFilter === "all" ? "default" : "outline"}
-                        disabled={isLoadingLeads}
-                        className={cn(
-                          leadsSignalFilter === "all"
-                            ? ""
-                            : ""
-                        )}
-                      >
-                        All
-                      </Button>
-                      <Button
-                        onClick={() => setLeadsSignalFilter("strong")}
-                        size="sm"
                         variant="outline"
-                        disabled={isLoadingLeads}
-                        className={cn(
-                          leadsSignalFilter === "strong"
-                            ? "bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/40 hover:bg-green-500/30"
-                            : ""
-                        )}
-                      >
-                        Strong {signalCounts.strongCount > 0 && `(${signalCounts.strongCount})`}
-                      </Button>
-                      <Button
-                        onClick={() => setLeadsSignalFilter("partial")}
                         size="sm"
-                        variant="outline"
+                        onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
                         disabled={isLoadingLeads}
-                        className={cn(
-                          leadsSignalFilter === "partial"
-                            ? "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border-yellow-500/40 hover:bg-yellow-500/30"
-                            : ""
-                        )}
+                        className="min-w-[120px] justify-between"
                       >
-                        Partial {signalCounts.partialCount > 0 && `(${signalCounts.partialCount})`}
+                        <span>
+                          {leadsSignalFilter === "all" ? "All" :
+                           leadsSignalFilter === "strong" ? `Strong ${signalCounts.strongCount > 0 ? `(${signalCounts.strongCount})` : ''}` :
+                           leadsSignalFilter === "partial" ? `Partial ${signalCounts.partialCount > 0 ? `(${signalCounts.partialCount})` : ''}` : "All"}
+                        </span>
+                        <ChevronDown className="h-3 w-3 ml-1.5" />
                       </Button>
+                      {isFilterDropdownOpen && (
+                        <div className="absolute top-full left-0 mt-1 z-40 bg-card border border-border rounded-md shadow-lg min-w-[120px]">
+                          <div className="py-1">
+                            <button
+                              onClick={() => {
+                                setLeadsSignalFilter("all");
+                                setIsFilterDropdownOpen(false);
+                              }}
+                              className={cn(
+                                "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                leadsSignalFilter === "all" && "bg-muted"
+                              )}
+                            >
+                              All
+                            </button>
+                            <button
+                              onClick={() => {
+                                setLeadsSignalFilter("strong");
+                                setIsFilterDropdownOpen(false);
+                              }}
+                              className={cn(
+                                "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                leadsSignalFilter === "strong" && "bg-muted"
+                              )}
+                            >
+                              Strong {signalCounts.strongCount > 0 && `(${signalCounts.strongCount})`}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setLeadsSignalFilter("partial");
+                                setIsFilterDropdownOpen(false);
+                              }}
+                              className={cn(
+                                "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                leadsSignalFilter === "partial" && "bg-muted"
+                              )}
+                            >
+                              Partial {signalCounts.partialCount > 0 && `(${signalCounts.partialCount})`}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                     <div className="flex gap-2 self-start sm:self-auto">
@@ -6353,7 +6549,7 @@ function PlaygroundContent() {
                             setIsBulkPosting(false);
                           }}
                         >
-                      Bulk Operations {selectedLeads.size > 0 && `(${selectedLeads.size})`}
+                      Bulk Posting {selectedLeads.size > 0 && `(${selectedLeads.size})`}
                       </Button>
                         <Button
                           variant="outline"
@@ -6594,7 +6790,7 @@ function PlaygroundContent() {
                                       }
                                     }}
                                     className={cn(
-                                      "cursor-pointer h-4 w-4 rounded border border-border bg-white flex items-center justify-center transition-colors",
+                                      "cursor-pointer h-4 w-4 rounded border border-gray-400 dark:border-gray-500 bg-white flex items-center justify-center transition-colors",
                                       "focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-0",
                                       paginatedLeadsLinks.length > 0 && selectedLeads.size > 0 && selectedLeads.size === paginatedLeadsLinks.length && "bg-white border-primary"
                                     )}
@@ -6639,8 +6835,25 @@ function PlaygroundContent() {
                                     onClick={async () => {
                                     setSelectedDiscoveryPost(linkItem);
                                     setIsDiscoveryDrawerVisible(true);
+                                    setSubredditPromotionStatus({ allowsPromotion: null, isLoading: false }); // Reset status
                                       // Fetch full post data on-demand when drawer opens
                                       await fetchFullPostDataForDrawer(linkItem);
+                                      
+                                      // Extract subreddit and check promotion status
+                                      let subredditToCheck: string | null = null;
+                                      if (linkItem.postData?.subreddit_name_prefixed) {
+                                        subredditToCheck = linkItem.postData.subreddit_name_prefixed;
+                                      } else if (linkItem.postData?.subreddit) {
+                                        subredditToCheck = `r/${linkItem.postData.subreddit}`;
+                                      } else if (linkItem.link) {
+                                        const subredditMatch = linkItem.link.match(/reddit\.com\/r\/([^/]+)/);
+                                        if (subredditMatch) {
+                                          subredditToCheck = `r/${subredditMatch[1]}`;
+                                        }
+                                      }
+                                      if (subredditToCheck) {
+                                        checkSubredditPromotionStatus(subredditToCheck);
+                                      }
                                   }}
                                 >
                                     {/* Checkbox column */}
@@ -6659,7 +6872,7 @@ function PlaygroundContent() {
                                           });
                                         }}
                                         className={cn(
-                                          "cursor-pointer h-4 w-4 rounded border border-border bg-white flex items-center justify-center transition-colors",
+                                          "cursor-pointer h-4 w-4 rounded border border-gray-400 dark:border-gray-500 bg-white flex items-center justify-center transition-colors",
                                           "focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-0",
                                           selectedLeads.has(linkKey) && "bg-white border-primary"
                                         )}
@@ -7375,7 +7588,10 @@ function PlaygroundContent() {
                 )}
               </div>
               <button
-                onClick={() => setIsDiscoveryDrawerVisible(false)}
+                onClick={() => {
+                  setIsDiscoveryDrawerVisible(false);
+                  setSubredditPromotionStatus({ allowsPromotion: null, isLoading: false }); // Reset status when closing
+                }}
                 className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 aria-label="Close drawer"
               >
@@ -7428,6 +7644,49 @@ function PlaygroundContent() {
                       </button>
                     </div>
                   </div>
+                  {(() => {
+                    // Get subreddit from postData if available, otherwise extract from link
+                    let subredditName: string | null = null;
+                    if (selectedDiscoveryPost.postData?.subreddit_name_prefixed) {
+                      subredditName = selectedDiscoveryPost.postData.subreddit_name_prefixed;
+                    } else if (selectedDiscoveryPost.postData?.subreddit) {
+                      subredditName = `r/${selectedDiscoveryPost.postData.subreddit}`;
+                    } else if (selectedDiscoveryPost.link) {
+                      const subredditMatch = selectedDiscoveryPost.link.match(/reddit\.com\/r\/([^/]+)/);
+                      if (subredditMatch) {
+                        subredditName = `r/${subredditMatch[1]}`;
+                      }
+                    }
+                    return subredditName ? (
+                      <div className="mb-3 flex items-center gap-2 flex-wrap">
+                        <p className="text-xs text-muted-foreground">
+                          Subreddit: <span className="font-medium text-foreground">{subredditName}</span>
+                        </p>
+                        {subredditPromotionStatus.isLoading ? (
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                        ) : subredditPromotionStatus.allowsPromotion !== null ? (
+                          <div className="inline-flex items-center gap-1.5">
+                            <span className={cn(
+                              "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                              subredditPromotionStatus.allowsPromotion
+                                ? "bg-green-500/20 text-green-700 dark:text-green-400"
+                                : "bg-red-500/20 text-red-700 dark:text-red-400"
+                            )}>
+                              {subredditPromotionStatus.allowsPromotion ? "Allow self-promotion" : "No self-promotion"}
+                            </span>
+                            <div className="relative group">
+                              <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                              <div className="absolute top-full left-0 mt-2 px-3 py-2 bg-popover border border-border rounded-md shadow-lg text-xs max-w-[200px] opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                                {subredditPromotionStatus.allowsPromotion 
+                                  ? "Product details will be included in the generated comment"
+                                  : "Promotional content will be omitted from the generated comment"}
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null;
+                  })()}
                   <div className="border border-border rounded-md p-1">
                   <textarea
                     value={postTextareas[selectedDiscoveryPost.uniqueKey] || ""}

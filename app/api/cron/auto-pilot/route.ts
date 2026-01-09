@@ -3,6 +3,7 @@ import { getUserByEmail } from "@/lib/db/users";
 import { getValidAccessToken, refreshAccessToken } from "@/lib/reddit/auth";
 import { createPost, PostStatus, getPostsByUserId } from "@/lib/db/posts";
 import { incrementUsage, incrementCronUsage, getMaxPostsPerWeekForPlan, getUserUsage } from "@/lib/db/usage";
+import { getSubredditRule } from "@/lib/db/subreddit-rules";
 import OpenAI from "openai";
 
 const openaiClient = new OpenAI({
@@ -573,15 +574,32 @@ async function handleAutoPilotRequest(email: string): Promise<NextResponse> {
 
             console.log(`[Auto-pilot] Generating comment for post ${i + 1}/${uniqueAiFiltered.length}...`);
             
+            // Check subreddit promotion status from database
+            let allowPromoting = "true"; // Default to true (if no rules found, allow promotion)
+            if (post.postData?.subreddit) {
+              try {
+                const cleanSubredditName = post.postData.subreddit.replace(/^r\//, "").replace(/^r/, "").toLowerCase();
+                const subredditRule = await getSubredditRule(cleanSubredditName);
+                if (subredditRule && typeof subredditRule.allowPromoting === 'boolean') {
+                  allowPromoting = subredditRule.allowPromoting ? "true" : "false";
+                }
+                // If no rule found in database, default to true (allows promotion)
+              } catch (error) {
+                console.error(`[Auto-pilot] Error checking subreddit promotion status for ${post.postData.subreddit}:`, error);
+                // Default to true if check fails (allows promotion)
+              }
+            }
+            
             // Generate comment using OpenAI
             const commentResponse = await (openaiClient as any).responses.create({
               prompt: {
                 "id": "pmpt_694ff0c078ec8197ad0b92621f11735905afaefebad67788",
-                "version": "7",
+                "version": "8",
                 "variables": {
                   "content": postContent,
                   "idea": productIdea,
-                  "benefits": productBenefits || ""
+                  "benefits": productBenefits || "",
+                  "allowpromoting": allowPromoting
                 }
               }
             });

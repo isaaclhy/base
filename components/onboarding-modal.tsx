@@ -897,13 +897,20 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialStep = 1 }
                       placeholder="Enter a keyword and press Enter..."
                       className="w-full"
                     />
-                    <Button
-                      onClick={handleAddKeyword}
-                      disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= 5}
-                      size="sm"
-                    >
-                      Add
-                    </Button>
+                    <div className="relative group">
+                      <Button
+                        onClick={handleAddKeyword}
+                        disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= 5}
+                        size="sm"
+                      >
+                        Add
+                      </Button>
+                      {keywords.length >= 5 && keywordInput.trim() && !keywords.includes(keywordInput.trim()) && (
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-popover border border-border rounded-md shadow-lg text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                          Max keywords reached
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 {keywords.length > 0 && (

@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import { auth } from "@/auth";
 import { incrementUsage, getMaxPostsPerWeekForPlan } from "@/lib/db/usage";
 import { getUserByEmail } from "@/lib/db/users";
+import { getSubredditRule } from "@/lib/db/subreddit-rules";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_KEY
@@ -14,6 +15,7 @@ export interface GenerateCommentQuery {
   postContent: string;
   persona?: string; // Optional persona parameter
   selftext?: string; // Optional selftext for User persona
+  subreddit?: string; // Optional subreddit name to check promotion status
 }
 
 export interface GenerateCommentResponse {
@@ -62,7 +64,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<GenerateC
     }
 
     const body: GenerateCommentQuery = await request.json();
-    const { productIdea, productLink, postContent, persona, selftext } = body;
+    const { productIdea, productLink, postContent, persona, selftext, subreddit } = body;
 
     console.log('[Comment Generation] Received persona:', persona);
     console.log('[Comment Generation] selftext provided:', selftext !== undefined);
@@ -96,14 +98,31 @@ export async function POST(request: NextRequest): Promise<NextResponse<GenerateC
       // Get productBenefits from database (productDetails.productBenefits)
       const productBenefits = dbUser?.productDetails?.productBenefits || "";
       
+      // Check subreddit promotion status from database
+      let allowPromoting = "true"; // Default to true (if no rules found, allow promotion)
+      if (subreddit) {
+        try {
+          const cleanSubredditName = subreddit.replace(/^r\//, "").replace(/^r/, "").toLowerCase();
+          const subredditRule = await getSubredditRule(cleanSubredditName);
+          if (subredditRule && typeof subredditRule.allowPromoting === 'boolean') {
+            allowPromoting = subredditRule.allowPromoting ? "true" : "false";
+          }
+          // If no rule found in database, default to true (allows promotion)
+        } catch (error) {
+          console.error("Error checking subreddit promotion status:", error);
+          // Default to true if check fails (allows promotion)
+        }
+      }
+      
       response = await (client as any).responses.create({
         prompt: {
           "id": "pmpt_694ff0c078ec8197ad0b92621f11735905afaefebad67788",
-          "version": "7",
+          "version": "8",
           "variables": {
             "content": postContent,
             "idea": productIdea,
-            "benefits": productBenefits || ""
+            "benefits": productBenefits || "",
+            "allowpromoting": allowPromoting
           }
         }
       });
