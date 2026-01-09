@@ -379,9 +379,9 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
     const allSubredditResults: any[] = [];
     if (subreddits && subreddits.length > 0) {
       await Promise.all(
-        expandedKeywords.map(async (keyword) => {
+        expandedKeywords.map(async (keyword: string) => {
           await Promise.all(
-            subreddits.map(async (subreddit) => {
+            (subreddits as string[]).map(async (subreddit: string) => {
               try {
                 const results = await fetchSubredditPosts(keyword, subreddit, 30, user.email);
                 results.forEach(result => {
