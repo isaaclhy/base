@@ -412,6 +412,8 @@ function PlaygroundContent() {
   const [bulkModalLeads, setBulkModalLeads] = useState<Array<typeof distinctLeadsLinks[number]>>([]);
   const [bulkModalInitialCount, setBulkModalInitialCount] = useState(0);
   const [isAutoPilot, setIsAutoPilot] = useState(false);
+  const [isAutoPilotEnabled, setIsAutoPilotEnabled] = useState(false);
+  const [isLoadingAutoPilot, setIsLoadingAutoPilot] = useState(false);
   const LEADS_ITEMS_PER_PAGE = 20;
 
   const analyticsUrlSet = useMemo(() => {
@@ -613,6 +615,27 @@ function PlaygroundContent() {
             keywords: [],
           });
         }
+  }, [session?.user?.email]);
+
+  // Load auto-pilot status
+  useEffect(() => {
+    if (!session?.user?.email) return;
+    
+    const loadAutoPilotStatus = async () => {
+      try {
+        const response = await fetch("/api/user/auto-pilot");
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            setIsAutoPilotEnabled(data.autoPilotEnabled || false);
+          }
+        }
+      } catch (error) {
+        console.error("Error loading auto-pilot status:", error);
+      }
+    };
+    
+    loadAutoPilotStatus();
   }, [session?.user?.email]);
       
   // Load product details when authenticated (for use in Discovery page)
@@ -1817,415 +1840,6 @@ function PlaygroundContent() {
     }
   };
 
-
-  // Handle auto-pilot: clear leads and refresh with 4-hour filter
-  const handleAutoPilot = async () => {
-    // Clear the leads table
-    setLeadsLinks({});
-    setSelectedLeads(new Set());
-    setLeadsPage(1);
-
-    // Clear from localStorage
-    try {
-      localStorage.removeItem("leadsLinks");
-    } catch (e) {
-      console.error("Error clearing leads from localStorage:", e);
-    }
-
-    // Run refresh leads
-    if (!keywords || keywords.length === 0) {
-      setShowNoKeywordsModal(true);
-      setIsLoadingLeads(false);
-      return;
-    }
-
-    setIsLoadingLeads(true);
-
-    try {
-      // COMMENTED OUT: Google Custom Search disabled for auto-pilot
-      // // Fetch Reddit links for each keyword via Google Search
-      // const googleSearchPromises = keywords.map((keyword) => {
-      //   return fetchLeadsForKeyword(keyword, 50);
-      // });
-
-      // Fetch Reddit links from subreddits for each keyword
-      const subredditSearchPromises: Promise<void>[] = [];
-      if (subreddits && subreddits.length > 0) {
-        keywords.forEach((keyword) => {
-          subredditSearchPromises.push(fetchLeadsFromSubreddits(keyword, subreddits, 30));
-        });
-      }
-
-      // Run subreddit search only (Google search commented out)
-      await Promise.all([...subredditSearchPromises]);
-
-        await batchFetchLeadsPostContent();
-
-      // Wait a bit longer for all post data to be fetched and state updated
-      setTimeout(async () => {
-        // Filter to only posts from the past 4 days
-        const fourDaysAgo = Math.floor(Date.now() / 1000) - (4 * 24 * 60 * 60); // 4 days in seconds
-
-        // Get current state (use React state directly, no longer stored in localStorage)
-        const currentState = leadsLinks;
-
-        // First filter by time (5 hours)
-        const timeFiltered: Record<string, Array<any>> = {};
-        const allPostsForFiltering: Array<{ link: any; keyword: string; index: number }> = [];
-
-        Object.entries(currentState).forEach(([keyword, links]) => {
-          const filteredLinks = links.filter((link: any) => {
-            // Only keep posts that have postData with created_utc within past 4 days
-            if (link.postData && typeof link.postData.created_utc === 'number') {
-              return link.postData.created_utc >= fourDaysAgo;
-            }
-            // Remove posts without postData (they're likely old or failed to fetch)
-            return false;
-          });
-
-          if (filteredLinks.length > 0) {
-            timeFiltered[keyword] = filteredLinks;
-            // Collect all posts for filtering
-            filteredLinks.forEach((link: any, index: number) => {
-              allPostsForFiltering.push({ link, keyword, index });
-            });
-          }
-        });
-
-        // If no posts after time filtering, exit early
-        // Count unique posts by URL (what will actually be displayed)
-        const uniqueUrls = new Set<string>();
-        Object.values(timeFiltered).forEach((links) => {
-          links.forEach((link: any) => {
-            if (link.link) {
-              uniqueUrls.add(normalizeUrl(link.link));
-            }
-          });
-        });
-
-        if (allPostsForFiltering.length === 0) {
-          setLeadsLinks({});
-          safeSetLocalStorage("leadsLinks", {});
-        setIsLoadingLeads(false);
-          return;
-        }
-
-        // Collect posts that need selftext fetching
-        const postsNeedingFetch: Array<{ url: string; postFullname: string }> = [];
-
-        allPostsForFiltering.forEach(({ link }) => {
-          if (!link.link) return;
-
-          const cached = getCachedPost(link.link);
-          const hasSelftext = cached && cached.selftext !== undefined;
-
-          if (!hasSelftext) {
-            const urlMatch = link.link.match(/reddit\.com\/r\/([^\/]+)\/comments\/([^\/\?]+)/);
-            if (urlMatch) {
-              const [, , postId] = urlMatch;
-              const postFullname = `t3_${postId}`;
-              postsNeedingFetch.push({ url: link.link, postFullname });
-            }
-          }
-        });
-
-        // Batch fetch selftext for posts that need it - MUST complete before filtering
-        if (postsNeedingFetch.length > 0) {
-          console.log(`[Auto-pilot] Fetching selftext for ${postsNeedingFetch.length} posts before filtering`);
-          const BATCH_SIZE = 25;
-          const POST_FETCH_DELAY_MS = 2000; // 2 second delay between batches to avoid rate limits
-
-          for (let i = 0; i < postsNeedingFetch.length; i += BATCH_SIZE) {
-            const batch = postsNeedingFetch.slice(i, i + BATCH_SIZE);
-            const postIds = batch.map(({ postFullname }) => postFullname);
-
-            try {
-              const redditResponse = await fetch("/api/reddit/post", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ postIds }),
-              });
-
-              if (redditResponse.ok) {
-                const redditData = await redditResponse.json();
-                const posts = redditData?.data?.children || [];
-
-                posts.forEach((child: { data: RedditPost }) => {
-                  const post: RedditPost = child.data;
-                  const postFullname = post.name;
-                  const postInfo = batch.find((p) => p.postFullname === postFullname);
-
-                  if (postInfo) {
-                    cachePost(postInfo.url, { selftext: post.selftext || null, postData: post });
-                  }
-                });
-              }
-            } catch (err) {
-              console.error(`Error batch fetching selftext:`, err);
-            }
-
-            // Add delay between batches (except after the last batch)
-            if (i + BATCH_SIZE < postsNeedingFetch.length) {
-              await new Promise(resolve => setTimeout(resolve, POST_FETCH_DELAY_MS));
-            }
-          }
-          console.log(`[Auto-pilot] Completed fetching selftext for ${postsNeedingFetch.length} posts`);
-        }
-
-        // Verify all posts have selftext before filtering
-        let postsMissingSelftext = 0;
-        allPostsForFiltering.forEach(({ link }) => {
-          if (!link.link) return;
-          const cached = getCachedPost(link.link);
-          const hasSelftext = cached && cached.selftext !== undefined;
-          if (!hasSelftext) {
-            postsMissingSelftext++;
-          }
-        });
-
-        if (postsMissingSelftext > 0) {
-          console.warn(`[Auto-pilot] ${postsMissingSelftext} posts still missing selftext after fetch - they may not be filtered correctly`);
-        }
-
-        // Now build postsToFilter array with selftext from cache (only unique posts by URL, excluding analytics posts)
-        const postsToFilter: Array<{ title: string; content: string; keyword: string; linkIndex: number; url: string }> = [];
-        const seenUrls = new Set<string>();
-
-        allPostsForFiltering.forEach(({ link, keyword, index }) => {
-          if (!link.link || !link.title) return;
-
-          const normalizedUrl = normalizeUrl(link.link);
-
-          // Skip if post is already in analytics (already posted/commented on)
-          if (analyticsUrlSet.has(normalizedUrl)) {
-            return;
-          }
-
-          // Skip if we've already seen this URL (deduplication)
-          if (seenUrls.has(normalizedUrl)) {
-            return;
-          }
-
-          seenUrls.add(normalizedUrl);
-
-          const cached = getCachedPost(link.link);
-          const selftext = cached && cached.selftext !== undefined ? (cached.selftext || '') : '';
-
-          postsToFilter.push({
-            title: link.title || '',
-            content: selftext,
-            keyword,
-            linkIndex: index,
-            url: link.link,
-          });
-        });
-
-        // Get product idea
-        const productIdea = productDetailsFromDb?.productDescription || '';
-
-        if (!productIdea) {
-          console.warn('[Auto-pilot] No product idea found, skipping AI filter');
-          setLeadsLinks(timeFiltered);
-          safeSetLocalStorage("leadsLinks", timeFiltered);
-          setIsLoadingLeads(false);
-          return;
-        }
-
-        // Prepare posts array for filter API (only unique posts)
-        const postsForFilterAPI = postsToFilter.map(({ title, content }) => ({ title, content }));
-
-        console.log('[Auto-pilot] Total posts to filter:', postsForFilterAPI.length);
-
-        // Batch posts to avoid exceeding API character limit (1048576 characters for posts variable)
-        // The posts variable is JSON.stringify'd in the API, so we need to check the stringified length
-        const MAX_POSTS_STRING_LENGTH = 200000; // Smaller batches for better reliability
-        const batches: Array<Array<{ title: string; content: string }>> = [];
-
-        // Split posts into batches, checking the actual JSON string length to ensure we don't exceed the limit
-        let currentBatch: Array<{ title: string; content: string }> = [];
-
-        for (const post of postsForFilterAPI) {
-          // Test if adding this post would exceed the limit
-          const testBatch = [...currentBatch, post];
-          const testBatchString = JSON.stringify(testBatch);
-
-          // If adding this post would exceed the limit, start a new batch
-          if (testBatchString.length > MAX_POSTS_STRING_LENGTH && currentBatch.length > 0) {
-            batches.push(currentBatch);
-            currentBatch = [post];
-          } else {
-            currentBatch.push(post);
-          }
-        }
-
-        // Add the last batch if it has posts
-        if (currentBatch.length > 0) {
-          batches.push(currentBatch);
-        }
-
-        console.log(`[Auto-pilot] Split into ${batches.length} batches for filtering`);
-
-        // Process each batch in parallel and collect all filter results
-        const allFilterResults: string[] = [];
-
-        try {
-          const batchPromises = batches.map(async (batch, batchIndex) => {
-            try {
-              console.log(`[Auto-pilot] Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} posts)`);
-
-              // Call filter API for this batch
-              const filterResponse = await fetch("/api/openai/filter-posts", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  posts: batch,
-                  idea: productIdea,
-                }),
-              });
-
-              if (!filterResponse.ok) {
-                // Try to extract error message from response
-                let errorMessage = `Filter API returned ${filterResponse.status} for batch ${batchIndex + 1}`;
-                try {
-                  const errorData = await filterResponse.json();
-                  if (errorData.error) {
-                    errorMessage = `${errorMessage}: ${errorData.error}`;
-                  }
-                } catch (e) {
-                  // If JSON parsing fails, use status text
-                  errorMessage = `${errorMessage} ${filterResponse.statusText || ''}`;
-                }
-                console.error('[Auto-pilot] Filter API error:', errorMessage);
-
-                // If a batch fails, treat all posts in that batch as "NO" (filtered out)
-                return { batchIndex, results: new Array(batch.length).fill('NO') };
-              }
-
-              const filterData = await filterResponse.json();
-              if (filterData.error) {
-                console.error(`[Auto-pilot] Filter API returned error for batch ${batchIndex + 1}:`, filterData.error);
-                // Treat all posts in this batch as "NO" (filtered out)
-                return { batchIndex, results: new Array(batch.length).fill('NO') };
-              }
-
-              let batchFilterResults = filterData.results || [];
-
-              // Validate batch results length
-              if (batchFilterResults.length !== batch.length) {
-                console.warn(`[Auto-pilot] Batch ${batchIndex + 1} returned ${batchFilterResults.length} results, expected ${batch.length}`);
-                // Pad with "NO" if we got fewer results, or truncate if we got more
-                if (batchFilterResults.length < batch.length) {
-                  batchFilterResults = [...batchFilterResults.map((r: string) => String(r).toUpperCase()), ...new Array(batch.length - batchFilterResults.length).fill('NO')];
-                } else {
-                  batchFilterResults = batchFilterResults.slice(0, batch.length).map((r: string) => String(r).toUpperCase());
-                }
-              } else {
-                batchFilterResults = batchFilterResults.map((r: string) => String(r).toUpperCase());
-              }
-
-              return { batchIndex, results: batchFilterResults };
-    } catch (error) {
-              console.error(`[Auto-pilot] Error processing batch ${batchIndex + 1}:`, error);
-              // If a batch fails, treat all posts in that batch as "NO" (filtered out)
-              return { batchIndex, results: new Array(batch.length).fill('NO') };
-            }
-          });
-
-          // Wait for all batches to complete
-          const batchResults = await Promise.all(batchPromises);
-
-          // Sort results by batchIndex to maintain order
-          batchResults.sort((a, b) => a.batchIndex - b.batchIndex);
-
-          // Combine all results in order
-          batchResults.forEach(({ results }) => {
-            allFilterResults.push(...results);
-          });
-
-          // Validate that we have the right number of results
-          if (allFilterResults.length !== postsToFilter.length) {
-            console.error(`[Auto-pilot] Total filter results (${allFilterResults.length}) don't match total posts (${postsToFilter.length})`);
-            throw new Error(`Filter results mismatch: expected ${postsToFilter.length}, got ${allFilterResults.length}`);
-          }
-
-          // Create a map of URL -> filter result
-          const urlToFilterResult = new Map<string, string>();
-          const signalsMap: Record<string, "YES" | "MAYBE" | "NO"> = {};
-          postsToFilter.forEach((postInfo, index) => {
-            const filterResult = allFilterResults[index]?.toUpperCase();
-            if (filterResult) {
-              const normalizedUrl = normalizeUrl(postInfo.url);
-              urlToFilterResult.set(normalizedUrl, filterResult);
-              // Store signal for display (YES, MAYBE, or NO)
-              if (filterResult === "YES" || filterResult === "MAYBE" || filterResult === "NO") {
-                signalsMap[normalizedUrl] = filterResult as "YES" | "MAYBE" | "NO";
-              }
-            }
-          });
-
-          // Update filter signals state
-          setLeadsFilterSignals(signalsMap);
-          
-          // Persist signals to localStorage
-          try {
-            localStorage.setItem("leadsFilterSignals", JSON.stringify(signalsMap));
-          } catch (e) {
-            console.error("Error saving leadsFilterSignals to localStorage:", e);
-          }
-
-          // Filter out posts that returned "NO" (apply to all posts, including duplicates)
-          const aiFiltered: Record<string, Array<any>> = {};
-
-          // Apply filter results to all posts in timeFiltered by matching URL (excluding analytics posts)
-          Object.entries(timeFiltered).forEach(([keyword, links]) => {
-            links.forEach((link: any) => {
-              if (!link.link) return;
-
-              const normalizedUrl = normalizeUrl(link.link);
-
-              // Skip if post is already in analytics (already posted/commented on)
-              if (analyticsUrlSet.has(normalizedUrl)) {
-                return;
-              }
-
-              const filterResult = urlToFilterResult.get(normalizedUrl);
-
-              if (filterResult && filterResult !== 'NO') {
-                // Keep this post
-                if (!aiFiltered[keyword]) {
-                  aiFiltered[keyword] = [];
-                }
-                aiFiltered[keyword].push(link);
-              }
-            });
-          });
-
-          // Count total posts after AI filter
-          const totalAfterAIFilter = Object.values(aiFiltered).reduce((sum, links) => sum + links.length, 0);
-
-          // Update state with AI-filtered results
-          setLeadsLinks(aiFiltered);
-          safeSetLocalStorage("leadsLinks", aiFiltered);
-
-        } catch (filterError) {
-          console.error('[Auto-pilot] Error filtering posts:', filterError);
-          // On error, keep the time-filtered results
-          setLeadsLinks(timeFiltered);
-          safeSetLocalStorage("leadsLinks", timeFiltered);
-        }
-
-        setIsLoadingLeads(false);
-      }, 2000); // Wait 2 seconds for all post data to be fetched
-    } catch (error) {
-      console.error("Error in auto-pilot:", error);
-      setIsLoadingLeads(false);
-      showToast("Error fetching leads. Please try again.", { variant: "error" });
-    }
-  };
 
   // Handle leads search
   const handleLeadsSearch = async () => {
@@ -5191,6 +4805,96 @@ function PlaygroundContent() {
                     </p>
                   </button>
                 </div>
+                
+                {/* Auto-pilot Section */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full mt-4">
+                  <div className="p-6 rounded-lg border border-border bg-card">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <h4 className="text-lg font-semibold">Auto-pilot</h4>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isAutoPilotEnabled}
+                          onChange={async (e) => {
+                            // Only allow toggling if email is isarcorps@gmail.com
+                            if (session?.user?.email?.toLowerCase() !== "isarcorps@gmail.com") {
+                              return;
+                            }
+                            
+                            setIsLoadingAutoPilot(true);
+                            try {
+                              const response = await fetch("/api/user/auto-pilot", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ autoPilotEnabled: e.target.checked }),
+                              });
+                              
+                              if (response.ok) {
+                                const data = await response.json();
+                                if (data.success) {
+                                  setIsAutoPilotEnabled(data.autoPilotEnabled);
+                                  showToast(
+                                    data.autoPilotEnabled 
+                                      ? "Auto-pilot enabled" 
+                                      : "Auto-pilot disabled",
+                                    { variant: "success" }
+                                  );
+                                }
+                              } else {
+                                showToast("Failed to update auto-pilot status", { variant: "error" });
+                              }
+                            } catch (error) {
+                              console.error("Error updating auto-pilot status:", error);
+                              showToast("Failed to update auto-pilot status", { variant: "error" });
+                            } finally {
+                              setIsLoadingAutoPilot(false);
+                            }
+                          }}
+                          disabled={isLoadingAutoPilot || (session?.user?.email?.toLowerCase() !== "isarcorps@gmail.com")}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
+                      </label>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {isAutoPilotEnabled ? "Auto-pilot is enabled" : "Auto-pilot is disabled"}
+                    </p>
+                    {session?.user?.email?.toLowerCase() !== "isarcorps@gmail.com" && (
+                      <p className="text-xs text-muted-foreground mt-2 italic">
+                        This feature is currently restricted
+                      </p>
+                    )}
+                  </div>
+                  <div className="hidden md:block"></div>
+                  <div className="hidden md:block"></div>
+                </div>
+                
+                {/* Auto-pilot Table */}
+                <div className="mt-4 w-full">
+                  <div className="rounded-lg border border-border bg-card overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr>
+                            <th className="text-left p-4 text-sm font-semibold">Title</th>
+                            <th className="text-left p-4 text-sm font-semibold">Subreddit</th>
+                            <th className="text-left p-4 text-sm font-semibold">Status</th>
+                            <th className="text-left p-4 text-sm font-semibold">Date</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td colSpan={4} className="p-8 text-center text-sm text-muted-foreground">
+                              No auto-pilot activity yet
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             
@@ -6567,22 +6271,7 @@ function PlaygroundContent() {
                           )}
                         </Button>
                     <div className="flex items-center gap-3">
-                      {/* <Button
-                        onClick={handleAutoPilot}
-                        disabled={isLoadingLeads}
-                        size="sm"
-                        variant="outline"
-                        className="text-[#FF4500] font-bold"
-                      >
-                        {isLoadingLeads ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Running...
-                          </>
-                        ) : (
-                          "Auto-pilot"
-                        )}
-                      </Button> */}
+                    
                           <Button
                       onClick={handleLeadsSearch}
                       disabled={isLoadingLeads || (syncUsage ? syncUsage.syncCounter >= syncUsage.maxSyncsPerDay : false)}

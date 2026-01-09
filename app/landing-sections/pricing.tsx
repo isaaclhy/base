@@ -210,63 +210,6 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
               )
             )}
           </div>
-
-          <div className={cn(
-            "relative flex h-full flex-col rounded-2xl border border-border bg-background text-left shadow-lg transition-all hover:shadow-xl",
-            showCTAButtons ? "gap-4 p-6" : "gap-6 p-8"
-          )}>
-            <span className="absolute -top-3 right-4 rounded-full bg-[#ff4500] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">
-              Save 20%
-            </span>
-            <div className="space-y-4">
-              <div>
-                <h3 className={cn("font-extrabold text-foreground", showCTAButtons ? "text-2xl" : "text-2xl")}>Pro</h3>
-                <div className="mt-2">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-xl font-normal text-muted-foreground line-through">$50</span>
-                    <span className="text-3xl font-extrabold text-foreground">$39.99</span>
-                    <span className="text-muted-foreground ml-1">/month</span>
-                  </div>
-                </div>
-                <p className="text-sm text-muted-foreground mt-2">For serious businesses that need personalized support</p>
-              </div>
-              
-              <ul className={cn("space-y-3", showCTAButtons ? "text-sm" : "text-sm")}>
-                {features.pro.map((feature) => (
-                  <li key={feature} className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-[#ff4500] flex-shrink-0 mt-0.5" />
-                    <span className="text-foreground">{feature}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            
-            {showCTAButtons && (
-              status === "loading" ? (
-                <Button disabled size="lg" className="mt-auto w-full opacity-70">
-                  Checking your plan...
-                </Button>
-              ) : isPro ? (
-                <Button
-                  size="lg"
-                  variant="default"
-                  onClick={handleManageBilling}
-                  disabled={isPortalLoading}
-                  className="mt-auto w-full bg-[#ff4500] hover:bg-[#ff4500]/90 text-white"
-                >
-                  {isPortalLoading ? "Opening portal..." : "Manage billing"}
-                </Button>
-              ) : (
-                <Button
-                  size="lg"
-                  onClick={handleTalkToUs}
-                  className="mt-auto w-full bg-[#ff4500] hover:bg-[#ff4500]/90 text-white"
-                >
-                  Talk to us
-                </Button>
-              )
-            )}
-          </div>
         </div>
       </div>
     </section>

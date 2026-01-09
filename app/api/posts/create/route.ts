@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
       postData,
       comment,
       notes,
+      autoPilot,
     } = body;
 
     if (!status || !query) {
@@ -51,6 +52,7 @@ export async function POST(request: NextRequest) {
       postData: postData || null,
       comment: comment || null,
       notes: notes || null,
+      autoPilot: autoPilot || false,
     });
 
     console.log(`Post saved to MongoDB (postsv2 collection): ${post._id?.toString()}`);

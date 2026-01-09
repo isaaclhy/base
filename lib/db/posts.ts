@@ -16,6 +16,7 @@ export interface Post {
   postData?: RedditPost | null;
   comment?: string | null; // The comment that was posted (if status is "posted")
   notes?: string | null; // Additional notes
+  autoPilot?: boolean; // Whether this post was created by auto-pilot
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,6 +32,7 @@ export async function createPost(postData: {
   postData?: RedditPost | null;
   comment?: string | null;
   notes?: string | null;
+  autoPilot?: boolean;
 }): Promise<Post> {
   const db = await getDatabase();
   const postsCollection = db.collection<Post>("postsv2");
@@ -48,6 +50,7 @@ export async function createPost(postData: {
     postData: postData.postData || null,
     comment: postData.comment || null,
     notes: postData.notes || null,
+    autoPilot: postData.autoPilot || false,
     createdAt: now,
     updatedAt: now,
   };

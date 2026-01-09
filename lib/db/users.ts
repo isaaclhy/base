@@ -36,6 +36,8 @@ export interface User {
   subreddits?: string[];
   // Onboarding completion status
   onboardingCompleted?: boolean;
+  // Auto-pilot enabled status
+  autoPilotEnabled?: boolean;
 }
 
 export async function createOrUpdateUser(userData: {
@@ -509,5 +511,41 @@ export async function updateUserOnboardingStatus(
   }
   
   return result as User;
+}
+
+export async function updateUserAutoPilotStatus(
+  email: string,
+  autoPilotEnabled: boolean
+): Promise<User | null> {
+  const db = await getDatabase();
+  const usersCollection = db.collection<User>('usersv2');
+  
+  // Normalize email to lowercase for lookup
+  const normalizedEmail = email.toLowerCase();
+  
+  const result = await usersCollection.findOneAndUpdate(
+    { email: normalizedEmail },
+    {
+      $set: {
+        autoPilotEnabled,
+        updatedAt: new Date(),
+      },
+    },
+    { returnDocument: 'after' }
+  );
+  
+  if (!result) {
+    console.error(`Failed to update auto-pilot status: User with email ${normalizedEmail} not found in database`);
+    return null;
+  }
+  
+  return result as User;
+}
+
+export async function getUsersWithAutoPilotEnabled(): Promise<User[]> {
+  const db = await getDatabase();
+  const usersCollection = db.collection<User>('usersv2');
+  
+  return usersCollection.find({ autoPilotEnabled: true }).toArray();
 }
 
