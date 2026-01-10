@@ -141,10 +141,9 @@ async function fetchSubredditPosts(
   keyword: string,
   subreddit: string,
   limit: number,
-  userEmail: string
+  accessToken: string
 ): Promise<any[]> {
   try {
-    const accessToken = await refreshAccessToken(userEmail);
     const searchUrl = `https://oauth.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(keyword)}&sort=new&limit=${limit}&t=week&restrict_sr=1`;
     
     const response = await fetch(searchUrl, {
@@ -184,7 +183,7 @@ async function fetchSubredditPosts(
 // Batch fetch Reddit post data (same as sync leads)
 async function batchFetchPostData(
   postIds: string[],
-  userEmail: string
+  accessToken: string
 ): Promise<Map<string, RedditPost>> {
   const postDataMap = new Map<string, RedditPost>();
   
@@ -196,8 +195,6 @@ async function batchFetchPostData(
   for (let i = 0; i < postIds.length; i += BATCH_SIZE) {
     batches.push(postIds.slice(i, i + BATCH_SIZE));
   }
-
-  const accessToken = await refreshAccessToken(userEmail);
 
   await Promise.all(
     batches.map(async (batch) => {
@@ -354,6 +351,26 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0, error: "No product link" };
     }
 
+    // Check Reddit authentication - verify we can refresh the token before starting any work
+    // This ensures the user has connected their Reddit account and has a valid refresh token
+    let validAccessToken: string;
+    try {
+      console.log(`[Auto-Pilot] User ${user.email}: Verifying Reddit authentication...`);
+      validAccessToken = await refreshAccessToken(user.email);
+      console.log(`[Auto-Pilot] User ${user.email}: Reddit authentication verified, token refreshed successfully`);
+    } catch (authError) {
+      const errorMessage = authError instanceof Error ? authError.message : "Failed to refresh token";
+      console.error(`[Auto-Pilot] User ${user.email}: Reddit authentication failed:`, errorMessage);
+      return { 
+        success: false, 
+        yesPosts: 0, 
+        yesPostsList: [], 
+        posted: 0, 
+        failed: 0, 
+        error: `Reddit authentication failed: ${errorMessage}. Please connect your Reddit account in the app.` 
+      };
+    }
+
     // Step 1: Expand keywords (same as sync leads)
     const expandedKeywords = await expandKeywords(keywords);
     console.log(`[Auto-Pilot] User ${user.email}: Expanded ${keywords.length} keywords to ${expandedKeywords.length}`);
@@ -383,7 +400,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           await Promise.all(
             (subreddits as string[]).map(async (subreddit: string) => {
               try {
-                const results = await fetchSubredditPosts(keyword, subreddit, 30, user.email);
+                const results = await fetchSubredditPosts(keyword, subreddit, 30, validAccessToken);
                 results.forEach(result => {
                   allSubredditResults.push({ ...result, keyword, subreddit });
                 });
@@ -426,7 +443,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
 
     console.log(`[Auto-Pilot] User ${user.email}: Fetching post data for ${postIds.length} posts`);
 
-    const postDataMap = await batchFetchPostData(postIds, user.email);
+    const postDataMap = await batchFetchPostData(postIds, validAccessToken);
 
     // Step 5: Filter to past 12 hours and build filter array (same as sync leads, but 12 hours)
     const twelveHoursAgo = Math.floor(Date.now() / 1000) - (12 * 60 * 60);
@@ -595,8 +612,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
             continue;
           }
 
-          // Post comment to Reddit
-          const accessToken = await refreshAccessToken(user.email);
+          // Post comment to Reddit (using the token we refreshed at the start)
           const thingId = `t3_${yesPost.id}`;
           
           console.log(`[Auto-Pilot] User ${user.email}: Posting comment to Reddit for post "${yesPost.title}"`);
@@ -604,7 +620,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           const postResponse = await fetch("https://oauth.reddit.com/api/comment", {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${accessToken}`,
+              Authorization: `Bearer ${validAccessToken}`,
               "User-Agent": "web:comment-tool:0.1 (by /u/isaaclhy13)",
               "Content-Type": "application/x-www-form-urlencoded",
             },

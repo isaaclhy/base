@@ -4,6 +4,11 @@ const REDDIT_CLIENT_ID = process.env.REDDIT_CLIENT_ID || "";
 const REDDIT_CLIENT_SECRET = process.env.REDDIT_CLIENT_SECRET || "";
 
 export async function refreshAccessToken(userId: string): Promise<string> {
+  // Check Reddit OAuth credentials are configured
+  if (!REDDIT_CLIENT_ID || !REDDIT_CLIENT_SECRET) {
+    throw new Error("Reddit OAuth credentials not configured. REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET must be set in environment variables.");
+  }
+
   const user = await getUserByEmail(userId);
 
   if (!user) {
@@ -11,7 +16,7 @@ export async function refreshAccessToken(userId: string): Promise<string> {
   }
 
   if (!user.redditRefreshToken) {
-    throw new Error("No refresh token stored. Please connect your Reddit account.");
+    throw new Error("No refresh token stored. Please connect your Reddit account in the app.");
   }
 
   const params = new URLSearchParams();
@@ -31,7 +36,21 @@ export async function refreshAccessToken(userId: string): Promise<string> {
   if (!tokenRes.ok) {
     const errorText = await tokenRes.text();
     console.error("Failed to refresh Reddit token:", errorText);
-    throw new Error("Failed to refresh token");
+    let errorMessage = "Failed to refresh token";
+    
+    try {
+      const errorData = JSON.parse(errorText);
+      if (errorData.error) {
+        errorMessage = `Failed to refresh token: ${errorData.error}${errorData.error_description ? ` - ${errorData.error_description}` : ''}`;
+      }
+    } catch {
+      // If parsing fails, use the raw error text if available
+      if (errorText) {
+        errorMessage = `Failed to refresh token: ${errorText}`;
+      }
+    }
+    
+    throw new Error(errorMessage);
   }
 
   const tokenData = await tokenRes.json();

@@ -6120,9 +6120,7 @@ function PlaygroundContent() {
                 )}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3">
-                    <h3 className="text-lg font-semibold">
-                    Leads
-                    </h3>
+                 
                     {lastLeadsSyncTime && (
                       <span className="text-xs text-muted-foreground">
                         Last synced {(() => {
@@ -6205,15 +6203,9 @@ function PlaygroundContent() {
                         <Button
                           variant="default"
                           size="sm"
-                          className="bg-black text-white hover:bg-black/90"
-                          disabled={isLoadingLeads}
+                          className="bg-black text-white hover:bg-black/90 text-xs"
+                          disabled={isLoadingLeads || selectedLeads.size === 0}
                       onClick={async () => {
-                        // If no rows are selected, show modal asking user to select rows
-                        if (selectedLeads.size === 0) {
-                          setShowNoRowsSelectedModal(true);
-                          return;
-                        }
-
                         // Check usage limit before opening modal
                         try {
                           const response = await fetch("/api/usage");
@@ -6258,6 +6250,7 @@ function PlaygroundContent() {
                         <Button
                           variant="outline"
                           size="sm"
+                          className="text-xs"
                           disabled={isLoadingLeads || selectedLeads.size === 0 || isBulkRemoving}
                           onClick={handleBulkRemove}
                         >
@@ -6277,7 +6270,7 @@ function PlaygroundContent() {
                       disabled={isLoadingLeads || (syncUsage ? syncUsage.syncCounter >= syncUsage.maxSyncsPerDay : false)}
                             size="sm"
                       variant={distinctLeadsLinks.length > 0 ? "outline" : "default"}
-                      className={syncUsage && syncUsage.syncCounter >= syncUsage.maxSyncsPerDay && countdown ? "min-w-[160px]" : "w-[140px]"}
+                      className={`text-xs ${syncUsage && syncUsage.syncCounter >= syncUsage.maxSyncsPerDay && countdown ? "min-w-[160px]" : "w-[140px]"}`}
                     >
                       {isLoadingLeads ? (
                         <>
@@ -6302,6 +6295,7 @@ function PlaygroundContent() {
                           <Button
                             variant="outline"
                             size="sm"
+                            className="text-xs"
                             onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
                             disabled={isLoadingLeads}
                           >
