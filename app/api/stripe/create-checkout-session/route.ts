@@ -39,9 +39,11 @@ export async function POST(request: NextRequest) {
     const dbUser = await getUserByEmail(session.user.email);
     
     // Normalize old plan names (migration)
-    let currentPlan = dbUser?.plan;
-    if (currentPlan === "starter") currentPlan = "basic";
-    if (currentPlan === "pro") currentPlan = "premium";
+    // Cast to include old plan types for migration check
+    const rawPlan = dbUser?.plan as "free" | "basic" | "premium" | "starter" | "pro" | undefined;
+    let currentPlan: "free" | "basic" | "premium" = rawPlan || "free";
+    if (rawPlan === "starter") currentPlan = "basic";
+    if (rawPlan === "pro") currentPlan = "premium";
 
     // Check if user already has this plan or a higher plan
     if (planType === "basic" && (currentPlan === "basic" || currentPlan === "premium")) {
