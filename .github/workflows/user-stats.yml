@@ -1,0 +1,52 @@
+name: User Stats Cron Job
+
+on:
+  schedule:
+    # Run once a day at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  user-stats:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Call User Stats Endpoint
+        env:
+          CRON_SECRET_TOKEN: ${{ secrets.CRON_SECRET_TOKEN }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          if [ -z "$CRON_SECRET_TOKEN" ]; then
+            echo "❌ CRON_SECRET_TOKEN secret is not set in GitHub Actions"
+            exit 1
+          fi
+          
+          if [ -z "$APP_URL" ]; then
+            echo "❌ APP_URL secret is not set in GitHub Actions"
+            exit 1
+          fi
+          
+          echo "Calling user stats endpoint: ${APP_URL}/api/cron/user-stats"
+          echo "Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo ""
+          
+          response=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "${APP_URL}/api/cron/user-stats" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${CRON_SECRET_TOKEN}")
+          
+          http_status=$(echo "$response" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
+          body=$(echo "$response" | sed '/HTTP_STATUS:/d')
+          
+          echo "HTTP Status: $http_status"
+          echo ""
+          echo "Response:"
+          echo "$body" | jq '.' 2>/dev/null || echo "$body"
+          
+          if [ "$http_status" != "200" ]; then
+            echo ""
+            echo "❌ Request failed with status $http_status"
+            echo "Check Vercel logs for detailed error information"
+            exit 1
+          fi
+

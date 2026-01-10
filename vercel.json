@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/search-reddit-posts",
       "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/cron/user-stats",
+      "schedule": "0 0 * * *"
     }
   ]
 }
