@@ -8,18 +8,15 @@ import { Check } from "lucide-react";
 
 const features = {
   free: [
-    "Unlimited Manual Reddit Post Searches",
     "5 keywords",
-    "30 generated comments",
+    "600 generated comments",
     "2 lead syncs per day",
-    "Engagement tracker",
   ],
   premium: [
     "10 keywords",
-    "600 generated comments",
+    "1,200 generated comments",
     "5 lead syncs per day",
-    "Engagement tracker",
-    "Email notification on high potential posts",
+    "Auto-pilot function",
   ],
   pro: [
     "1 to 1 onboarding call",
@@ -125,9 +122,9 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
           )}>
             <div className="space-y-4">
               <div>
-                <h3 className={cn("font-extrabold text-foreground", showCTAButtons ? "text-2xl" : "text-2xl")}>Free</h3>
+                <h3 className={cn("font-extrabold text-foreground", showCTAButtons ? "text-2xl" : "text-2xl")}>Starter</h3>
                 <div className="mt-2">
-                  <span className="text-3xl font-extrabold text-foreground">$0</span>
+                  <span className="text-3xl font-extrabold text-foreground">$15.99</span>
                   <span className="text-muted-foreground ml-1">/month</span>
                 </div>
                 <p className="text-sm text-muted-foreground mt-2">Perfect for getting started with Reddit marketing</p>
@@ -167,7 +164,7 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
               <div>
                 <h3 className={cn("font-extrabold text-foreground", showCTAButtons ? "text-2xl" : "text-2xl")}>Premium</h3>
                 <div className="mt-2">
-                  <span className="text-3xl font-extrabold text-foreground">$19.99</span>
+                  <span className="text-3xl font-extrabold text-foreground">$29.99</span>
                   <span className="text-muted-foreground ml-1">/month</span>
                 </div>
                 <p className="text-sm text-muted-foreground mt-2">For growing startups with multiple products to monitor</p>

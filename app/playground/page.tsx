@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback, Suspense, useTransition } from "react";
-import { ExternalLink, X, Loader2, CheckCircle2, Send, Trash2, ChevronLeft, ChevronRight, Settings, ChevronDown, Plus, ArrowUp, MessageSquare, CheckSquare, Check, Circle, Package, Hash, Users, Info } from "lucide-react";
+import { useState, useEffect, useMemo, useRef, useCallback, Suspense, useTransition, type ReactNode } from "react";
+import { ExternalLink, X, Loader2, CheckCircle2, Send, Trash2, ChevronLeft, ChevronRight, Settings, ChevronDown, Plus, ArrowUp, MessageSquare, CheckSquare, Check, Circle, Package, Hash, Users, Info, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatTextarea } from "@/components/ui/chat-textarea";
 import PlaygroundLayout, { usePlaygroundTab, usePlaygroundSidebar, useRefreshUsage, useSetPlaygroundTab } from "@/components/playground-layout";
@@ -414,6 +414,7 @@ function PlaygroundContent() {
   const [isAutoPilot, setIsAutoPilot] = useState(false);
   const [isAutoPilotEnabled, setIsAutoPilotEnabled] = useState(false);
   const [isLoadingAutoPilot, setIsLoadingAutoPilot] = useState(false);
+  const [showAutoPilotModal, setShowAutoPilotModal] = useState(false);
   const LEADS_ITEMS_PER_PAGE = 20;
 
   const analyticsUrlSet = useMemo(() => {
@@ -1868,8 +1869,8 @@ function PlaygroundContent() {
             // Continue with the sync (don't return)
           } else {
             // No keywords found, show modal
-            setShowNoKeywordsModal(true);
-            return;
+      setShowNoKeywordsModal(true);
+      return;
           }
         } else {
           // API call failed, show modal
@@ -1968,7 +1969,7 @@ function PlaygroundContent() {
       /**
        * STEP 3 — Fetch Reddit post content
        */
-      await batchFetchLeadsPostContent();
+        await batchFetchLeadsPostContent();
 
       /**
        * STEP 4 — Build postsToFilter with post IDs
@@ -2136,7 +2137,7 @@ function PlaygroundContent() {
 
           console.log(`[Sync Leads] Batch ${batchIndex + 1} completed: ${batchResults.length} results`);
 
-        } catch (error) {
+    } catch (error) {
           console.error(`[Sync Leads] Batch ${batchIndex + 1} exception:`, error);
           batch.forEach(post => verdictMap.set(post.postId, 'NO'));
         }
@@ -4729,7 +4730,7 @@ function PlaygroundContent() {
       showToast(error instanceof Error ? error.message : "Failed to generate subreddit recommendations", { variant: "error" });
                       } finally {
       setIsLoadingSubredditRecommendations(false);
-                      }
+    }
   };
 
   const renderContent = () => {
@@ -4826,14 +4827,14 @@ function PlaygroundContent() {
                             setIsLoadingAutoPilot(true);
                             try {
                               const response = await fetch("/api/user/auto-pilot", {
-                                method: "POST",
+                          method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ autoPilotEnabled: e.target.checked }),
                               });
                               
                               if (response.ok) {
-                                const data = await response.json();
-                                if (data.success) {
+                        const data = await response.json();
+                        if (data.success) {
                                   setIsAutoPilotEnabled(data.autoPilotEnabled);
                                   showToast(
                                     data.autoPilotEnabled 
@@ -4844,11 +4845,11 @@ function PlaygroundContent() {
                                 }
                               } else {
                                 showToast("Failed to update auto-pilot status", { variant: "error" });
-                              }
-                            } catch (error) {
+                        }
+                      } catch (error) {
                               console.error("Error updating auto-pilot status:", error);
                               showToast("Failed to update auto-pilot status", { variant: "error" });
-                            } finally {
+                      } finally {
                               setIsLoadingAutoPilot(false);
                             }
                           }}
@@ -4857,7 +4858,7 @@ function PlaygroundContent() {
                         />
                         <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
                       </label>
-                    </div>
+                </div>
                     <p className="text-sm text-muted-foreground">
                       {isAutoPilotEnabled ? "Auto-pilot is enabled" : "Auto-pilot is disabled"}
                     </p>
@@ -4869,8 +4870,8 @@ function PlaygroundContent() {
                   </div>
                   <div className="hidden md:block"></div>
                   <div className="hidden md:block"></div>
-                </div>
-                
+              </div>
+              
                 {/* Auto-pilot Table */}
                 <div className="mt-4 w-full">
                   <div className="rounded-lg border border-border bg-card overflow-hidden">
@@ -6201,12 +6202,19 @@ function PlaygroundContent() {
                   </div>
                     <div className="flex gap-2 self-start sm:self-auto">
                         {/* Auto-pilot Button */}
-                        <Button
+                        {/* <Button
                           variant="outline"
                           size="sm"
                           className="text-sm px-2 py-1"
-                          disabled={isLoadingLeads || (session?.user?.email?.toLowerCase() !== "isarcorps@gmail.com") || isLoadingAutoPilot}
+                          disabled={isLoadingLeads || isLoadingAutoPilot}
                           onClick={async () => {
+                            // Check if user is free and not isarcorps@gmail.com - show modal
+                            if (userPlan === "free" && session?.user?.email?.toLowerCase() !== "isarcorps@gmail.com") {
+                              setShowAutoPilotModal(true);
+                              return;
+                            }
+
+                            // For premium/pro users or isarcorps@gmail.com, toggle auto-pilot
                             setIsLoadingAutoPilot(true);
                             try {
                               const response = await fetch("/api/user/auto-pilot", {
@@ -6247,7 +6255,7 @@ function PlaygroundContent() {
                               {isAutoPilotEnabled ? "Auto-pilot: ON" : "Auto-pilot: OFF"}
                             </>
                           )}
-                        </Button>
+                        </Button> */}
                         <Button
                           variant="default"
                           size="sm"
@@ -8021,6 +8029,63 @@ function PlaygroundContent() {
         </div>
       )}
 
+      {/* Auto-pilot Modal for Free Users */}
+      {showAutoPilotModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="relative w-full max-w-lg mx-4 bg-background rounded-lg shadow-xl border border-border p-6">
+            <button
+              onClick={() => setShowAutoPilotModal(false)}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            {/* Animated Icons Section */}
+            <div className="flex justify-center gap-12 mb-8 mt-4">
+              {/* Reddit Messages Icon */}
+              <AutoPilotIcon
+                key={`message-${showAutoPilotModal}`}
+                icon={<MessageSquare className="h-16 w-16 text-[#ff4500]" />}
+                count={99}
+              />
+              
+              {/* Notifications Icon */}
+              <AutoPilotIcon
+                key={`bell-${showAutoPilotModal}`}
+                icon={<Bell className="h-16 w-16 text-blue-500" />}
+                count={99}
+              />
+            </div>
+
+            {/* Description Section */}
+            <div className="space-y-4 text-center">
+              <h2 className="text-2xl font-bold text-foreground">
+                What is Auto-pilot?
+              </h2>
+              <p className="text-muted-foreground leading-relaxed">
+                Auto-pilot automatically finds relevant Reddit posts matching your keywords, 
+                generates personalized comments using AI, and posts them for you. Set it once 
+                and let it work 24/7 to engage with potential customers on Reddit while you focus 
+                on building your product.
+              </p>
+              
+              <div className="pt-4">
+                <Button
+                  onClick={() => {
+                    setShowAutoPilotModal(false);
+                    // Navigate to pricing tab
+                    setActiveTab("product");
+                  }}
+                  className="w-full bg-[#ff4500] hover:bg-[#ff4500]/90 text-white"
+                >
+                  Upgrade to Premium
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Onboarding Modal */}
       <OnboardingModal
         isOpen={isOnboardingModalOpen}
@@ -8034,6 +8099,44 @@ function PlaygroundContent() {
         }}
       />
     </>
+  );
+}
+
+// Auto-pilot Icon Component with Animated Counter
+function AutoPilotIcon({ icon, count }: { icon: ReactNode; count: number }) {
+  const [displayCount, setDisplayCount] = useState(0);
+
+  useEffect(() => {
+    const duration = 2000; // 2 seconds
+    const steps = 60; // 60 steps for smooth animation
+    const increment = count / steps;
+    const stepDuration = duration / steps;
+
+    let currentStep = 0;
+    const timer = setInterval(() => {
+      currentStep++;
+      const nextCount = Math.min(Math.ceil(increment * currentStep), count);
+      setDisplayCount(nextCount);
+
+      if (currentStep >= steps || nextCount >= count) {
+        setDisplayCount(count);
+        clearInterval(timer);
+      }
+    }, stepDuration);
+
+    return () => clearInterval(timer);
+  }, [count]);
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        {icon}
+        {/* Badge with animated number */}
+        <div className="absolute -top-2 -right-2 bg-[#ff4500] text-white rounded-full min-w-[32px] h-8 px-2 flex items-center justify-center text-sm font-bold shadow-lg">
+          {displayCount >= count ? "99+" : displayCount}
+        </div>
+      </div>
+    </div>
   );
 }
 
