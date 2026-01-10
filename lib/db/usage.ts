@@ -15,15 +15,14 @@ export interface UserUsage {
 }
 
 export const FREE_POST_LIMIT = 30;
-export const PREMIUM_POST_LIMIT = 600; // 600 per week for premium plan
-export const PRO_POST_LIMIT = 500; // 2,000 per month ≈ 500 per week
+export const BASIC_POST_LIMIT = 600; // 600 per week for basic plan
+export const PREMIUM_POST_LIMIT = 1200; // 1200 per week for premium plan
 
 const DEFAULT_MAX_POSTS_PER_WEEK = FREE_POST_LIMIT;
 
-export function getMaxPostsPerWeekForPlan(plan: "free" | "starter" | "premium" | "pro"): number {
-  if (plan === "pro") return PRO_POST_LIMIT;
+export function getMaxPostsPerWeekForPlan(plan: "free" | "basic" | "premium"): number {
   if (plan === "premium") return PREMIUM_POST_LIMIT;
-  if (plan === "starter") return PREMIUM_POST_LIMIT; // Starter gets same as premium
+  if (plan === "basic") return BASIC_POST_LIMIT; // Basic gets 600 credits
   return FREE_POST_LIMIT;
 }
 
@@ -270,10 +269,9 @@ export async function incrementCronUsage(userId: string, count: number = 1): Pro
   return updatedUsage as UserUsage;
 }
 
-export function getMaxSyncsPerDayForPlan(plan: "free" | "starter" | "premium" | "pro"): number {
-  if (plan === "pro") return 10;
+export function getMaxSyncsPerDayForPlan(plan: "free" | "basic" | "premium"): number {
   if (plan === "premium") return 5;
-  if (plan === "starter") return 5; // Starter gets same as premium for syncs
+  if (plan === "basic") return 2; // Basic gets 2 syncs per day
   return 1; // Free users can only sync once
 }
 

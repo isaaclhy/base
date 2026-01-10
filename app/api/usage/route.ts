@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       getUserByEmail(session.user.email),
     ]);
 
-    const plan = (dbUser?.plan ?? "free") as "free" | "starter" | "premium" | "pro";
+    const plan = (dbUser?.plan ?? "free") as "free" | "basic" | "premium";
     const maxCount = getMaxPostsPerWeekForPlan(plan);
     const maxSyncsPerDay = getMaxSyncsPerDayForPlan(plan);
 

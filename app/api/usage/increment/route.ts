@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     const count = body.count || 1;
 
     const dbUser = await getUserByEmail(session.user.email);
-    const plan = (dbUser?.plan ?? "free") as "free" | "starter" | "premium" | "pro";
+    const plan = (dbUser?.plan ?? "free") as "free" | "basic" | "premium";
     const maxPerWeek = getMaxPostsPerWeekForPlan(plan);
     const result = await incrementUsage(
       session.user.email,

@@ -41,7 +41,12 @@ export async function POST(request: NextRequest) {
         const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
         const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
         const priceId = session.metadata?.price_id;
-        const planType = (session.metadata?.plan_type as "starter" | "premium") || "premium"; // Default to premium for backward compatibility
+        // Migrate old plan names: "starter" -> "basic", "pro" -> "premium"
+        let planType = (session.metadata?.plan_type as string) || "premium"; // Default to premium for backward compatibility
+        if (planType === "starter") planType = "basic";
+        if (planType === "pro") planType = "premium";
+        
+        const finalPlanType = planType as "basic" | "premium";
 
         console.log("Checkout session completed - Webhook received:", {
           eventId: event.id,
@@ -50,7 +55,7 @@ export async function POST(request: NextRequest) {
           customerId,
           subscriptionId,
           priceId,
-          planType,
+          planType: finalPlanType,
           metadata: session.metadata,
           customer_details: session.customer_details,
           customer_email: session.customer_email,
@@ -62,7 +67,7 @@ export async function POST(request: NextRequest) {
         }
 
         try {
-          const result = await updateUserPlanByEmail(email, planType, {
+          const result = await updateUserPlanByEmail(email, finalPlanType, {
             stripeCustomerId: customerId ?? null,
             stripeSubscriptionId: subscriptionId ?? null,
             stripePriceId: priceId,
@@ -74,7 +79,7 @@ export async function POST(request: NextRequest) {
             // Try to find user by customer ID as fallback
             if (customerId) {
               console.log(`Attempting to update by customer ID: ${customerId}`);
-              await updateUserPlanByCustomerId(customerId, planType, {
+              await updateUserPlanByCustomerId(customerId, finalPlanType, {
                 stripeSubscriptionId: subscriptionId ?? null,
                 stripePriceId: priceId,
                 subscriptionStatus: "active",
@@ -82,7 +87,7 @@ export async function POST(request: NextRequest) {
               });
             }
           } else {
-            console.log(`Successfully updated user plan for ${email} to ${planType}`);
+            console.log(`Successfully updated user plan for ${email} to ${finalPlanType}`);
           }
         } catch (error) {
           console.error(`Error updating user plan for ${email}:`, error);
@@ -97,9 +102,8 @@ export async function POST(request: NextRequest) {
         const priceId = subscription.items?.data?.[0]?.price?.id;
         
         // Determine plan based on subscription status and price ID
-        // Check if it's starter or premium based on price ID, default to premium for backward compatibility
         const isActiveOrTrialing = status === "active" || status === "trialing";
-        let plan: "starter" | "premium" | "free" | "pro" = "free";
+        let plan: "basic" | "premium" | "free" = "free";
         
         if (isActiveOrTrialing) {
           // Determine plan based on price ID
@@ -107,7 +111,7 @@ export async function POST(request: NextRequest) {
           const premiumPriceId = process.env.PREMIUM_PRICE_ID || "price_1Smit4IkxwGMep15ryH0rrho";
           
           if (priceId === basicPriceId) {
-            plan = "starter";
+            plan = "basic";
           } else if (priceId === premiumPriceId) {
             plan = "premium";
           } else {

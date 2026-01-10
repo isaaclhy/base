@@ -15,38 +15,43 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const planType = body.plan as "starter" | "premium" | undefined;
+    const planType = body.plan as "basic" | "premium" | undefined;
 
-    if (!planType || (planType !== "starter" && planType !== "premium")) {
+    if (!planType || (planType !== "basic" && planType !== "premium")) {
       return NextResponse.json(
-        { error: "Invalid plan type. Must be 'starter' or 'premium'." },
+        { error: "Invalid plan type. Must be 'basic' or 'premium'." },
         { status: 400 }
       );
     }
 
     // Get price ID based on plan type
-    const priceId = planType === "starter" 
+    const priceId = planType === "basic" 
       ? (process.env.BASIC_PRICE_ID || "")
       : (process.env.PREMIUM_PRICE_ID || "price_1Smit4IkxwGMep15ryH0rrho");
 
     if (!priceId) {
       return NextResponse.json(
-        { error: `${planType === "starter" ? "Basic" : "Premium"} price ID is not configured.` },
+        { error: `${planType === "basic" ? "Basic" : "Premium"} price ID is not configured.` },
         { status: 500 }
       );
     }
 
     const dbUser = await getUserByEmail(session.user.email);
+    
+    // Normalize old plan names (migration)
+    let currentPlan = dbUser?.plan;
+    if (currentPlan === "starter") currentPlan = "basic";
+    if (currentPlan === "pro") currentPlan = "premium";
 
     // Check if user already has this plan or a higher plan
-    if (planType === "starter" && (dbUser?.plan === "starter" || dbUser?.plan === "premium" || dbUser?.plan === "pro")) {
+    if (planType === "basic" && (currentPlan === "basic" || currentPlan === "premium")) {
       return NextResponse.json(
-        { error: `You are already on the ${dbUser.plan} plan.` },
+        { error: `You are already on the ${currentPlan} plan.` },
         { status: 400 }
       );
     }
 
-    if (planType === "premium" && (dbUser?.plan === "premium" || dbUser?.plan === "pro")) {
+    if (planType === "premium" && currentPlan === "premium") {
       return NextResponse.json(
         { error: "You are already on the premium plan." },
         { status: 400 }

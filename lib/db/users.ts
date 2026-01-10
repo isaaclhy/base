@@ -1,7 +1,7 @@
 import { getDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 
-export type UserPlan = "free" | "starter" | "premium" | "pro";
+export type UserPlan = "free" | "basic" | "premium";
 
 export interface User {
   _id?: ObjectId;
@@ -145,6 +145,17 @@ export async function getUserByEmail(email: string): Promise<User | null> {
     return updatedUser as User;
   }
   
+  // Migrate old plan names: "starter" -> "basic", "pro" -> "premium"
+  if (user && (user.plan === "starter" || user.plan === "pro")) {
+    const migratedPlan = user.plan === "starter" ? "basic" : "premium";
+    const updatedUser = await usersCollection.findOneAndUpdate(
+      { email: normalizedEmail },
+      { $set: { plan: migratedPlan } },
+      { returnDocument: 'after' }
+    );
+    return updatedUser as User;
+  }
+  
   return user;
 }
 
@@ -255,7 +266,7 @@ export async function clearUserRedditTokens(email: string): Promise<void> {
 
 export async function updateUserPlanByEmail(
   email: string,
-  plan: UserPlan,
+  plan: UserPlan | "starter" | "pro", // Allow old plan names for backward compatibility
   options?: {
     stripeCustomerId?: string | null;
     stripeSubscriptionId?: string | null;
@@ -266,8 +277,13 @@ export async function updateUserPlanByEmail(
   const db = await getDatabase();
   const usersCollection = db.collection<User>('usersv2');
 
+  // Migrate old plan names
+  let finalPlan: UserPlan = plan as UserPlan;
+  if (plan === "starter") finalPlan = "basic";
+  if (plan === "pro") finalPlan = "premium";
+
   const update: Partial<User> = {
-    plan,
+    plan: finalPlan,
     updatedAt: new Date(),
   };
 
@@ -314,7 +330,7 @@ export async function updateUserPlanByEmail(
         },
         { returnDocument: "after" }
       );
-      console.log(`Found user with different case, normalized email to ${normalizedEmail} and updated plan to ${plan}`);
+      console.log(`Found user with different case, normalized email to ${normalizedEmail} and updated plan to ${finalPlan}`);
     }
   }
 
@@ -322,7 +338,7 @@ export async function updateUserPlanByEmail(
     console.error(`Failed to update user plan: User with email ${normalizedEmail} not found in database`);
     console.error(`Update data was:`, JSON.stringify(update, null, 2));
   } else {
-    console.log(`✓ Successfully updated user plan for ${normalizedEmail} to ${plan}`);
+    console.log(`✓ Successfully updated user plan for ${normalizedEmail} to ${finalPlan}`);
     console.log(`Updated user document:`, {
       email: result.email,
       plan: result.plan,
@@ -336,7 +352,7 @@ export async function updateUserPlanByEmail(
 
 export async function updateUserPlanByCustomerId(
   stripeCustomerId: string,
-  plan: UserPlan,
+  plan: UserPlan | "starter" | "pro", // Allow old plan names for backward compatibility
   options?: {
     stripeSubscriptionId?: string | null;
     stripePriceId?: string | null;
@@ -347,8 +363,13 @@ export async function updateUserPlanByCustomerId(
   const db = await getDatabase();
   const usersCollection = db.collection<User>('usersv2');
 
+  // Migrate old plan names
+  let finalPlan: UserPlan = plan as UserPlan;
+  if (plan === "starter") finalPlan = "basic";
+  if (plan === "pro") finalPlan = "premium";
+
   const update: Partial<User> = {
-    plan,
+    plan: finalPlan,
     updatedAt: new Date(),
     stripeCustomerId,
   };

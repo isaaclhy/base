@@ -7,16 +7,17 @@ import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 
 const features = {
-  free: [
+  basic: [
     "Unlimited reddit post search",
-    "30 Free Credits",
+    "600 generated comments",
     "2 lead syncs per day",
     "Usage analytics",
   ],
   premium: [
     "Unlimited reddit post search",
-    "600 generated comments",
+    "1,200 generated comments",
     "5 lead syncs per day",
+    "24/7 Auto-pilot function",
     "Usage analytics",
   ],
 };
@@ -27,13 +28,14 @@ export default function PricingPage() {
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
   const [isPortalLoading, setIsPortalLoading] = useState(false);
 
-  const plan = (session?.user?.plan ?? "free") as "free" | "starter" | "premium" | "pro";
-  const isStarter = plan === "starter";
-  const isPremium = plan === "premium";
-  const isPro = plan === "pro";
-  const [checkoutPlan, setCheckoutPlan] = useState<"starter" | "premium" | null>(null);
+  const plan = (session?.user?.plan ?? "free") as "free" | "basic" | "premium";
+  // Migrate old plan names
+  const normalizedPlan = plan === "starter" ? "basic" : plan === "pro" ? "premium" : plan;
+  const isBasic = normalizedPlan === "basic";
+  const isPremium = normalizedPlan === "premium";
+  const [checkoutPlan, setCheckoutPlan] = useState<"basic" | "premium" | null>(null);
 
-  const handleCheckout = async (planType: "starter" | "premium") => {
+  const handleCheckout = async (planType: "basic" | "premium") => {
     if (!session) {
       signIn(undefined, { callbackUrl: "/pricing" });
       return;
@@ -100,14 +102,14 @@ export default function PricingPage() {
           <div className="flex h-full flex-col gap-6 rounded-2xl border border-border bg-card p-8 text-left shadow-sm">
             <div>
               <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Starter
+                Basic
               </span>
               <h2 className="mt-4 text-3xl font-semibold text-foreground">$15.99</h2>
               <p className="text-muted-foreground">per month</p>
               <span className="inline-block rounded-full bg-[#ff4500] px-3 py-1 text-xs font-medium text-white mt-2">3-day free trial</span>
             </div>
             <ul className="space-y-3 text-sm text-muted-foreground">
-              {features.free.map((feature) => (
+              {features.basic.map((feature) => (
                 <li key={feature} className="flex items-start gap-2">
                   <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
                   <span>{feature}</span>
@@ -118,7 +120,7 @@ export default function PricingPage() {
               <Button disabled size="lg" className="mt-auto opacity-70">
                 Checking your plan...
               </Button>
-            ) : isStarter || isPremium || isPro ? (
+            ) : isBasic || isPremium ? (
               <Button
                 size="lg"
                 variant="default"
@@ -132,11 +134,11 @@ export default function PricingPage() {
               <div className="mt-auto space-y-2">
                 <Button
                   size="lg"
-                  onClick={() => handleCheckout("starter")}
-                  disabled={isCheckoutLoading && checkoutPlan === "starter"}
+                  onClick={() => handleCheckout("basic")}
+                  disabled={isCheckoutLoading && checkoutPlan === "basic"}
                   className="w-full"
                 >
-                  {isCheckoutLoading && checkoutPlan === "starter" ? "Redirecting..." : "Start 3-Day Free Trial"}
+                  {isCheckoutLoading && checkoutPlan === "basic" ? "Redirecting..." : "Start 3-Day Free Trial"}
                 </Button>
                 <p className="text-xs text-center text-muted-foreground">Cancel anytime</p>
               </div>
@@ -169,7 +171,7 @@ export default function PricingPage() {
               <Button disabled size="lg" className="mt-auto opacity-70">
                 Checking your plan...
               </Button>
-            ) : isPremium || isPro ? (
+            ) : isPremium ? (
               <Button
                 size="lg"
                 variant="default"

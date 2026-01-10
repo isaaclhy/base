@@ -11,7 +11,7 @@ interface UsageData {
   currentCount: number;
   maxCount: number;
   weekStartDate: string;
-  plan?: "free" | "premium";
+  plan?: "free" | "basic" | "premium";
   syncCounter?: number;
   maxSyncsPerDay?: number;
   nextSyncReset?: string;

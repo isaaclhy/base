@@ -377,7 +377,7 @@ function PlaygroundContent() {
   const [isGeneratingProductDescription, setIsGeneratingProductDescription] = useState(false);
   const [isGeneratingKeywords, setIsGeneratingKeywords] = useState(false);
   const [productDetailsFromDb, setProductDetailsFromDb] = useState<{ link?: string; productName?: string; productDescription?: string; keywords?: string } | null>(null);
-  const [userPlan, setUserPlan] = useState<"free" | "starter" | "premium" | "pro" | null>(null);
+  const [userPlan, setUserPlan] = useState<"free" | "basic" | "premium" | null>(null);
   const [leadsLinks, setLeadsLinks] = useState<Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>>>({});
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
   const [lastLeadsSyncTime, setLastLeadsSyncTime] = useState<Date | null>(null);
@@ -537,7 +537,6 @@ function PlaygroundContent() {
           if (response.ok) {
             const data = await response.json();
             setIsRedditConnected(data.connected);
-            console.log("🔗 Reddit connection status refreshed after OAuth:", data.connected);
           } else {
             setIsRedditConnected(false);
           }
@@ -697,10 +696,10 @@ function PlaygroundContent() {
           if (response.ok) {
             const data = await response.json();
             const plan = data.plan || session?.user?.plan || "free";
-            setUserPlan(plan as "free" | "starter" | "premium" | "pro");
+            setUserPlan(plan as "free" | "basic" | "premium");
           } else {
             // Fallback to session plan
-            setUserPlan((session?.user?.plan as "free" | "starter" | "premium" | "pro") || "free");
+            setUserPlan((session?.user?.plan as "free" | "basic" | "premium") || "free");
           }
         } catch (error) {
           console.error("Error loading user plan:", error);
@@ -1650,11 +1649,9 @@ function PlaygroundContent() {
     });
 
     if (allPostsNeedingFetch.length === 0) {
-      console.log('[Batch Fetch] All posts already have minimal stats and selftext cached - skipping fetch');
       return;
     }
 
-    console.log(`[Batch Fetch] Fetching post data (including selftext) for ${allPostsNeedingFetch.length} posts`);
 
     // Create a map from postFullname to post info for quick lookup
     const postMap = new Map<string, { url: string; keyword: string; linkIndex: number }>();
@@ -1757,7 +1754,6 @@ function PlaygroundContent() {
             })
           );
 
-    console.log(`[Batch Fetch] Completed fetching ${postDataUpdates.size} posts`);
 
     // Update state once with all accumulated results (only after all batches complete)
     if (postDataUpdates.size > 0) {
@@ -1832,7 +1828,6 @@ function PlaygroundContent() {
 
         const data = await response.json();
         if (data.results && Array.isArray(data.results)) {
-            console.log(`[Subreddit Fetch] Keyword: "${keyword}" | Subreddit: r/${subreddit} | Posts retrieved: ${data.results.length}`);
 
           // Create a unique key for subreddit-based leads: "keyword:subreddit"
           const keywordSubredditKey = `${keyword}:${subreddit}`;
@@ -1941,7 +1936,7 @@ function PlaygroundContent() {
         if (syncCounter >= maxSyncsPerDay) {
           if (plan === "free") {
             showToast(
-              "You've used your one free sync. Upgrade to Starter or Premium to sync more leads.",
+              "You've used your one free sync. Upgrade to Basic or Premium to sync more leads.",
               { variant: "error" }
             );
           } else {
@@ -1957,7 +1952,6 @@ function PlaygroundContent() {
       console.error("Error checking sync limit:", error);
     }
 
-    console.log("[Sync Leads] Starting sync leads process...");
     setIsLoadingLeads(true);
     setLeadsPage(1);
 
@@ -2010,7 +2004,6 @@ function PlaygroundContent() {
       );
 
       const expandedKeywords = Array.from(allKeywordsSet);
-      console.log(`[Sync Leads] Using ${expandedKeywords.length} keywords`);
 
       /**
        * STEP 2 — Google Custom Search
@@ -2096,12 +2089,6 @@ function PlaygroundContent() {
           const redditTitleFromPostData = link.postData?.title || null;
           const titleToUse = redditTitleFromCache || redditTitleFromState || redditTitleFromPostData || link.title;
           
-          // Debug: Log what title source we're using
-          if (!redditTitleFromCache && !redditTitleFromState && !redditTitleFromPostData) {
-            console.log(`[Sync Leads] No Reddit title found for ${postId}, using snippet:`, link.title?.substring(0, 50));
-            console.log(`[Sync Leads] Cache check:`, { hasCache: !!cached, hasPostData: !!cached?.postData, hasTitle: !!cached?.postData?.title });
-            console.log(`[Sync Leads] Link state:`, { title: link.title?.substring(0, 50), hasPostData: !!link.postData, postDataTitle: link.postData?.title?.substring(0, 50) });
-          }
           
           postsToFilter.push({
             postId,
@@ -2115,19 +2102,9 @@ function PlaygroundContent() {
       });
 
       if (postsToFilter.length === 0) {
-        console.log("[Sync Leads] No posts to filter");
         setIsLoadingLeads(false);
         return;
       }
-
-      console.log(`[Sync Leads] Posts to filter: ${postsToFilter.length}`);
-
-      // Console.log all posts that would be sent to filter API
-      console.log(`[Sync Leads] Posts that would be sent to filter API:`, postsToFilter.map(p => ({
-        id: p.postId,
-        title: p.title,
-        url: p.url
-      })));
 
       /**
        * STEP 5 — CALL FILTER API WITH BATCHING (using post IDs)
@@ -2140,15 +2117,12 @@ function PlaygroundContent() {
         batches.push(postsToFilter.slice(i, i + BATCH_SIZE));
       }
 
-      console.log(`[Sync Leads] Processing ${postsToFilter.length} posts in ${batches.length} batches of ${BATCH_SIZE}`);
-
       // Create a map to store postId -> verdict
       const verdictMap = new Map<string, string>();
 
       // Process all batches concurrently
       const batchPromises = batches.map(async (batch, batchIndex) => {
         try {
-          console.log(`[Sync Leads] Starting batch ${batchIndex + 1}/${batches.length} (${batch.length} posts)`);
 
           const filterResponse = await fetch("/api/openai/filter-titles", {
             method: "POST",
@@ -2188,7 +2162,6 @@ function PlaygroundContent() {
             }
           });
 
-          console.log(`[Sync Leads] Batch ${batchIndex + 1} completed: ${batchResults.length} results`);
 
     } catch (error) {
           console.error(`[Sync Leads] Batch ${batchIndex + 1} exception:`, error);
@@ -2199,8 +2172,6 @@ function PlaygroundContent() {
       // Wait for all batches to complete
       await Promise.all(batchPromises);
 
-      console.log(`[Sync Leads] Total verdicts collected: ${verdictMap.size}/${postsToFilter.length}`);
-
       /**
  * STEP 6 — Apply filtering using postId-based verdictMap
  */
@@ -2208,10 +2179,6 @@ function PlaygroundContent() {
         const verdict = verdictMap.get(post.postId);
         return verdict === "YES" || verdict === "MAYBE";
       });
-
-      console.log(
-        `[Sync Leads] Filtered ${postsToFilter.length} → ${filteredPosts.length}`
-      );
 
       /**
        * STEP 6.5 — Update leadsFilterSignals for badge display
@@ -2235,13 +2202,6 @@ function PlaygroundContent() {
       } catch (e) {
         console.error("Error saving leadsFilterSignals to localStorage:", e);
       }
-
-      console.log(`[Sync Leads] Filter signals populated:`, {
-        total: Object.keys(newFilterSignals).length,
-        YES: Object.values(newFilterSignals).filter(v => v === 'YES').length,
-        MAYBE: Object.values(newFilterSignals).filter(v => v === 'MAYBE').length,
-        NO: Object.values(newFilterSignals).filter(v => v === 'NO').length
-      });
 
       /**
        * STEP 7 — Update leadsLinks state (REMOVE rejected posts)
@@ -2331,9 +2291,6 @@ function PlaygroundContent() {
         }
       });
 
-      console.log(`[Sync Leads] Final leads count: ${Object.values(updatedLeadsLinks).flat().length}`);
-      console.log(`[Sync Leads] New posts added: ${newPostsCount}`);
-
       // Console.log array of leads with title and id
       const leadsArray = Object.values(updatedLeadsLinks).flat().map((link: any) => {
         // Extract Reddit post ID from URL (format: https://reddit.com/r/.../comments/{postId}/...)
@@ -2353,8 +2310,6 @@ function PlaygroundContent() {
         };
       });
       
-      console.log(`[Sync Leads] Leads array:`, leadsArray);
-
       // Show toast with new posts count
       if (newPostsCount > 0) {
         showToast(`${newPostsCount} new post${newPostsCount === 1 ? '' : 's'} added`, { variant: "success" });
@@ -2382,7 +2337,6 @@ function PlaygroundContent() {
 
       // Debug: Check if postData is populated
       const sampleLink = Object.values(updatedLeadsLinks)[0]?.[0];
-      console.log(`[Sync Leads] Sample link with postData:`, {
         hasPostData: !!sampleLink?.postData,
         ups: sampleLink?.postData?.ups,
         created_utc: sampleLink?.postData?.created_utc,
@@ -2746,7 +2700,6 @@ function PlaygroundContent() {
       });
 
       const pageData = await Promise.all(pageDataPromises);
-      console.log(`[Page ${leadsPage}] Page row data:`, pageData);
     };
 
     fetchAndLogPageData();
@@ -2852,9 +2805,7 @@ function PlaygroundContent() {
   useEffect(() => {
     if (distinctLeadsLinks.length > 0) {
       const first100Leads = distinctLeadsLinks.slice(0, 100);
-      console.log("[Leads Table] First 100 posts:", first100Leads);
       const titles = first100Leads.map(post => post.title || 'No title');
-      console.log("[Leads Table] First 100 post titles:", titles);
     }
   }, [distinctLeadsLinks]);
 
@@ -3056,7 +3007,6 @@ function PlaygroundContent() {
           if (response.ok) {
             const data = await response.json();
             if (data.success) {
-              console.log("Checkout verified and plan updated");
               // Refresh usage to get updated plan
       refreshUsage();
               // Reload page to refresh session with updated plan
@@ -3065,7 +3015,6 @@ function PlaygroundContent() {
               }, 500);
             } else {
               // If verification failed, still reload after delay in case webhook processes
-              console.log("Checkout verification pending, will reload");
               setTimeout(() => {
                 window.location.reload();
               }, 2000);
@@ -3659,13 +3608,6 @@ function PlaygroundContent() {
           }),
         });
 
-        if (!dbResponse.ok) {
-          const dbError = await dbResponse.json();
-          console.error("Error saving post to MongoDB:", dbError);
-          // Log error but don't fail the operation
-        } else {
-          console.log("Post saved to MongoDB successfully");
-        }
       } catch (dbError) {
         console.error("Error saving post to database:", dbError);
         // Don't fail the whole operation if DB save fails
@@ -3886,7 +3828,6 @@ function PlaygroundContent() {
       
       if (!rulesText || rulesText.trim().length === 0) {
         // No rules found - default to allowing promotion
-        console.log("No rules found for subreddit, defaulting to allow promotion");
         setSubredditPromotionStatus({ allowsPromotion: true, isLoading: false });
         
         // Save the default result to the database
@@ -4872,8 +4813,8 @@ function PlaygroundContent() {
                           type="checkbox"
                           checked={isAutoPilotEnabled}
                           onChange={async (e) => {
-                            // Check if user is premium or pro - if not, show modal
-                            if (userPlan !== "premium" && userPlan !== "pro") {
+                            // Check if user is premium - if not, show modal
+                            if (userPlan !== "premium") {
                               setShowAutoPilotModal(true);
                               return;
                             }
@@ -5159,7 +5100,7 @@ function PlaygroundContent() {
                                 {recommendedKeywordsModal.map((keyword) => {
                                   const normalizedRecommended = keyword.toLowerCase().trim();
                                   const isAdded = keywords.some(k => k.toLowerCase().trim() === normalizedRecommended);
-                                  const maxKeywords = userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5;
+                                  const maxKeywords = userPlan === "premium" ? 10 : 5;
                                   const isDisabled = isAdded || keywords.length >= maxKeywords;
                                   return (
                                     <div
@@ -5241,7 +5182,7 @@ function PlaygroundContent() {
                       )}
                       
                       <p className="text-xs text-muted-foreground">
-                        Add keywords ({keywords.length}/{userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5})
+                        Add keywords ({keywords.length}/{userPlan === "premium" ? 10 : 5})
                       </p>
                       <div className="min-h-[100px] max-h-[300px] overflow-y-auto flex flex-wrap gap-2 p-3 border border-input rounded-md">
                             {keywords.length === 0 ? (
@@ -5274,7 +5215,7 @@ function PlaygroundContent() {
                                 e.preventDefault();
                                 const trimmed = keywordInput.trim();
                                 if (trimmed && !keywords.includes(trimmed)) {
-                                const maxKeywords = userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5;
+                                const maxKeywords = userPlan === "premium" ? 10 : 5;
                                 if (keywords.length >= maxKeywords) {
                                   showToast(`Maximum of ${maxKeywords} keywords allowed`, { variant: "error" });
                                     return;
@@ -5293,7 +5234,7 @@ function PlaygroundContent() {
                             onClick={() => {
                               const trimmed = keywordInput.trim();
                               if (trimmed && !keywords.includes(trimmed)) {
-                                const maxKeywords = userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5;
+                                const maxKeywords = userPlan === "premium" ? 10 : 5;
                                 if (keywords.length >= maxKeywords) {
                                   showToast(`Maximum of ${maxKeywords} keywords allowed`, { variant: "error" });
                                   return;
@@ -5304,11 +5245,11 @@ function PlaygroundContent() {
                                 saveKeywords(newKeywords);
                               }
                             }}
-                            disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= (userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5)}
+                            disabled={!keywordInput.trim() || keywords.includes(keywordInput.trim()) || keywords.length >= (userPlan === "premium" ? 10 : 5)}
                           >
                             <Plus className="h-4 w-4" />
                     </Button>
-                            {keywords.length >= (userPlan === "pro" ? 15 : userPlan === "premium" ? 10 : 5) && keywordInput.trim() && !keywords.includes(keywordInput.trim()) && (
+                            {keywords.length >= (userPlan === "premium" ? 10 : 5) && keywordInput.trim() && !keywords.includes(keywordInput.trim()) && (
                               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-popover border border-border rounded-md shadow-lg text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
                                 Max keywords reached
                   </div>
@@ -5912,13 +5853,6 @@ function PlaygroundContent() {
                                         }),
                                       });
 
-                                      if (!dbResponse.ok) {
-                                        const dbError = await dbResponse.json();
-                                        console.error("Error saving post to MongoDB:", dbError);
-                                        // Log error but don't fail the operation
-                                      } else {
-                                        console.log("Post saved to MongoDB successfully");
-                                      }
                                     } catch (dbError) {
                                       console.error("Error saving post to database:", dbError);
                                       // Don't fail the whole operation if DB save fails
@@ -6391,8 +6325,8 @@ function PlaygroundContent() {
                           className="text-sm px-2 py-1"
                           disabled={isLoadingLeads || isLoadingAutoPilot}
                           onClick={async () => {
-                            // Check if user is free or starter - show modal
-                            if (userPlan !== "premium" && userPlan !== "pro") {
+                            // Check if user is premium - if not (free or basic), show modal
+                            if (userPlan !== "premium") {
                               setShowAutoPilotModal(true);
                               return;
                             }
@@ -6861,10 +6795,6 @@ function PlaygroundContent() {
                                         const normalizedUrl = normalizeUrl(linkItem.link!);
                                         const signal = leadsFilterSignals[normalizedUrl];
                                         // Debug log to check signal lookup
-                                        if (process.env.NODE_ENV === 'development' && !signal && Object.keys(leadsFilterSignals).length > 0) {
-                                          console.log(`[Signal Badge] No signal found for URL: ${linkItem.link}, normalized: ${normalizedUrl}`);
-                                          console.log(`[Signal Badge] Available signals:`, Object.keys(leadsFilterSignals).slice(0, 5));
-                                        }
                                         if (signal === "YES") {
                                           return (
                                             <span className="inline-flex items-center rounded-full bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
@@ -7992,11 +7922,11 @@ function PlaygroundContent() {
                 <div className="space-y-4 mb-6">
                   {upgradeModalContext.limitReached ? (
                     <p className="text-sm text-muted-foreground">
-                      You've reached your weekly limit of {upgradeModalContext.maxCount || 30} Free Credits. {upgradeModalContext.selectedCount ? `You selected ${upgradeModalContext.selectedCount} leads, but need more credits. ` : ''}Upgrade to Premium to get 600 generated comments per week and never worry about limits again.
+                      You've reached your weekly limit of {upgradeModalContext.maxCount || 30} Free Credits. {upgradeModalContext.selectedCount ? `You selected ${upgradeModalContext.selectedCount} leads, but need more credits. ` : ''}Upgrade to Premium to get 1200 generated comments per week and never worry about limits again.
                     </p>
                   ) : (
                     <p className="text-sm text-muted-foreground">
-                      You have {upgradeModalContext.remaining} Free Credits remaining this week, but you selected {upgradeModalContext.selectedCount || 0} leads. Upgrade to Premium for 600 generated comments per week and unlock more features.
+                      You have {upgradeModalContext.remaining} Free Credits remaining this week, but you selected {upgradeModalContext.selectedCount || 0} leads. Upgrade to Premium for 1200 generated comments per week and unlock more features.
                     </p>
                   )}
                 </div>
@@ -8049,7 +7979,7 @@ function PlaygroundContent() {
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                        <span>600 generated comments</span>
+                        <span>1200 generated comments</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />

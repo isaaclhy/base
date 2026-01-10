@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { Check, Info, X, MessageSquare, Bell, CheckCircle2 } from "lucide-react";
 
 const features = {
-  free: [
+  basic: [
     "5 keywords",
     "600 generated comments",
     "2 lead syncs per day",
@@ -17,15 +17,6 @@ const features = {
     "10 keywords",
     "1,200 generated comments",
     "5 lead syncs per day",
-  ],
-  pro: [
-    "1 to 1 onboarding call",
-    "24/7 Automated Reddit Post search",
-    "15 keywords",
-    "1,500 generated comments",
-    "10 lead syncs per day",
-    "Engagement tracker",
-    "Email notification on high potential posts",
   ],
 };
 
@@ -77,13 +68,14 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
   const [isPortalLoading, setIsPortalLoading] = useState(false);
   const [showAutoPilotModal, setShowAutoPilotModal] = useState(false);
 
-  const plan = (session?.user?.plan ?? "free") as "free" | "starter" | "premium" | "pro";
-  const isStarter = plan === "starter";
-  const isPremium = plan === "premium";
-  const isPro = plan === "pro";
-  const [checkoutPlan, setCheckoutPlan] = useState<"starter" | "premium" | null>(null);
+  const plan = (session?.user?.plan ?? "free") as "free" | "basic" | "premium";
+  // Migrate old plan names
+  const normalizedPlan = plan === "starter" ? "basic" : plan === "pro" ? "premium" : plan;
+  const isBasic = normalizedPlan === "basic";
+  const isPremium = normalizedPlan === "premium";
+  const [checkoutPlan, setCheckoutPlan] = useState<"basic" | "premium" | null>(null);
 
-  const handleCheckout = async (planType: "starter" | "premium") => {
+  const handleCheckout = async (planType: "basic" | "premium") => {
     if (!session) {
       signIn(undefined, { callbackUrl: "/pricing" });
       return;
@@ -167,7 +159,7 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
           )}>
             <div className="space-y-4">
               <div>
-                <h3 className={cn("font-extrabold text-foreground", showCTAButtons ? "text-2xl" : "text-2xl")}>Starter</h3>
+                <h3 className={cn("font-extrabold text-foreground", showCTAButtons ? "text-2xl" : "text-2xl")}>Basic</h3>
                 <div className="mt-2">
                   <span className="text-3xl font-extrabold text-foreground">$15.99</span>
                   <span className="text-muted-foreground ml-1">/month</span>
@@ -177,7 +169,7 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
               </div>
               
               <ul className={cn("space-y-3", showCTAButtons ? "text-sm" : "text-sm")}>
-                {features.free.map((feature) => (
+                {features.basic.map((feature) => (
                   <li key={feature} className="flex items-start gap-3">
                     <Check className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
                     <span className="text-foreground">{feature}</span>
@@ -191,7 +183,7 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
                 <Button disabled size="lg" className="mt-auto w-full opacity-70">
                   Checking your plan...
                 </Button>
-              ) : isStarter || isPremium || isPro ? (
+              ) : isBasic || isPremium ? (
                 <Button
                   size="lg"
                   variant="default"
@@ -205,11 +197,11 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
                 <div className="mt-auto space-y-2">
                   <Button
                     size="lg"
-                    onClick={() => handleCheckout("starter")}
-                    disabled={isCheckoutLoading && checkoutPlan === "starter"}
+                    onClick={() => handleCheckout("basic")}
+                    disabled={isCheckoutLoading && checkoutPlan === "basic"}
                     className="w-full bg-[#ff4500] hover:bg-[#ff4500]/90 text-white"
                   >
-                    {isCheckoutLoading && checkoutPlan === "starter" ? "Redirecting..." : "Start 3-Day Free Trial"}
+                    {isCheckoutLoading && checkoutPlan === "basic" ? "Redirecting..." : "Start 3-Day Free Trial"}
                   </Button>
                   <p className="text-xs text-center text-muted-foreground">Cancel anytime</p>
                 </div>
@@ -269,7 +261,7 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
                 <Button disabled size="lg" className="mt-auto w-full opacity-70">
                   Checking your plan...
                 </Button>
-              ) : isPremium || isPro ? (
+              ) : isPremium ? (
                 <Button
                   size="lg"
                   variant="default"
