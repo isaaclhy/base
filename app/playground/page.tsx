@@ -695,16 +695,43 @@ function PlaygroundContent() {
           const response = await fetch("/api/usage");
           if (response.ok) {
             const data = await response.json();
-            const plan = data.plan || session?.user?.plan || "free";
-            setUserPlan(plan as "free" | "basic" | "premium");
+            // Normalize plan value (handle migration from old plan names)
+            const rawPlan = (data.plan || session?.user?.plan || "free") as "free" | "basic" | "premium" | "starter" | "pro";
+            let normalizedPlan: "free" | "basic" | "premium" = "free";
+            if (rawPlan === "starter") {
+              normalizedPlan = "basic";
+            } else if (rawPlan === "pro") {
+              normalizedPlan = "premium";
+            } else if (rawPlan === "basic" || rawPlan === "premium" || rawPlan === "free") {
+              normalizedPlan = rawPlan;
+            }
+            setUserPlan(normalizedPlan);
           } else {
-            // Fallback to session plan
-            setUserPlan((session?.user?.plan as "free" | "basic" | "premium") || "free");
+            // Fallback to session plan with migration
+            const fallbackPlan = session?.user?.plan as "free" | "basic" | "premium" | "starter" | "pro" | undefined;
+            let normalizedPlan: "free" | "basic" | "premium" = "free";
+            if (fallbackPlan === "starter") {
+              normalizedPlan = "basic";
+            } else if (fallbackPlan === "pro") {
+              normalizedPlan = "premium";
+            } else if (fallbackPlan === "basic" || fallbackPlan === "premium" || fallbackPlan === "free") {
+              normalizedPlan = fallbackPlan;
+            }
+            setUserPlan(normalizedPlan);
           }
         } catch (error) {
           console.error("Error loading user plan:", error);
-          // Fallback to session plan
-          setUserPlan((session?.user?.plan as "free" | "starter" | "premium" | "pro") || "free");
+          // Fallback to session plan with migration
+          const fallbackPlan = session?.user?.plan as "free" | "basic" | "premium" | "starter" | "pro" | undefined;
+          let normalizedPlan: "free" | "basic" | "premium" = "free";
+          if (fallbackPlan === "starter") {
+            normalizedPlan = "basic";
+          } else if (fallbackPlan === "pro") {
+            normalizedPlan = "premium";
+          } else if (fallbackPlan === "basic" || fallbackPlan === "premium" || fallbackPlan === "free") {
+            normalizedPlan = fallbackPlan;
+          }
+          setUserPlan(normalizedPlan);
         }
       };
 

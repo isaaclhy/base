@@ -41,9 +41,14 @@ export async function POST(request: NextRequest) {
     // Normalize old plan names (migration)
     // Cast to include old plan types for migration check
     const rawPlan = dbUser?.plan as "free" | "basic" | "premium" | "starter" | "pro" | undefined;
-    let currentPlan: "free" | "basic" | "premium" = rawPlan || "free";
-    if (rawPlan === "starter") currentPlan = "basic";
-    if (rawPlan === "pro") currentPlan = "premium";
+    let currentPlan: "free" | "basic" | "premium";
+    if (rawPlan === "starter") {
+      currentPlan = "basic";
+    } else if (rawPlan === "pro") {
+      currentPlan = "premium";
+    } else {
+      currentPlan = (rawPlan || "free") as "free" | "basic" | "premium";
+    }
 
     // Check if user already has this plan or a higher plan
     if (planType === "basic" && (currentPlan === "basic" || currentPlan === "premium")) {
