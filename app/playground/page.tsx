@@ -6802,22 +6802,24 @@ function PlaygroundContent() {
                                   }}
                                 >
                                     {/* Checkbox column */}
-                                    <td className="py-3 px-2 align-middle w-[40px]" onClick={(e) => e.stopPropagation()}>
+                                    <td 
+                                      className="py-3 px-2 align-middle w-[40px] cursor-pointer" 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedLeads(prev => {
+                                          const newSet = new Set(prev);
+                                          if (selectedLeads.has(linkKey)) {
+                                            newSet.delete(linkKey);
+                                          } else {
+                                            newSet.add(linkKey);
+                                          }
+                                          return newSet;
+                                        });
+                                      }}
+                                    >
                                       <div
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setSelectedLeads(prev => {
-                                            const newSet = new Set(prev);
-                                            if (selectedLeads.has(linkKey)) {
-                                              newSet.delete(linkKey);
-                                            } else {
-                                              newSet.add(linkKey);
-                                            }
-                                            return newSet;
-                                          });
-                                        }}
                                         className={cn(
-                                          "cursor-pointer h-4 w-4 rounded border border-gray-400 dark:border-gray-500 bg-white flex items-center justify-center transition-colors",
+                                          "h-4 w-4 rounded border border-gray-400 dark:border-gray-500 bg-white flex items-center justify-center transition-colors",
                                           "focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-0",
                                           selectedLeads.has(linkKey) && "bg-white border-primary"
                                         )}
@@ -6825,8 +6827,8 @@ function PlaygroundContent() {
                                         {selectedLeads.has(linkKey) && (
                                           <Check className="h-3 w-3 text-primary" />
                                         )}
-                                  </div>
-                                  </td>
+                                      </div>
+                                    </td>
                                     {/* Stats column */}
                                     <td className="py-3 px-2 align-middle w-[70px]">
                                       {link.postData ? (

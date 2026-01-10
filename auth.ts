@@ -21,13 +21,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async signIn({ user, account }) {
       if (user.email && account) {
         try {
-          await createOrUpdateUser({
+          const result = await createOrUpdateUser({
             email: user.email,
             name: user.name || null,
             image: user.image || null,
             provider: account.provider,
             providerId: account.providerAccountId,
           });
+
+          // Send welcome email for new users
+          if (result.isNew) {
+            try {
+              const { sendWelcomeEmail } = await import("@/lib/brevo/email");
+              // Send welcome email asynchronously (don't block signup if it fails)
+              sendWelcomeEmail(user.email, user.name).catch((error) => {
+                console.error("Failed to send welcome email:", error);
+              });
+            } catch (error) {
+              console.error("Error importing/executing welcome email function:", error);
+              // Don't block signup if email fails
+            }
+          }
         } catch (error) {
           console.error("Error creating/updating user:", error);
         }

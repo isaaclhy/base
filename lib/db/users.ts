@@ -40,13 +40,18 @@ export interface User {
   autoPilotEnabled?: boolean;
 }
 
+export interface CreateOrUpdateUserResult {
+  user: User;
+  isNew: boolean;
+}
+
 export async function createOrUpdateUser(userData: {
   email: string;
   name?: string | null;
   image?: string | null;
   provider?: string;
   providerId?: string;
-}): Promise<User> {
+}): Promise<CreateOrUpdateUserResult> {
   const db = await getDatabase();
   const usersCollection = db.collection<User>('usersv2');
 
@@ -90,7 +95,7 @@ export async function createOrUpdateUser(userData: {
       result.plan = "free";
     }
 
-    return result;
+    return { user: result, isNew: false };
   } else {
     // Create new user with free plan by default and onboarding not completed
     const newUser: User = {
@@ -112,8 +117,11 @@ export async function createOrUpdateUser(userData: {
     }
 
     return {
-      ...newUser,
-      _id: result.insertedId,
+      user: {
+        ...newUser,
+        _id: result.insertedId,
+      },
+      isNew: true,
     };
   }
 }
