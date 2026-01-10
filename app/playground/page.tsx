@@ -332,9 +332,14 @@ function PlaygroundContent() {
     postedAt: number; // timestamp (will be converted from createdAt)
     notes?: string; // from textarea/comment
     comment?: string | null;
+    autoPilot?: boolean; // Whether this post was created by auto-pilot
   }
   const [analyticsPosts, setAnalyticsPosts] = useState<AnalyticsPost[]>([]);
+  const [autoPilotPosts, setAutoPilotPosts] = useState<AnalyticsPost[]>([]);
   const [analyticsFilter, setAnalyticsFilter] = useState<"posted" | "skipped" | "failed">("posted");
+  const [autoPilotFilter, setAutoPilotFilter] = useState<"all" | "auto-pilot" | "manual">("all");
+  const [isAutoPilotFilterDropdownOpen, setIsAutoPilotFilterDropdownOpen] = useState(false);
+  const autoPilotFilterDropdownRef = useRef<HTMLDivElement>(null);
   const [createFilter, setCreateFilter] = useState<"comment" | "post">("comment");
   const [createRedditLink, setCreateRedditLink] = useState("");
   const [createPersona, setCreatePersona] = useState("");
@@ -385,6 +390,8 @@ function PlaygroundContent() {
   const sortDropdownRef = useRef<HTMLDivElement>(null);
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const filterDropdownRef = useRef<HTMLDivElement>(null);
+  const [isAnalyticsFilterDropdownOpen, setIsAnalyticsFilterDropdownOpen] = useState(false);
+  const analyticsFilterDropdownRef = useRef<HTMLDivElement>(null);
   const leadsTableScrollRef = useRef<HTMLDivElement>(null);
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [leadsFilterSignals, setLeadsFilterSignals] = useState<Record<string, "YES" | "MAYBE" | "NO">>({});
@@ -428,7 +435,32 @@ function PlaygroundContent() {
   }, [analyticsPosts]);
 
   const filteredAnalyticsPosts = useMemo(() => {
-    return analyticsPosts.filter((post) => post.status === analyticsFilter);
+    return analyticsPosts.filter((post) => {
+      // Filter by status
+      if (post.status !== analyticsFilter) return false;
+      
+      // Filter by auto-pilot
+      if (autoPilotFilter === "auto-pilot") {
+        return post.autoPilot === true;
+      } else if (autoPilotFilter === "manual") {
+        return post.autoPilot === false || !post.autoPilot;
+      }
+      
+      // "all" - no additional filtering
+      return true;
+    });
+  }, [analyticsPosts, analyticsFilter, autoPilotFilter]);
+
+  // Calculate counts for analytics filter
+  const analyticsFilterCounts = useMemo(() => {
+    const filteredByStatus = analyticsPosts.filter(post => post.status === analyticsFilter);
+    return {
+      posted: analyticsPosts.filter(post => post.status === "posted").length,
+      skipped: analyticsPosts.filter(post => post.status === "skipped").length,
+      failed: analyticsPosts.filter(post => post.status === "failed").length,
+      autoPilot: filteredByStatus.filter(post => post.autoPilot === true).length,
+      manual: filteredByStatus.filter(post => post.autoPilot === false || !post.autoPilot).length,
+    };
   }, [analyticsPosts, analyticsFilter]);
 
   const getCachedPost = (url: string): { selftext?: string | null; postData?: RedditPost | null } | null => {
@@ -894,9 +926,15 @@ function PlaygroundContent() {
       if (filterDropdownRef.current && !filterDropdownRef.current.contains(event.target as Node)) {
         setIsFilterDropdownOpen(false);
       }
+      if (analyticsFilterDropdownRef.current && !analyticsFilterDropdownRef.current.contains(event.target as Node)) {
+        setIsAnalyticsFilterDropdownOpen(false);
+      }
+      if (autoPilotFilterDropdownRef.current && !autoPilotFilterDropdownRef.current.contains(event.target as Node)) {
+        setIsAutoPilotFilterDropdownOpen(false);
+      }
     };
 
-    if (isSortDropdownOpen || isFilterDropdownOpen) {
+    if (isSortDropdownOpen || isFilterDropdownOpen || isAnalyticsFilterDropdownOpen || isAutoPilotFilterDropdownOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     }
 
@@ -1159,16 +1197,23 @@ function PlaygroundContent() {
                 link: post.link,
                 snippet: post.snippet,
                 selftext: post.selftext,
-                postData: post.postData,
+                postData: post.postData ? { ...post.postData, autoPilot: post.autoPilot || false } : null,
                 status: normalizedStatus,
                 postedAt: new Date(post.createdAt).getTime(),
                 notes: notesValue,
                 comment: commentValue,
+                autoPilot: post.autoPilot || false,
               };
             });
             setAnalyticsPosts(convertedPosts);
+            // Filter auto-pilot posts
+            const autoPilotOnly = convertedPosts.filter((post: AnalyticsPost) => {
+              return post.postData && (post.postData as any).autoPilot === true;
+            });
+            setAutoPilotPosts(autoPilotOnly);
           } else {
             setAnalyticsPosts([]);
+            setAutoPilotPosts([]);
           }
         } else {
           console.error("Failed to fetch analytics posts from database");
@@ -4859,46 +4904,44 @@ function PlaygroundContent() {
                         <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
                       </label>
                 </div>
-                    <p className="text-sm text-muted-foreground">
-                      {isAutoPilotEnabled ? "Auto-pilot is enabled" : "Auto-pilot is disabled"}
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Please go to history tab to see auto commented posts.
                     </p>
                     {session?.user?.email?.toLowerCase() !== "isarcorps@gmail.com" && (
-                      <p className="text-xs text-muted-foreground mt-2 italic">
+                      <p className="text-xs text-muted-foreground mt-2 italic mb-4">
                         This feature is currently restricted
                       </p>
                     )}
-                  </div>
-                  <div className="hidden md:block"></div>
-                  <div className="hidden md:block"></div>
-              </div>
-              
-                {/* Auto-pilot Table */}
-                <div className="mt-4 w-full">
-                  <div className="rounded-lg border border-border bg-card overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead className="bg-muted/50 sticky top-0">
-                          <tr>
-                            <th className="text-left p-4 text-sm font-semibold">Title</th>
-                            <th className="text-left p-4 text-sm font-semibold">Subreddit</th>
-                            <th className="text-left p-4 text-sm font-semibold">Status</th>
-                            <th className="text-left p-4 text-sm font-semibold">Date</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td colSpan={4} className="p-8 text-center text-sm text-muted-foreground">
-                              No auto-pilot activity yet
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
+                    
+                    {/* Auto-pilot Stats */}
+                    <div className="mt-4">
+                      {isLoadingAnalytics ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : (
+                        <>
+                          <div className="text-3xl font-bold text-foreground">
+                            {autoPilotPosts.length}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {(() => {
+                              const now = Date.now();
+                              const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
+                              const postsLast24Hours = autoPilotPosts.filter(post => post.postedAt >= twentyFourHoursAgo).length;
+                              return `${postsLast24Hours} in the past 24 hours`;
+                            })()}
+                          </p>
+                        </>
+                      )}
                     </div>
                   </div>
+                  <div className="hidden md:block"></div>
+                  <div className="hidden md:block"></div>
+              </div>
                 </div>
               </div>
-            </div>
-            
+              
             {/* Product Modal */}
             {showProductModal && (
               <>
@@ -5938,7 +5981,7 @@ function PlaygroundContent() {
             )}>
               {/* Fixed header with title and filter buttons */}
               <div className={cn(
-                "sticky top-0 z-10 bg-background pb-2",
+                "sticky top-0 z-30 bg-background pb-2",
                 !sidebarOpen && "pl-14"
               )}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -5946,27 +5989,125 @@ function PlaygroundContent() {
                     History
                   </h3>
                   <div className="flex gap-2 self-start sm:self-auto">
-                    <Button
-                      variant={analyticsFilter === "posted" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setAnalyticsFilter("posted")}
-                    >
-                      Active
-                    </Button>
-                    <Button
-                      variant={analyticsFilter === "skipped" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setAnalyticsFilter("skipped")}
-                    >
-                      Skipped
-                    </Button>
-                    <Button
-                      variant={analyticsFilter === "failed" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setAnalyticsFilter("failed")}
-                    >
-                      Failed
-                    </Button>
+                    {/* Analytics Filter Dropdown */}
+                    <div className="relative" ref={analyticsFilterDropdownRef}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-sm px-2 py-1 min-w-[120px] justify-between"
+                        onClick={() => setIsAnalyticsFilterDropdownOpen(!isAnalyticsFilterDropdownOpen)}
+                        disabled={isLoadingAnalytics}
+                      >
+                        <span>
+                          {analyticsFilter === "posted" ? `Active ${analyticsFilterCounts.posted > 0 ? `(${analyticsFilterCounts.posted})` : ''}` :
+                           analyticsFilter === "skipped" ? `Skipped ${analyticsFilterCounts.skipped > 0 ? `(${analyticsFilterCounts.skipped})` : ''}` :
+                           analyticsFilter === "failed" ? `Failed ${analyticsFilterCounts.failed > 0 ? `(${analyticsFilterCounts.failed})` : ''}` : "Active"}
+                        </span>
+                        <ChevronDown className="h-3 w-3 ml-1.5" />
+                      </Button>
+                      {isAnalyticsFilterDropdownOpen && (
+                        <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-md shadow-lg min-w-[120px]">
+                          <div className="py-1">
+                            <button
+                              onClick={() => {
+                                setAnalyticsFilter("posted");
+                                setIsAnalyticsFilterDropdownOpen(false);
+                              }}
+                              className={cn(
+                                "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                analyticsFilter === "posted" && "bg-muted"
+                              )}
+                            >
+                              Active {analyticsFilterCounts.posted > 0 && `(${analyticsFilterCounts.posted})`}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setAnalyticsFilter("skipped");
+                                setIsAnalyticsFilterDropdownOpen(false);
+                              }}
+                              className={cn(
+                                "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                analyticsFilter === "skipped" && "bg-muted"
+                              )}
+                            >
+                              Skipped {analyticsFilterCounts.skipped > 0 && `(${analyticsFilterCounts.skipped})`}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setAnalyticsFilter("failed");
+                                setIsAnalyticsFilterDropdownOpen(false);
+                              }}
+                              className={cn(
+                                "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                analyticsFilter === "failed" && "bg-muted"
+                              )}
+                            >
+                              Failed {analyticsFilterCounts.failed > 0 && `(${analyticsFilterCounts.failed})`}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Auto-pilot Filter Dropdown */}
+                    <div className="relative" ref={autoPilotFilterDropdownRef}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-sm px-2 py-1 min-w-[120px] justify-between"
+                        onClick={() => setIsAutoPilotFilterDropdownOpen(!isAutoPilotFilterDropdownOpen)}
+                        disabled={isLoadingAnalytics}
+                      >
+                        <span>
+                          {autoPilotFilter === "all" ? "All" :
+                           autoPilotFilter === "auto-pilot" ? `Auto-pilot ${analyticsFilterCounts.autoPilot > 0 ? `(${analyticsFilterCounts.autoPilot})` : ''}` :
+                           autoPilotFilter === "manual" ? `Manual ${analyticsFilterCounts.manual > 0 ? `(${analyticsFilterCounts.manual})` : ''}` : "All"}
+                        </span>
+                        <ChevronDown className="h-3 w-3 ml-1.5" />
+                      </Button>
+                      {isAutoPilotFilterDropdownOpen && (
+                        <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-md shadow-lg min-w-[120px]">
+                          <div className="py-1">
+                            <button
+                              onClick={() => {
+                                setAutoPilotFilter("all");
+                                setIsAutoPilotFilterDropdownOpen(false);
+                              }}
+                              className={cn(
+                                "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                autoPilotFilter === "all" && "bg-muted"
+                              )}
+                            >
+                              All
+                            </button>
+                            <button
+                              onClick={() => {
+                                setAutoPilotFilter("auto-pilot");
+                                setIsAutoPilotFilterDropdownOpen(false);
+                              }}
+                              className={cn(
+                                "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                autoPilotFilter === "auto-pilot" && "bg-muted"
+                              )}
+                            >
+                              Auto-pilot {analyticsFilterCounts.autoPilot > 0 && `(${analyticsFilterCounts.autoPilot})`}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setAutoPilotFilter("manual");
+                                setIsAutoPilotFilterDropdownOpen(false);
+                              }}
+                              className={cn(
+                                "w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors",
+                                autoPilotFilter === "manual" && "bg-muted"
+                              )}
+                            >
+                              Manual {analyticsFilterCounts.manual > 0 && `(${analyticsFilterCounts.manual})`}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -6007,12 +6148,12 @@ function PlaygroundContent() {
                         <div className="flex-1 flex flex-col rounded-lg border border-border overflow-hidden">
                           <div className="flex-1 overflow-x-auto overflow-y-auto min-h-0">
                             <table className="w-full border-collapse">
-                      <thead className="sticky top-0 z-20">
+                      <thead className="sticky top-0 z-10">
                         <tr className="border-b border-border bg-muted/50">
                           <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Status</th>
                           <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Title</th>
-                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Query</th>
-                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Last Updated</th>
+                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Subreddit</th>
+                          <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Posted on</th>
                           <th className="text-left py-1.5 px-2 text-sm font-semibold text-foreground bg-muted/50">Post</th>
                         </tr>
                       </thead>
@@ -6041,7 +6182,20 @@ function PlaygroundContent() {
                               </div>
                             </td>
                                   <td className="max-w-xs py-3 px-2 text-sm text-muted-foreground">
-                                    <div className="line-clamp-2">{post.query}</div>
+                                    {(() => {
+                                      let subredditName: string | null = null;
+                                      if (post.postData?.subreddit_name_prefixed) {
+                                        subredditName = post.postData.subreddit_name_prefixed;
+                                      } else if (post.postData?.subreddit) {
+                                        subredditName = `r/${post.postData.subreddit}`;
+                                      } else if (post.link) {
+                                        const subredditMatch = post.link.match(/reddit\.com\/r\/([^/]+)/);
+                                        if (subredditMatch) {
+                                          subredditName = `r/${subredditMatch[1]}`;
+                                        }
+                                      }
+                                      return subredditName || "Unknown";
+                                    })()}
                             </td>
                                   <td className="py-3 px-2 text-sm text-muted-foreground">
                                     {new Date(post.postedAt).toLocaleDateString()}
@@ -6202,14 +6356,14 @@ function PlaygroundContent() {
                   </div>
                     <div className="flex gap-2 self-start sm:self-auto">
                         {/* Auto-pilot Button */}
-                        {/* <Button
+                        <Button
                           variant="outline"
                           size="sm"
                           className="text-sm px-2 py-1"
                           disabled={isLoadingLeads || isLoadingAutoPilot}
                           onClick={async () => {
                             // Check if user is free and not isarcorps@gmail.com - show modal
-                            if (userPlan === "free" && session?.user?.email?.toLowerCase() !== "isarcorps@gmail.com") {
+                            if (userPlan === "free") {
                               setShowAutoPilotModal(true);
                               return;
                             }
@@ -6255,7 +6409,7 @@ function PlaygroundContent() {
                               {isAutoPilotEnabled ? "Auto-pilot: ON" : "Auto-pilot: OFF"}
                             </>
                           )}
-                        </Button> */}
+                        </Button>
                         <Button
                           variant="default"
                           size="sm"
@@ -7338,7 +7492,7 @@ function PlaygroundContent() {
               </button>
             </div>
             <div className="flex h-full flex-col">
-              <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 pr-4 pb-40">
+              <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 pr-4 pb-48">
                 {isLoadingPostContent[selectedDiscoveryPost.link || ''] ? (
                   <div className="flex items-center gap-2 py-4">
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
@@ -8058,25 +8212,40 @@ function PlaygroundContent() {
             </div>
 
             {/* Description Section */}
-            <div className="space-y-4 text-center">
+            <div className="space-y-4 text-left">
               <h2 className="text-2xl font-bold text-foreground">
                 What is Auto-pilot?
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                Auto-pilot automatically finds relevant Reddit posts matching your keywords, 
+                Auto-pilot automatically finds extremely high potential Reddit posts matching your keywords, 
                 generates personalized comments using AI, and posts them for you. Set it once 
                 and let it work 24/7 to engage with potential customers on Reddit while you focus 
                 on building your product.
               </p>
+              
+              <ul className="space-y-2 text-muted-foreground text-sm">
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-foreground flex-shrink-0" />
+                  <span>Post comments only on extremely high intent posts</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-foreground flex-shrink-0" />
+                  <span>Comments are customized to abide by the subreddit rules</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-foreground flex-shrink-0" />
+                  <span>Runs 24/7 without any human intervention</span>
+                </li>
+              </ul>
               
               <div className="pt-4">
                 <Button
                   onClick={() => {
                     setShowAutoPilotModal(false);
                     // Navigate to pricing tab
-                    setActiveTab("product");
+                    setActiveTab("pricing");
                   }}
-                  className="w-full bg-[#ff4500] hover:bg-[#ff4500]/90 text-white"
+                  className="w-full bg-black hover:bg-black/90 text-white"
                 >
                   Upgrade to Premium
                 </Button>

@@ -2,8 +2,8 @@ name: Auto-pilot Cron Job
 
 on:
   schedule:
-    # Run once a day at 9 AM UTC
-    - cron: '0 9 * * *'
+    # Run every 4 hours
+    - cron: '0 */4 * * *'
   workflow_dispatch: # Allow manual trigger
 
 jobs:

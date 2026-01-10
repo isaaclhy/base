@@ -89,7 +89,7 @@ export default function PricingPage() {
           </p>
         </div>
 
-        <div className="grid w-full gap-6 md:grid-cols-2">
+        <div className="grid w-full gap-6 md:grid-cols-2 max-w-4xl mx-auto justify-center">
           <div className="flex h-full flex-col gap-6 rounded-2xl border border-border bg-card p-8 text-left shadow-sm">
             <div>
               <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">

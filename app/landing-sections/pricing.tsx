@@ -13,10 +13,10 @@ const features = {
     "2 lead syncs per day",
   ],
   premium: [
+    "Auto-pilot function",
     "10 keywords",
     "1,200 generated comments",
     "5 lead syncs per day",
-    "Auto-pilot function",
   ],
   pro: [
     "1 to 1 onboarding call",
@@ -115,7 +115,7 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
           </div>
         )}
 
-        <div className="grid w-full gap-6 md:grid-cols-3 mx-auto">
+        <div className="grid w-full gap-6 md:grid-cols-2 mx-auto max-w-4xl justify-center">
           <div className={cn(
             "relative flex h-full flex-col rounded-2xl border border-border bg-background text-left transition-all hover:shadow-lg",
             showCTAButtons ? "gap-4 p-6" : "gap-6 p-8"
@@ -167,7 +167,7 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
                   <span className="text-3xl font-extrabold text-foreground">$29.99</span>
                   <span className="text-muted-foreground ml-1">/month</span>
                 </div>
-                <p className="text-sm text-muted-foreground mt-2">For growing startups with multiple products to monitor</p>
+                <p className="text-sm text-muted-foreground mt-2">For growing startups trying to grow fast</p>
               </div>
               
               <ul className={cn("space-y-3", showCTAButtons ? "text-sm" : "text-sm")}>

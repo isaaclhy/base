@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
         postData: post.postData,
         comment: post.comment,
         notes: post.notes,
+        autoPilot: post.autoPilot || false,
         createdAt: post.createdAt,
         updatedAt: post.updatedAt,
       })),
