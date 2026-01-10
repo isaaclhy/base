@@ -25,7 +25,7 @@ export default function Hero() {
                         <span className="block text-primary">Reddit in seconds</span>
                     </h1>
                     <p className="mx-auto max-w-2xl text-lg text-muted-foreground sm:text-xl">
-                        Automatically discover high-potential Reddit posts, organize them in one place, and engage with AI-generated comments.
+                        Automatically discover high-potential Reddit posts, organize them in one place, and engage with AI-generated comments. On average, users retrieve 500+ high potential leads in their first week.
                     </p>
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
                         <button
@@ -63,8 +63,8 @@ export default function Hero() {
                                 <div className="text-base font-bold text-muted-foreground">High Potential Leads</div>
                             </div>
                             <div className="flex items-baseline justify-between">
-                                <div className="text-4xl font-extrabold text-foreground">342</div>
-                                <div className="text-[9px] text-muted-foreground">Ready to engage</div>
+                                <div className="text-4xl font-extrabold text-foreground">500+</div>
+                                <div className="text-[9px] text-muted-foreground">In your first week</div>
                             </div>
                         </div>
                         <div className="rounded-xl border border-border bg-gradient-to-br from-card to-muted/30 p-5 shadow-sm hover:shadow-md transition-shadow">

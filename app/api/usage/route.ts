@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       getUserByEmail(session.user.email),
     ]);
 
-    const plan = dbUser?.plan ?? "free";
+    const plan = (dbUser?.plan ?? "free") as "free" | "starter" | "premium" | "pro";
     const maxCount = getMaxPostsPerWeekForPlan(plan);
     const maxSyncsPerDay = getMaxSyncsPerDayForPlan(plan);
 
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       plan,
       syncCounter: usage.syncCounter ?? 0,
       maxSyncsPerDay,
-      nextSyncReset: getNextDayStart().toISOString(), // When the sync counter will reset next
+      nextSyncReset: plan === "free" ? null : getNextDayStart().toISOString(), // Free tier doesn't reset, others reset daily
       totalLeadsGenerated: usage.totalLeadsGenerated ?? 0,
     });
   } catch (error) {

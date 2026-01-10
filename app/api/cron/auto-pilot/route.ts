@@ -4,7 +4,7 @@ import { refreshAccessToken } from "@/lib/reddit/auth";
 import OpenAI from "openai";
 import { google } from "googleapis";
 import { RedditPost } from "@/lib/types";
-import { getSubredditRule } from "@/lib/db/subreddit-rules";
+import { getSubredditRule, upsertSubredditRule } from "@/lib/db/subreddit-rules";
 import { createPost } from "@/lib/db/posts";
 
 const openai = new OpenAI({
@@ -546,17 +546,142 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
             }
           }
 
-          // Check subreddit promotion status
-          let allowPromoting = "true";
+          // Check subreddit promotion status (with full flow: cache -> Reddit API -> OpenAI -> save)
+          let allowPromoting = "true"; // Default to true if no rules found
           if (subredditName) {
             try {
               const cleanSubredditName = subredditName.replace(/^r\//, "").replace(/^r/, "").toLowerCase();
-              const subredditRule = await getSubredditRule(cleanSubredditName);
+              
+              // Step 1: Check database cache first
+              let subredditRule = await getSubredditRule(cleanSubredditName);
+              
               if (subredditRule && typeof subredditRule.allowPromoting === 'boolean') {
+                // Found cached result, use it
                 allowPromoting = subredditRule.allowPromoting ? "true" : "false";
+                console.log(`[Auto-Pilot] User ${user.email}: Using cached rule for r/${cleanSubredditName}: ${allowPromoting}`);
+              } else {
+                // Step 2: No cached result, fetch from Reddit API
+                console.log(`[Auto-Pilot] User ${user.email}: No cached rule for r/${cleanSubredditName}, fetching from Reddit API...`);
+                
+                try {
+                  const rulesResponse = await fetch(
+                    `https://oauth.reddit.com/r/${cleanSubredditName}/about/rules.json`,
+                    {
+                      headers: {
+                        "User-Agent": "comment-tool/0.1 by isaaclhy13",
+                        "Accept": "application/json",
+                        "Authorization": `Bearer ${validAccessToken}`,
+                      },
+                      cache: "no-store",
+                    }
+                  );
+
+                  if (rulesResponse.ok) {
+                    const rulesData = await rulesResponse.json();
+                    
+                    // Step 3: Extract rule descriptions and combine them
+                    const allRules = rulesData.rules || [];
+                    const rulesText = allRules
+                      .map((rule: any) => rule.description || "")
+                      .filter((desc: string) => desc.trim().length > 0)
+                      .join("\n\n");
+                    
+                    if (!rulesText || rulesText.trim().length === 0) {
+                      // No rules found - default to allowing promotion
+                      console.log(`[Auto-Pilot] User ${user.email}: No rules found for r/${cleanSubredditName}, defaulting to allow promotion`);
+                      allowPromoting = "true";
+                      
+                      // Save default result to database
+                      try {
+                        await upsertSubredditRule(cleanSubredditName, true);
+                      } catch (saveError) {
+                        console.error(`[Auto-Pilot] Error saving default rule for r/${cleanSubredditName}:`, saveError);
+                      }
+                    } else {
+                      // Step 4: Send to OpenAI to check rules
+                      console.log(`[Auto-Pilot] User ${user.email}: Checking rules with OpenAI for r/${cleanSubredditName}...`);
+                      
+                      const checkResponse = await (openai as any).responses.create({
+                        prompt: {
+                          "id": "pmpt_69604849cd108197bb3a470f1315349e0ab1f2ccb34665ea",
+                          "version": "4",
+                          "variables": {
+                            "rules": rulesText.trim()
+                          }
+                        }
+                      });
+
+                      if (checkResponse.error) {
+                        console.error(`[Auto-Pilot] OpenAI error checking rules for r/${cleanSubredditName}:`, checkResponse.error);
+                        // Default to true on error
+                        allowPromoting = "true";
+                      } else {
+                        // Extract output from OpenAI response
+                        let output: string;
+                        try {
+                          if ((checkResponse as any).output_text) {
+                            output = (checkResponse as any).output_text;
+                          } else if ((checkResponse as any).output && Array.isArray((checkResponse as any).output)) {
+                            const messageContent = (checkResponse as any).output.find((item: any) => item.type === 'message')?.content;
+                            if (messageContent && Array.isArray(messageContent)) {
+                              const outputTextContent = messageContent.find((item: any) => item.type === 'output_text');
+                              if (outputTextContent) {
+                                output = outputTextContent.text;
+                              } else {
+                                output = messageContent.map((item: any) => item.text || item.content).join('\n');
+                              }
+                            } else {
+                              output = JSON.stringify(checkResponse.output);
+                            }
+                          } else {
+                            output = JSON.stringify(checkResponse);
+                          }
+                        } catch (parseError) {
+                          console.error(`[Auto-Pilot] Error parsing OpenAI response for r/${cleanSubredditName}:`, parseError);
+                          output = "YES"; // Default to YES on parse error
+                        }
+
+                        // Parse and normalize the output to YES or NO
+                        const normalizedOutput = output.trim().toUpperCase();
+                        let allowsPromotion: boolean;
+                        
+                        if (normalizedOutput === 'YES' || normalizedOutput.startsWith('YES')) {
+                          allowsPromotion = true;
+                        } else if (normalizedOutput === 'NO' || normalizedOutput.startsWith('NO')) {
+                          allowsPromotion = false;
+                        } else {
+                          // If the response is not clearly YES or NO, default to false for safety
+                          console.warn(`[Auto-Pilot] Unexpected OpenAI response for r/${cleanSubredditName}: "${output}". Defaulting to NO.`);
+                          allowsPromotion = false;
+                        }
+
+                        allowPromoting = allowsPromotion ? "true" : "false";
+                        console.log(`[Auto-Pilot] User ${user.email}: OpenAI verdict for r/${cleanSubredditName}: ${allowPromoting}`);
+
+                        // Step 5: Save the result to database
+                        try {
+                          await upsertSubredditRule(cleanSubredditName, allowsPromotion);
+                          console.log(`[Auto-Pilot] User ${user.email}: Saved rule for r/${cleanSubredditName} to database`);
+                        } catch (saveError) {
+                          console.error(`[Auto-Pilot] Error saving rule for r/${cleanSubredditName}:`, saveError);
+                        }
+                      }
+                    }
+                  } else {
+                    // Reddit API error - default to true
+                    console.error(`[Auto-Pilot] Reddit API error for r/${cleanSubredditName}: ${rulesResponse.status}`);
+                    allowPromoting = "true";
+                  }
+                } catch (fetchError) {
+                  console.error(`[Auto-Pilot] Error fetching rules from Reddit API for r/${cleanSubredditName}:`, fetchError);
+                  // Default to true on error
+                  allowPromoting = "true";
+                }
               }
             } catch (error) {
               console.error(`[Auto-Pilot] Error checking subreddit rule for r/${subredditName}:`, error);
+              // Default to true on error
+              allowPromoting = "true";
             }
           }
 

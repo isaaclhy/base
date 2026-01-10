@@ -27,10 +27,13 @@ export default function PricingPage() {
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
   const [isPortalLoading, setIsPortalLoading] = useState(false);
 
-  const plan = session?.user?.plan ?? "free";
+  const plan = (session?.user?.plan ?? "free") as "free" | "starter" | "premium" | "pro";
+  const isStarter = plan === "starter";
   const isPremium = plan === "premium";
+  const isPro = plan === "pro";
+  const [checkoutPlan, setCheckoutPlan] = useState<"starter" | "premium" | null>(null);
 
-  const handleCheckout = async () => {
+  const handleCheckout = async (planType: "starter" | "premium") => {
     if (!session) {
       signIn(undefined, { callbackUrl: "/pricing" });
       return;
@@ -38,8 +41,11 @@ export default function PricingPage() {
 
     try {
       setIsCheckoutLoading(true);
+      setCheckoutPlan(planType);
       const response = await fetch("/api/stripe/create-checkout-session", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: planType }),
       });
 
       if (!response.ok) {
@@ -53,6 +59,7 @@ export default function PricingPage() {
       console.error("Error starting Stripe checkout:", error);
       alert(error instanceof Error ? error.message : "Unable to start checkout.");
       setIsCheckoutLoading(false);
+      setCheckoutPlan(null);
     }
   };
 
@@ -93,10 +100,11 @@ export default function PricingPage() {
           <div className="flex h-full flex-col gap-6 rounded-2xl border border-border bg-card p-8 text-left shadow-sm">
             <div>
               <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Free
+                Starter
               </span>
-              <h2 className="mt-4 text-3xl font-semibold text-foreground">$0</h2>
-              <p className="text-muted-foreground">No credit card required</p>
+              <h2 className="mt-4 text-3xl font-semibold text-foreground">$15.99</h2>
+              <p className="text-muted-foreground">per month</p>
+              <span className="inline-block rounded-full bg-[#ff4500] px-3 py-1 text-xs font-medium text-white mt-2">3-day free trial</span>
             </div>
             <ul className="space-y-3 text-sm text-muted-foreground">
               {features.free.map((feature) => (
@@ -106,14 +114,33 @@ export default function PricingPage() {
                 </li>
               ))}
             </ul>
-            <Button
-              variant="outline"
-              size="lg"
-              disabled
-              className="mt-auto cursor-default"
-            >
-              Included in your account
-            </Button>
+            {status === "loading" ? (
+              <Button disabled size="lg" className="mt-auto opacity-70">
+                Checking your plan...
+              </Button>
+            ) : isStarter || isPremium || isPro ? (
+              <Button
+                size="lg"
+                variant="default"
+                onClick={handleManageBilling}
+                disabled={isPortalLoading}
+                className="mt-auto"
+              >
+                {isPortalLoading ? "Opening portal..." : "Manage billing"}
+              </Button>
+            ) : (
+              <div className="mt-auto space-y-2">
+                <Button
+                  size="lg"
+                  onClick={() => handleCheckout("starter")}
+                  disabled={isCheckoutLoading && checkoutPlan === "starter"}
+                  className="w-full"
+                >
+                  {isCheckoutLoading && checkoutPlan === "starter" ? "Redirecting..." : "Start 3-Day Free Trial"}
+                </Button>
+                <p className="text-xs text-center text-muted-foreground">Cancel anytime</p>
+              </div>
+            )}
           </div>
 
           <div className="flex h-full flex-col gap-6 rounded-2xl border border-[#ff4500]/60 bg-white p-8 text-left shadow-[0_0_35px_-12px_rgba(255,69,0,0.65)]">
@@ -127,7 +154,8 @@ export default function PricingPage() {
                 </span>
               </div>
               <h2 className="text-3xl font-semibold text-[#2d1510]">$13.99</h2>
-              <p className="text-sm text-[#72341e]">per month, cancel anytime</p>
+              <p className="text-sm text-[#72341e]">per month</p>
+              <span className="inline-block rounded-full bg-[#ff4500] px-3 py-1 text-xs font-medium text-white mt-2">3-day free trial</span>
             </div>
             <ul className="space-y-3 text-sm text-muted-foreground">
               {features.premium.map((feature) => (
@@ -141,7 +169,7 @@ export default function PricingPage() {
               <Button disabled size="lg" className="mt-auto opacity-70">
                 Checking your plan...
               </Button>
-            ) : isPremium ? (
+            ) : isPremium || isPro ? (
               <Button
                 size="lg"
                 variant="default"
@@ -152,14 +180,17 @@ export default function PricingPage() {
                 {isPortalLoading ? "Opening portal..." : "Manage billing"}
               </Button>
             ) : (
-              <Button
-                size="lg"
-                onClick={handleCheckout}
-                disabled={isCheckoutLoading}
-                className="mt-auto"
-              >
-                {isCheckoutLoading ? "Redirecting..." : "Upgrade to Premium"}
-              </Button>
+              <div className="mt-auto space-y-2">
+                <Button
+                  size="lg"
+                  onClick={() => handleCheckout("premium")}
+                  disabled={isCheckoutLoading && checkoutPlan === "premium"}
+                  className="w-full"
+                >
+                  {isCheckoutLoading && checkoutPlan === "premium" ? "Redirecting..." : "Start 3-Day Free Trial"}
+                </Button>
+                <p className="text-xs text-center text-muted-foreground">Cancel anytime</p>
+              </div>
             )}
           </div>
         </div>

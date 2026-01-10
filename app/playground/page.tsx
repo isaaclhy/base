@@ -377,7 +377,7 @@ function PlaygroundContent() {
   const [isGeneratingProductDescription, setIsGeneratingProductDescription] = useState(false);
   const [isGeneratingKeywords, setIsGeneratingKeywords] = useState(false);
   const [productDetailsFromDb, setProductDetailsFromDb] = useState<{ link?: string; productName?: string; productDescription?: string; keywords?: string } | null>(null);
-  const [userPlan, setUserPlan] = useState<"free" | "premium" | "pro" | null>(null);
+  const [userPlan, setUserPlan] = useState<"free" | "starter" | "premium" | "pro" | null>(null);
   const [leadsLinks, setLeadsLinks] = useState<Record<string, Array<{ title?: string | null; link?: string | null; snippet?: string | null; selftext?: string | null; postData?: RedditPost | null }>>>({});
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
   const [lastLeadsSyncTime, setLastLeadsSyncTime] = useState<Date | null>(null);
@@ -697,15 +697,15 @@ function PlaygroundContent() {
           if (response.ok) {
             const data = await response.json();
             const plan = data.plan || session?.user?.plan || "free";
-            setUserPlan(plan as "free" | "premium" | "pro");
+            setUserPlan(plan as "free" | "starter" | "premium" | "pro");
           } else {
             // Fallback to session plan
-            setUserPlan((session?.user?.plan as "free" | "premium" | "pro") || "free");
+            setUserPlan((session?.user?.plan as "free" | "starter" | "premium" | "pro") || "free");
           }
         } catch (error) {
           console.error("Error loading user plan:", error);
           // Fallback to session plan
-          setUserPlan((session?.user?.plan as "free" | "premium" | "pro") || "free");
+          setUserPlan((session?.user?.plan as "free" | "starter" | "premium" | "pro") || "free");
         }
       };
 
@@ -1935,13 +1935,21 @@ function PlaygroundContent() {
       if (syncCheckResponse.ok) {
         const syncData = await syncCheckResponse.json();
         const syncCounter = syncData.syncCounter ?? 0;
-        const maxSyncsPerDay = syncData.maxSyncsPerDay ?? 2;
+        const maxSyncsPerDay = syncData.maxSyncsPerDay ?? 1;
+        const plan = syncData.plan ?? "free";
 
         if (syncCounter >= maxSyncsPerDay) {
-          showToast(
-            `You've reached your daily sync limit of ${maxSyncsPerDay}. Please try again tomorrow.`,
-            { variant: "error" }
-          );
+          if (plan === "free") {
+            showToast(
+              "You've used your one free sync. Upgrade to Starter or Premium to sync more leads.",
+              { variant: "error" }
+            );
+          } else {
+            showToast(
+              `You've reached your daily sync limit of ${maxSyncsPerDay}. Please try again tomorrow.`,
+              { variant: "error" }
+            );
+          }
           return;
         }
       }
@@ -4864,8 +4872,9 @@ function PlaygroundContent() {
                           type="checkbox"
                           checked={isAutoPilotEnabled}
                           onChange={async (e) => {
-                            // Only allow toggling if email is isarcorps@gmail.com
-                            if (session?.user?.email?.toLowerCase() !== "isarcorps@gmail.com") {
+                            // Check if user is premium or pro - if not, show modal
+                            if (userPlan !== "premium" && userPlan !== "pro") {
+                              setShowAutoPilotModal(true);
                               return;
                             }
                             
@@ -4898,7 +4907,7 @@ function PlaygroundContent() {
                               setIsLoadingAutoPilot(false);
                             }
                           }}
-                          disabled={isLoadingAutoPilot || (session?.user?.email?.toLowerCase() !== "isarcorps@gmail.com")}
+                          disabled={isLoadingAutoPilot}
                           className="sr-only peer"
                         />
                         <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
@@ -4907,11 +4916,6 @@ function PlaygroundContent() {
                     <p className="text-sm text-muted-foreground mb-4">
                       Please go to history tab to see auto commented posts.
                     </p>
-                    {session?.user?.email?.toLowerCase() !== "isarcorps@gmail.com" && (
-                      <p className="text-xs text-muted-foreground mt-2 italic mb-4">
-                        This feature is currently restricted
-                      </p>
-                    )}
                     
                     {/* Auto-pilot Stats */}
                     <div className="mt-4">
@@ -5623,10 +5627,35 @@ function PlaygroundContent() {
               
               {/* Content area that spans remaining space */}
               <div className={cn(
-                "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0",
+                "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0 relative",
                 !sidebarOpen && "pl-14"
               )}>
-                <div className="space-y-6 px-1">
+                {/* Blur overlay for free users */}
+                {userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1 && (
+                  <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/10 backdrop-blur-sm overflow-y-auto">
+                    <div className="bg-white dark:bg-card rounded-2xl shadow-xl border border-border text-center space-y-4 p-8 max-w-md">
+                      <h3 className="text-4xl font-bold text-foreground">
+                        Create Comments
+                      </h3>
+                      <p className="text-xl font-semibold text-foreground">
+                        Generate and Post Comments
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Select a plan to get started. On average, users find more than 500+ high potential leads in their first week using SignalScouter.
+                      </p>
+                      <Button
+                        onClick={() => setActiveTab("pricing")}
+                        className="bg-[#ff4500] hover:bg-[#ff4500]/90 text-white"
+                      >
+                        View Plans
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                <div className={cn(
+                  "space-y-6 px-1 flex-1 overflow-y-auto",
+                  userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1 && "blur-md pointer-events-none select-none"
+                )}>
                   {createFilter === "comment" ? (
                     <div className="space-y-4">
                       <div>
@@ -6300,7 +6329,7 @@ function PlaygroundContent() {
                         variant="outline"
                         size="sm"
                         onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-                        disabled={isLoadingLeads}
+                        disabled={isLoadingLeads || (userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1)}
                         className="min-w-[120px] justify-between"
                       >
                         <span>
@@ -6362,13 +6391,13 @@ function PlaygroundContent() {
                           className="text-sm px-2 py-1"
                           disabled={isLoadingLeads || isLoadingAutoPilot}
                           onClick={async () => {
-                            // Check if user is free and not isarcorps@gmail.com - show modal
-                            if (userPlan === "free") {
+                            // Check if user is free or starter - show modal
+                            if (userPlan !== "premium" && userPlan !== "pro") {
                               setShowAutoPilotModal(true);
                               return;
                             }
 
-                            // For premium/pro users or isarcorps@gmail.com, toggle auto-pilot
+                            // For premium/pro users, toggle auto-pilot
                             setIsLoadingAutoPilot(true);
                             try {
                               const response = await fetch("/api/user/auto-pilot", {
@@ -6477,7 +6506,7 @@ function PlaygroundContent() {
                     
                           <Button
                       onClick={handleLeadsSearch}
-                      disabled={isLoadingLeads || (syncUsage ? syncUsage.syncCounter >= syncUsage.maxSyncsPerDay : false)}
+                      disabled={isLoadingLeads || (syncUsage ? syncUsage.syncCounter >= syncUsage.maxSyncsPerDay : false) || (userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1)}
                             size="sm"
                       variant={distinctLeadsLinks.length > 0 ? "outline" : "default"}
                       className={`text-sm px-2 py-1 ${syncUsage && syncUsage.syncCounter >= syncUsage.maxSyncsPerDay && countdown ? "min-w-[160px]" : "w-[140px]"}`}
@@ -6487,6 +6516,8 @@ function PlaygroundContent() {
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                           Refreshing...
                         </>
+                      ) : (userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1) ? (
+                        "Upgrade to sync more"
                       ) : syncUsage && syncUsage.syncCounter >= syncUsage.maxSyncsPerDay ? (
                         countdown ? (
                           <>
@@ -6507,7 +6538,7 @@ function PlaygroundContent() {
                             size="sm"
                             className="text-sm px-2 py-1"
                             onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
-                            disabled={isLoadingLeads}
+                            disabled={isLoadingLeads || (userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1)}
                           >
                           {leadsSortBy === "relevance" ? "Relevance" :
                             leadsSortBy === "date-desc" ? "Date (Newest)" :
@@ -6661,11 +6692,32 @@ function PlaygroundContent() {
                         "relative rounded-lg border border-border overflow-hidden flex-1 flex flex-col min-h-0",
                         isLoadingLeads && "pointer-events-none"
                       )}>
+                        {/* Blur overlay for free users */}
+                        {userPlan === "free" && distinctLeadsLinks.length > 0 && !isLoadingLeads && (
+                          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/10 backdrop-blur-sm">
+                            <div className="bg-white dark:bg-card rounded-2xl shadow-xl border border-border text-center space-y-4 p-8 max-w-md">
+                              <h3 className="text-5xl font-bold text-foreground"> {distinctLeadsLinks.length}</h3>
+                              <p className="text-xl font-semibold text-foreground">
+                              High Potential  {distinctLeadsLinks.length === 1 ? 'Lead' : 'Leads'} Found
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                Select a plan to get started. On average, users find more than 500+ high potential leads in their first week using SignalScouter.
+                              </p>
+                              <Button
+                                onClick={() => setActiveTab("pricing")}
+                                className="bg-[#ff4500] hover:bg-[#ff4500]/90 text-white"
+                              >
+                                View Plans
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                         <div
                           ref={leadsTableScrollRef}
                           className={cn(
                             "overflow-x-auto flex-1 overflow-y-auto min-h-0",
-                            isLoadingLeads && "blur-sm pointer-events-none select-none"
+                            isLoadingLeads && "blur-sm pointer-events-none select-none",
+                            userPlan === "free" && distinctLeadsLinks.length > 0 && !isLoadingLeads && "blur-md pointer-events-none select-none"
                           )}
                         >
                           <table className="w-full border-collapse table-fixed">
@@ -8237,19 +8289,6 @@ function PlaygroundContent() {
                   <span>Runs 24/7 without any human intervention</span>
                 </li>
               </ul>
-              
-              <div className="pt-4">
-                <Button
-                  onClick={() => {
-                    setShowAutoPilotModal(false);
-                    // Navigate to pricing tab
-                    setActiveTab("pricing");
-                  }}
-                  className="w-full bg-black hover:bg-black/90 text-white"
-                >
-                  Upgrade to Premium
-                </Button>
-              </div>
             </div>
           </div>
         </div>

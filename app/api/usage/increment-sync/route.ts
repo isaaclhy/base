@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     const dbUser = await getUserByEmail(session.user.email);
-    const plan = dbUser?.plan ?? "free";
+    const plan = (dbUser?.plan ?? "free") as "free" | "starter" | "premium" | "pro";
     const maxSyncsPerDay = getMaxSyncsPerDayForPlan(plan);
 
     const result = await incrementSyncCounter(session.user.email, maxSyncsPerDay);

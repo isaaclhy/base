@@ -1,5 +1,6 @@
 import { getDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { getUserByEmail } from "@/lib/db/users";
 
 export interface UserUsage {
   _id?: ObjectId;
@@ -19,9 +20,10 @@ export const PRO_POST_LIMIT = 500; // 2,000 per month ≈ 500 per week
 
 const DEFAULT_MAX_POSTS_PER_WEEK = FREE_POST_LIMIT;
 
-export function getMaxPostsPerWeekForPlan(plan: "free" | "premium" | "pro"): number {
+export function getMaxPostsPerWeekForPlan(plan: "free" | "starter" | "premium" | "pro"): number {
   if (plan === "pro") return PRO_POST_LIMIT;
   if (plan === "premium") return PREMIUM_POST_LIMIT;
+  if (plan === "starter") return PREMIUM_POST_LIMIT; // Starter gets same as premium
   return FREE_POST_LIMIT;
 }
 
@@ -142,21 +144,28 @@ export async function getUserUsage(userId: string): Promise<UserUsage> {
     }
   }
 
-  // Reset sync counter if it's a new day
+  // Reset sync counter if it's a new day (but not for free tier users)
   if (needsSyncReset(usage.lastSyncDate)) {
-    usage = await usageCollection.findOneAndUpdate(
-      { userId },
-      {
-        $set: {
-          syncCounter: 0,
-          lastSyncDate: getDayStart(),
-          lastUpdated: new Date(),
+    // Check user's plan - free tier sync limit should not reset daily
+    const dbUser = await getUserByEmail(userId);
+    const userPlan = dbUser?.plan ?? "free";
+    
+    // Only reset if user is not on free plan
+    if (userPlan !== "free") {
+      usage = await usageCollection.findOneAndUpdate(
+        { userId },
+        {
+          $set: {
+            syncCounter: 0,
+            lastSyncDate: getDayStart(),
+            lastUpdated: new Date(),
+          },
         },
-      },
-      { returnDocument: "after" }
-    );
-    if (!usage) {
-      throw new Error("Failed to reset sync counter");
+        { returnDocument: "after" }
+      );
+      if (!usage) {
+        throw new Error("Failed to reset sync counter");
+      }
     }
   }
 
@@ -261,10 +270,11 @@ export async function incrementCronUsage(userId: string, count: number = 1): Pro
   return updatedUsage as UserUsage;
 }
 
-export function getMaxSyncsPerDayForPlan(plan: "free" | "premium" | "pro"): number {
+export function getMaxSyncsPerDayForPlan(plan: "free" | "starter" | "premium" | "pro"): number {
   if (plan === "pro") return 10;
   if (plan === "premium") return 5;
-  return 2;
+  if (plan === "starter") return 5; // Starter gets same as premium for syncs
+  return 1; // Free users can only sync once
 }
 
 /**
