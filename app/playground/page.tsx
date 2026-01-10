@@ -6329,7 +6329,7 @@ function PlaygroundContent() {
                         variant="outline"
                         size="sm"
                         onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-                        disabled={isLoadingLeads || (userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1)}
+                        disabled={isLoadingLeads || !!(userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1)}
                         className="min-w-[120px] justify-between"
                       >
                         <span>
@@ -6506,7 +6506,7 @@ function PlaygroundContent() {
                     
                           <Button
                       onClick={handleLeadsSearch}
-                      disabled={isLoadingLeads || (syncUsage ? syncUsage.syncCounter >= syncUsage.maxSyncsPerDay : false) || (userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1)}
+                      disabled={isLoadingLeads || (syncUsage ? syncUsage.syncCounter >= syncUsage.maxSyncsPerDay : false) || !!(userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1)}
                             size="sm"
                       variant={distinctLeadsLinks.length > 0 ? "outline" : "default"}
                       className={`text-sm px-2 py-1 ${syncUsage && syncUsage.syncCounter >= syncUsage.maxSyncsPerDay && countdown ? "min-w-[160px]" : "w-[140px]"}`}
@@ -6538,7 +6538,7 @@ function PlaygroundContent() {
                             size="sm"
                             className="text-sm px-2 py-1"
                             onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
-                            disabled={isLoadingLeads || (userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1)}
+                            disabled={isLoadingLeads || !!(userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1)}
                           >
                           {leadsSortBy === "relevance" ? "Relevance" :
                             leadsSortBy === "date-desc" ? "Date (Newest)" :

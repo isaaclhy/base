@@ -72,7 +72,36 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json();
-    return NextResponse.json({ success: true, data });
+    
+    // Reddit API can return 200 OK but with errors in the response body
+    // Response structure: { json: { errors: [...], data: {...} } }
+    if (data.json && data.json.errors && Array.isArray(data.json.errors) && data.json.errors.length > 0) {
+      const errors = data.json.errors.map((err: any[]) => err.join(': ')).join('; ');
+      console.error("Reddit API returned errors in response body:", errors);
+      return NextResponse.json(
+        { error: `Reddit API error: ${errors}`, redditErrors: data.json.errors },
+        { status: 400 }
+      );
+    }
+
+    // Check if data.json.data exists (successful comment creation)
+    if (!data.json || !data.json.data) {
+      console.error("Reddit API response missing data:", data);
+      return NextResponse.json(
+        { error: "Reddit API response missing data. Comment may not have been posted." },
+        { status: 500 }
+      );
+    }
+
+    // Extract the created comment ID from the response
+    const things = data.json.data?.things || [];
+    const commentId = things[0]?.data?.name || null;
+
+    return NextResponse.json({ 
+      success: true, 
+      data: data.json.data,
+      commentId: commentId 
+    });
   } catch (err: unknown) {
     console.error("Error posting comment:", err);
     return NextResponse.json(

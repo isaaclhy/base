@@ -764,8 +764,11 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
             }).toString(),
           });
 
+          // Parse response body (can only be read once)
+          const postResponseData = await postResponse.json().catch(() => null);
+          
           if (!postResponse.ok) {
-            const errorData = await postResponse.json().catch(() => ({ error: postResponse.statusText }));
+            const errorData = postResponseData || { error: postResponse.statusText };
             console.error(`[Auto-Pilot] User ${user.email}: Failed to post comment for "${yesPost.title}":`, errorData);
             failedCount++;
             failedPosts.push({ id: yesPost.id, title: yesPost.title, error: errorData.error || postResponse.statusText });
@@ -790,6 +793,93 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
             }
             continue;
           }
+
+          // Reddit API can return 200 OK but with errors in the response body
+          // Response structure: { json: { errors: [...], data: {...} } }
+          if (!postResponseData) {
+            console.error(`[Auto-Pilot] User ${user.email}: Failed to parse Reddit API response for "${yesPost.title}"`);
+            failedCount++;
+            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: "Failed to parse Reddit API response" });
+            
+            // Save failed post to database
+            try {
+              await createPost({
+                userId: user.email,
+                status: "failed",
+                query: `auto-pilot-${new Date().toISOString()}`,
+                title: yesPost.title,
+                link: yesPost.url,
+                snippet: null,
+                selftext: fullPostData.selftext || null,
+                postData: fullPostData,
+                comment: commentText.trim(),
+                notes: "Auto-pilot failed: Failed to parse Reddit API response",
+                autoPilot: true,
+              });
+            } catch (dbError) {
+              console.error(`[Auto-Pilot] User ${user.email}: Error saving failed post to database:`, dbError);
+            }
+            continue;
+          }
+          
+          if (postResponseData.json && postResponseData.json.errors && Array.isArray(postResponseData.json.errors) && postResponseData.json.errors.length > 0) {
+            const errors = postResponseData.json.errors.map((err: any[]) => err.join(': ')).join('; ');
+            console.error(`[Auto-Pilot] User ${user.email}: Reddit API returned errors for "${yesPost.title}":`, errors);
+            failedCount++;
+            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: `Reddit API error: ${errors}` });
+            
+            // Save failed post to database
+            try {
+              await createPost({
+                userId: user.email,
+                status: "failed",
+                query: `auto-pilot-${new Date().toISOString()}`,
+                title: yesPost.title,
+                link: yesPost.url,
+                snippet: null,
+                selftext: fullPostData.selftext || null,
+                postData: fullPostData,
+                comment: commentText.trim(),
+                notes: `Auto-pilot failed: Reddit API errors - ${errors}`,
+                autoPilot: true,
+              });
+            } catch (dbError) {
+              console.error(`[Auto-Pilot] User ${user.email}: Error saving failed post to database:`, dbError);
+            }
+            continue;
+          }
+
+          // Check if response contains data (successful comment creation)
+          if (!postResponseData.json || !postResponseData.json.data) {
+            console.error(`[Auto-Pilot] User ${user.email}: Reddit API response missing data for "${yesPost.title}":`, postResponseData);
+            failedCount++;
+            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: "Reddit API response missing data. Comment may not have been posted." });
+            
+            // Save failed post to database
+            try {
+              await createPost({
+                userId: user.email,
+                status: "failed",
+                query: `auto-pilot-${new Date().toISOString()}`,
+                title: yesPost.title,
+                link: yesPost.url,
+                snippet: null,
+                selftext: fullPostData.selftext || null,
+                postData: fullPostData,
+                comment: commentText.trim(),
+                notes: "Auto-pilot failed: Reddit API response missing data",
+                autoPilot: true,
+              });
+            } catch (dbError) {
+              console.error(`[Auto-Pilot] User ${user.email}: Error saving failed post to database:`, dbError);
+            }
+            continue;
+          }
+
+          // Extract comment ID from successful response
+          const things = postResponseData.json.data?.things || [];
+          const commentId = things[0]?.data?.name || null;
+          console.log(`[Auto-Pilot] User ${user.email}: Successfully posted comment for "${yesPost.title}". Comment ID: ${commentId}`);
 
           // Save successful post to database
           try {
