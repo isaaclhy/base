@@ -108,8 +108,8 @@ async function fetchGoogleSearch(query: string, resultsPerQuery: number = 20): P
     const numResults = Math.min(maxPerRequest, totalResults - (i * maxPerRequest));
     
     try {
-      // Use d1 (past 24 hours) since Google API doesn't support 12 hours
-      // We'll filter to 12 hours later using Reddit post timestamps
+      // Use d1 (past 24 hours) since Google API doesn't support 6 hours
+      // We'll filter to 6 hours later using Reddit post timestamps
       const response = await customsearch.cse.list({
         auth: process.env.GCS_KEY,
         cx: "84be52ff9627b480b",
@@ -163,9 +163,9 @@ async function fetchSubredditPosts(
     const data = await response.json();
     const posts: RedditPost[] = data.data?.children?.map((child: any) => child.data) || [];
     
-    // Filter to past 12 hours (not 4 days like sync leads)
-    const twelveHoursAgo = Math.floor(Date.now() / 1000) - (12 * 60 * 60);
-    const recentPosts = posts.filter((post: RedditPost) => post.created_utc >= twelveHoursAgo);
+    // Filter to past 6 hours (not 4 days like sync leads)
+    const sixHoursAgo = Math.floor(Date.now() / 1000) - (6 * 60 * 60);
+    const recentPosts = posts.filter((post: RedditPost) => post.created_utc >= sixHoursAgo);
     
     return recentPosts.slice(0, limit).map((post: RedditPost) => ({
       title: post.title,
@@ -324,7 +324,7 @@ async function filterTitles(
   return verdictMap;
 }
 
-// Process auto-pilot for a single user (exactly like sync leads, but 12 hours filter)
+// Process auto-pilot for a single user (exactly like sync leads, but 6 hours filter)
 async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesPosts: number; yesPostsList: any[]; posted: number; failed: number; error?: string }> {
   try {
     console.log(`[Auto-Pilot] Processing user: ${user.email}`);
@@ -445,8 +445,8 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
 
     const postDataMap = await batchFetchPostData(postIds, validAccessToken);
 
-    // Step 5: Filter to past 12 hours and build filter array (same as sync leads, but 12 hours)
-    const twelveHoursAgo = Math.floor(Date.now() / 1000) - (12 * 60 * 60);
+    // Step 5: Filter to past 6 hours and build filter array (same as sync leads, but 6 hours)
+    const sixHoursAgo = Math.floor(Date.now() / 1000) - (6 * 60 * 60);
     const postsToFilter: Array<{ id: string; title: string; url: string }> = [];
     const seenPostIds = new Set<string>();
 
@@ -463,11 +463,11 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       // Get post data from map
       const postData = postDataMap.get(postId);
       
-      // Filter: only include posts from the past 12 hours
+      // Filter: only include posts from the past 6 hours
       if (postData) {
         const postCreatedUtc = postData.created_utc || 0;
-        if (postCreatedUtc < twelveHoursAgo) {
-          return; // Skip posts older than 12 hours
+        if (postCreatedUtc < sixHoursAgo) {
+          return; // Skip posts older than 6 hours
         }
         
         const title = postData.title || result.title || "";
@@ -480,7 +480,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
         }
       } else {
         // If we don't have post data, try to use result data
-        if (result.postData && result.postData.created_utc >= twelveHoursAgo) {
+        if (result.postData && result.postData.created_utc >= sixHoursAgo) {
           const title = result.postData.title || result.title || "";
           if (title) {
             postsToFilter.push({
@@ -493,7 +493,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       }
     });
 
-    console.log(`[Auto-Pilot] User ${user.email}: ${postsToFilter.length} posts to filter (past 12 hours)`);
+        console.log(`[Auto-Pilot] User ${user.email}: ${postsToFilter.length} posts to filter (past 6 hours)`);
 
     // Step 6: Filter titles using OpenAI (same as sync leads)
     if (postsToFilter.length > 0) {
@@ -584,24 +584,33 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
             continue;
           }
 
-          // Parse comment
+          // Parse comment (handle both JSON and plain text responses)
           let commentText: string;
           try {
             const output = commentResponse.output.filter((res: any) => res.type == 'message')[0].content.filter((res: any) => res.type == 'output_text')[0].text;
-            const parsed = JSON.parse(output);
-            if (parsed.items && Array.isArray(parsed.items) && parsed.items.length > 0) {
-              commentText = parsed.items[0];
-            } else if (Array.isArray(parsed) && parsed.length > 0) {
-              commentText = parsed[0];
-            } else if (typeof parsed === 'string') {
-              commentText = parsed;
-            } else {
-              throw new Error("Unexpected comment format");
+            
+            // Try to parse as JSON first
+            try {
+              const parsed = JSON.parse(output);
+              if (parsed.items && Array.isArray(parsed.items) && parsed.items.length > 0) {
+                commentText = parsed.items[0];
+              } else if (Array.isArray(parsed) && parsed.length > 0) {
+                commentText = parsed[0];
+              } else if (typeof parsed === 'string') {
+                commentText = parsed;
+              } else {
+                // If parsing succeeds but format is unexpected, try to use output directly
+                commentText = output;
+              }
+            } catch (jsonError) {
+              // If JSON parsing fails, treat the output as plain text (single comment)
+              console.log(`[Auto-Pilot] User ${user.email}: Comment output is not JSON, treating as plain text for post "${yesPost.title}"`);
+              commentText = output;
             }
           } catch (parseError) {
-            console.error(`[Auto-Pilot] User ${user.email}: Error parsing comment for post "${yesPost.title}":`, parseError);
+            console.error(`[Auto-Pilot] User ${user.email}: Error extracting comment for post "${yesPost.title}":`, parseError);
             failedCount++;
-            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: "Failed to parse comment" });
+            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: "Failed to extract comment" });
             continue;
           }
 

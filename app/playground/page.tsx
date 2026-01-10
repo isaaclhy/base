@@ -6200,10 +6200,58 @@ function PlaygroundContent() {
                     </div>
                   </div>
                     <div className="flex gap-2 self-start sm:self-auto">
+                        {/* Auto-pilot Button */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-sm px-2 py-1"
+                          disabled={isLoadingLeads || (session?.user?.email?.toLowerCase() !== "isarcorps@gmail.com") || isLoadingAutoPilot}
+                          onClick={async () => {
+                            setIsLoadingAutoPilot(true);
+                            try {
+                              const response = await fetch("/api/user/auto-pilot", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ autoPilotEnabled: !isAutoPilotEnabled }),
+                              });
+                              
+                              if (response.ok) {
+                                const data = await response.json();
+                                if (data.success) {
+                                  setIsAutoPilotEnabled(data.autoPilotEnabled);
+                                  showToast(
+                                    data.autoPilotEnabled 
+                                      ? "Auto-pilot enabled" 
+                                      : "Auto-pilot disabled",
+                                    { variant: "success" }
+                                  );
+                                }
+                              } else {
+                                showToast("Failed to update auto-pilot status", { variant: "error" });
+                              }
+                            } catch (error) {
+                              console.error("Error updating auto-pilot status:", error);
+                              showToast("Failed to update auto-pilot status", { variant: "error" });
+                            } finally {
+                              setIsLoadingAutoPilot(false);
+                            }
+                          }}
+                        >
+                          {isLoadingAutoPilot ? (
+                            <>
+                              <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                              {isAutoPilotEnabled ? "Disabling..." : "Enabling..."}
+                            </>
+                          ) : (
+                            <>
+                              {isAutoPilotEnabled ? "Auto-pilot: ON" : "Auto-pilot: OFF"}
+                            </>
+                          )}
+                        </Button>
                         <Button
                           variant="default"
                           size="sm"
-                          className="bg-black text-white hover:bg-black/90 text-xs"
+                          className="bg-black text-white hover:bg-black/90 text-sm px-2 py-1"
                           disabled={isLoadingLeads || selectedLeads.size === 0}
                       onClick={async () => {
                         // Check usage limit before opening modal
@@ -6250,7 +6298,7 @@ function PlaygroundContent() {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="text-xs"
+                          className="text-sm px-2 py-1"
                           disabled={isLoadingLeads || selectedLeads.size === 0 || isBulkRemoving}
                           onClick={handleBulkRemove}
                         >
@@ -6270,7 +6318,7 @@ function PlaygroundContent() {
                       disabled={isLoadingLeads || (syncUsage ? syncUsage.syncCounter >= syncUsage.maxSyncsPerDay : false)}
                             size="sm"
                       variant={distinctLeadsLinks.length > 0 ? "outline" : "default"}
-                      className={`text-xs ${syncUsage && syncUsage.syncCounter >= syncUsage.maxSyncsPerDay && countdown ? "min-w-[160px]" : "w-[140px]"}`}
+                      className={`text-sm px-2 py-1 ${syncUsage && syncUsage.syncCounter >= syncUsage.maxSyncsPerDay && countdown ? "min-w-[160px]" : "w-[140px]"}`}
                     >
                       {isLoadingLeads ? (
                         <>
@@ -6295,7 +6343,7 @@ function PlaygroundContent() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="text-xs"
+                            className="text-sm px-2 py-1"
                             onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
                             disabled={isLoadingLeads}
                           >
