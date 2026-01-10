@@ -55,7 +55,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if (session.user.email) {
           try {
             const dbUser = await getUserByEmail(session.user.email);
-            session.user.plan = dbUser?.plan ?? "free";
+            // Normalize plan to only include valid types (free, basic, premium)
+            // Cast to include old plan types for migration check
+            const rawPlan = (dbUser?.plan ?? "free") as "free" | "basic" | "premium" | "starter" | "pro";
+            let normalizedPlan: "free" | "basic" | "premium" = "free";
+            if (rawPlan === "starter") {
+              normalizedPlan = "basic";
+            } else if (rawPlan === "pro") {
+              normalizedPlan = "premium";
+            } else if (rawPlan === "basic" || rawPlan === "premium" || rawPlan === "free") {
+              normalizedPlan = rawPlan;
+            }
+            session.user.plan = normalizedPlan;
           } catch {
               session.user.plan = "free";
           }

@@ -146,8 +146,10 @@ export async function getUserByEmail(email: string): Promise<User | null> {
   }
   
   // Migrate old plan names: "starter" -> "basic", "pro" -> "premium"
-  if (user && (user.plan === "starter" || user.plan === "pro")) {
-    const migratedPlan = user.plan === "starter" ? "basic" : "premium";
+  // Cast to include old plan types for migration check
+  const rawPlan = user?.plan as UserPlan | "starter" | "pro" | undefined;
+  if (user && (rawPlan === "starter" || rawPlan === "pro")) {
+    const migratedPlan = rawPlan === "starter" ? "basic" : "premium";
     const updatedUser = await usersCollection.findOneAndUpdate(
       { email: normalizedEmail },
       { $set: { plan: migratedPlan } },

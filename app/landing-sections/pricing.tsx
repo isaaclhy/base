@@ -68,9 +68,7 @@ export default function PricingSection({ showCTAButtons = true }: PricingSection
   const [isPortalLoading, setIsPortalLoading] = useState(false);
   const [showAutoPilotModal, setShowAutoPilotModal] = useState(false);
 
-  const plan = (session?.user?.plan ?? "free") as "free" | "basic" | "premium";
-  // Migrate old plan names
-  const normalizedPlan = plan === "starter" ? "basic" : plan === "pro" ? "premium" : plan;
+  const normalizedPlan = (session?.user?.plan ?? "free") as "free" | "basic" | "premium";
   const isBasic = normalizedPlan === "basic";
   const isPremium = normalizedPlan === "premium";
   const [checkoutPlan, setCheckoutPlan] = useState<"basic" | "premium" | null>(null);
