@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import stripe from "@/lib/stripe";
+import { updateUserPlanByEmail } from "@/lib/db/users";
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,7 +25,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Retrieve the checkout session from Stripe
-    const checkoutSession = await stripe.checkout.sessions.retrieve(sessionId);
+    const checkoutSession = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['subscription'],
+    });
 
     // Verify the session belongs to the current user
     const sessionEmail = checkoutSession.customer_details?.email || checkoutSession.customer_email;
@@ -38,12 +41,46 @@ export async function GET(request: NextRequest) {
     // Check if the session was completed successfully
     // For subscriptions with trials, payment_status can be "unpaid" but status should be "complete"
     if (checkoutSession.status === "complete") {
+      // Update user plan synchronously as fallback (in case webhook hasn't processed yet)
+      const customerId = typeof checkoutSession.customer === "string" ? checkoutSession.customer : checkoutSession.customer?.id;
+      const subscriptionId = typeof checkoutSession.subscription === "string" ? checkoutSession.subscription : checkoutSession.subscription?.id;
+      const priceId = checkoutSession.metadata?.price_id;
+      
+      // Get plan type from metadata
+      let planType = (checkoutSession.metadata?.plan_type as string) || "premium";
+      if (planType === "starter") planType = "basic";
+      if (planType === "pro") planType = "premium";
+      const finalPlanType = planType as "basic" | "premium";
+      
+      // Fetch subscription to get actual status (trialing for trials, active for immediate payments)
+      let subscriptionStatus = "active"; // Default fallback
+      if (checkoutSession.subscription) {
+        const subscription = typeof checkoutSession.subscription === "string"
+          ? await stripe.subscriptions.retrieve(checkoutSession.subscription)
+          : checkoutSession.subscription;
+        subscriptionStatus = subscription.status;
+      }
+
+      try {
+        await updateUserPlanByEmail(session.user.email, finalPlanType, {
+          stripeCustomerId: customerId ?? null,
+          stripeSubscriptionId: subscriptionId ?? null,
+          stripePriceId: priceId,
+          subscriptionStatus: subscriptionStatus as "active" | "trialing" | "past_due" | "canceled" | "unpaid",
+        });
+        console.log(`Verify-checkout: Updated user plan for ${session.user.email} to ${finalPlanType} with status ${subscriptionStatus}`);
+      } catch (updateError) {
+        console.error(`Verify-checkout: Error updating user plan (webhook will handle):`, updateError);
+        // Don't fail the request - webhook will handle the update
+      }
+
       return NextResponse.json({
         success: true,
         session: {
           id: checkoutSession.id,
           status: checkoutSession.status,
           payment_status: checkoutSession.payment_status,
+          plan: finalPlanType,
         },
       });
     }

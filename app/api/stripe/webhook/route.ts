@@ -67,11 +67,24 @@ export async function POST(request: NextRequest) {
         }
 
         try {
+          // Fetch the actual subscription to get the correct status (trialing for trials, active for immediate payments)
+          let subscriptionStatus = "active"; // Default fallback
+          if (subscriptionId) {
+            try {
+              const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+              subscriptionStatus = subscription.status;
+              console.log(`Subscription status for ${subscriptionId}: ${subscriptionStatus}`);
+            } catch (subError) {
+              console.error(`Error fetching subscription ${subscriptionId}:`, subError);
+              // Fall back to default "active" if we can't fetch it
+            }
+          }
+
           const result = await updateUserPlanByEmail(email, finalPlanType, {
             stripeCustomerId: customerId ?? null,
             stripeSubscriptionId: subscriptionId ?? null,
             stripePriceId: priceId,
-            subscriptionStatus: "active",
+            subscriptionStatus: subscriptionStatus as "active" | "trialing" | "past_due" | "canceled" | "unpaid",
           });
 
           if (!result) {
@@ -82,12 +95,12 @@ export async function POST(request: NextRequest) {
               await updateUserPlanByCustomerId(customerId, finalPlanType, {
                 stripeSubscriptionId: subscriptionId ?? null,
                 stripePriceId: priceId,
-                subscriptionStatus: "active",
+                subscriptionStatus: subscriptionStatus as "active" | "trialing" | "past_due" | "canceled" | "unpaid",
                 emailFallback: email,
               });
             }
           } else {
-            console.log(`Successfully updated user plan for ${email} to ${finalPlanType}`);
+            console.log(`Successfully updated user plan for ${email} to ${finalPlanType} with status ${subscriptionStatus}`);
           }
         } catch (error) {
           console.error(`Error updating user plan for ${email}:`, error);
