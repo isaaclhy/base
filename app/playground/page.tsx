@@ -2337,11 +2337,7 @@ function PlaygroundContent() {
 
       // Debug: Check if postData is populated
       const sampleLink = Object.values(updatedLeadsLinks)[0]?.[0];
-        hasPostData: !!sampleLink?.postData,
-        ups: sampleLink?.postData?.ups,
-        created_utc: sampleLink?.postData?.created_utc,
-        rawCached: getCachedPost(sampleLink?.link)
-      });
+
 
       // Set last sync time and persist to localStorage
       const syncTime = new Date();

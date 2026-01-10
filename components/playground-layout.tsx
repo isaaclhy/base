@@ -72,7 +72,7 @@ const tabs: Tab[] = [
   { id: "create", label: "Create", icon: Plus },
   // { id: "engagement", label: "Engagement", icon: Heart },
   { id: "analytics", label: "History", icon: BarChart3 },
-  { id: "pricing", label: "Pricing", icon: CreditCard },
+  { id: "pricing", label: "Plan", icon: CreditCard },
 ];
 
 export default function PlaygroundLayout({ children }: PlaygroundLayoutProps) {
