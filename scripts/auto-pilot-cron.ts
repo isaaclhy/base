@@ -399,23 +399,12 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
   try {
     console.log(`[Auto-Pilot] Processing user: ${user.email}`);
     
-    const allKeywords = user.keywords || [];
-    const allSubreddits = user.subreddits || [];
+    const keywords = user.keywords || [];
+    const subreddits = (user.subreddits as string[]) || [];
     const productDescription = user.productDetails?.productDescription || "";
-    
-    const keywords = allKeywords.slice(0, 5);
-    const subreddits = (allSubreddits as string[]).slice(0, 5);
     
     if (keywords.length === 0) {
       return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0, error: "No keywords" };
-    }
-    
-    if (allKeywords.length > 5) {
-      console.log(`[Auto-Pilot] User ${user.email}: Limiting keywords from ${allKeywords.length} to first 5 for auto-pilot`);
-    }
-    
-    if (allSubreddits.length > 5) {
-      console.log(`[Auto-Pilot] User ${user.email}: Limiting subreddits from ${allSubreddits.length} to first 5 for auto-pilot`);
     }
     
     if (!productDescription) {
