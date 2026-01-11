@@ -144,7 +144,8 @@ async function expandKeywords(keywords: string[]): Promise<string[]> {
         try {
           const parsed = JSON.parse(output);
           const similarKeywords = Array.isArray(parsed) ? parsed : (parsed.keywords || []);
-          similarKeywords.forEach((k: string) => allKeywordsSet.add(k.toLowerCase().trim()));
+          const limitedKeywords = similarKeywords.slice(0, 3);
+          limitedKeywords.forEach((k: string) => allKeywordsSet.add(k.toLowerCase().trim()));
         } catch (parseError) {
           console.error(`[User Stats] Error parsing similar keywords for "${keyword}":`, parseError);
         }
@@ -426,27 +427,7 @@ async function syncLeadsForUser(user: User): Promise<{ success: boolean; leadsCo
       }
     }
 
-    const allSubredditResults: any[] = [];
-    if (subreddits && subreddits.length > 0) {
-      await Promise.all(
-        expandedKeywords.map(async (keyword: string) => {
-          await Promise.all(
-            (subreddits as string[]).map(async (subreddit: string) => {
-              try {
-                const results = await fetchSubredditPosts(keyword, subreddit, 30, validAccessToken);
-                results.forEach(result => {
-                  allSubredditResults.push({ ...result, keyword, subreddit });
-                });
-              } catch (error) {
-                console.error(`[User Stats] [Sync Leads] Error fetching subreddit results for "${keyword}" in r/${subreddit}:`, error);
-              }
-            })
-          );
-        })
-      );
-    }
-
-    const allResults = [...allGoogleResults, ...allSubredditResults];
+    const allResults = [...allGoogleResults];
 
     const seenUrls = new Set<string>();
     const uniqueResults = allResults.filter(result => {
@@ -551,6 +532,23 @@ async function syncLeadsForUser(user: User): Promise<{ success: boolean; leadsCo
 }
 
 function userMeetsCriteria(user: User): boolean {
+  // Only process users who joined in the last 4 days
+  if (user.createdAt) {
+    const fourDaysAgo = new Date();
+    fourDaysAgo.setDate(fourDaysAgo.getDate() - 4);
+    
+    const userCreatedAt = user.createdAt instanceof Date 
+      ? user.createdAt 
+      : new Date(user.createdAt);
+    
+    if (userCreatedAt < fourDaysAgo) {
+      return false;
+    }
+  } else {
+    // If createdAt is missing, skip this user
+    return false;
+  }
+  
   const productDescription = user.productDetails?.productDescription || "";
   const wordCount = countWords(productDescription);
   
@@ -561,14 +559,14 @@ function userMeetsCriteria(user: User): boolean {
   const keywords = user.keywords || [];
   const keywordCount = keywords.length;
   
-  if (keywordCount <= 1) {
+  if (keywordCount < 3) {
     return false;
   }
   
   const subreddits = user.subreddits || [];
   const subredditCount = subreddits.length;
   
-  if (subredditCount <= 1) {
+  if (subredditCount < 3) {
     return false;
   }
   
@@ -623,10 +621,10 @@ async function main() {
         let reason = "";
         if (wordCount <= 10) {
           reason = `Product description too short (${wordCount} words, needs > 10)`;
-        } else if (keywordCount <= 1) {
-          reason = `Not enough keywords (${keywordCount}, needs > 1)`;
-        } else if (subredditCount <= 1) {
-          reason = `Not enough subreddits (${subredditCount}, needs > 1)`;
+        } else if (keywordCount < 3) {
+          reason = `Not enough keywords (${keywordCount}, needs at least 3)`;
+        } else if (subredditCount < 3) {
+          reason = `Not enough subreddits (${subredditCount}, needs at least 3)`;
         } else {
           reason = "Unknown reason";
         }
