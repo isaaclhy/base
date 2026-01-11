@@ -124,7 +124,7 @@ async function fetchGoogleSearch(
         q: query,
         num: numResults,
         start: startIndex,
-        dateRestrict: "d1",
+        dateRestrict: "d7",
       });
       
       if (response.data.items) {
@@ -296,8 +296,8 @@ async function fetchSubredditPosts(
     const data = await response.json();
     const posts: RedditPost[] = data.data?.children?.map((child: any) => child.data) || [];
     
-    const twelveHoursAgo = Math.floor(Date.now() / 1000) - (12 * 60 * 60);
-    const recentPosts = posts.filter((post: RedditPost) => post.created_utc >= twelveHoursAgo);
+    const twentyFourHoursAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
+    const recentPosts = posts.filter((post: RedditPost) => post.created_utc >= twentyFourHoursAgo);
     
     return recentPosts.slice(0, limit).map((post: RedditPost) => ({
       title: post.title,
@@ -455,28 +455,38 @@ async function filterTitles(
 // Main processing function - full implementation
 async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesPosts: number; yesPostsList: any[]; posted: number; failed: number; error?: string }> {
   try {
+    console.log(`[Auto-Pilot] Starting processing for user: ${user.email}`);
+    
     const keywords = user.keywords || [];
     const subreddits = (user.subreddits as string[]) || [];
     const productDescription = user.productDetails?.productDescription || "";
     
+    console.log(`[Auto-Pilot] User ${user.email}: ${keywords.length} keywords, ${subreddits.length} subreddits`);
+    
     if (keywords.length === 0) {
+      console.log(`[Auto-Pilot] User ${user.email}: Skipping - no keywords`);
       return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0, error: "No keywords" };
     }
     
     if (!productDescription) {
+      console.log(`[Auto-Pilot] User ${user.email}: Skipping - no product description`);
       return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0, error: "No product description" };
     }
 
     const productLink = user.productDetails?.link || "";
     if (!productLink) {
+      console.log(`[Auto-Pilot] User ${user.email}: Skipping - no product link`);
       return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0, error: "No product link" };
     }
 
     let validAccessToken: string;
     try {
+      console.log(`[Auto-Pilot] User ${user.email}: Refreshing Reddit access token...`);
       validAccessToken = await refreshAccessToken(user.email);
+      console.log(`[Auto-Pilot] User ${user.email}: Reddit token refreshed successfully`);
     } catch (authError) {
       const errorMessage = authError instanceof Error ? authError.message : "Failed to refresh token";
+      console.error(`[Auto-Pilot] User ${user.email}: Reddit authentication failed - ${errorMessage}`);
       return { 
         success: false, 
         yesPosts: 0,
@@ -487,12 +497,15 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       };
     }
 
+    console.log(`[Auto-Pilot] User ${user.email}: Expanding ${keywords.length} keywords...`);
     const expandedKeywords = await expandKeywords(keywords);
+    console.log(`[Auto-Pilot] User ${user.email}: Expanded to ${expandedKeywords.length} total keywords`);
 
     // Google Custom Search with rate limiting
     const gcsRateLimiter = new GoogleCustomSearchRateLimiter();
     const allGoogleResults: any[] = [];
     
+    console.log(`[Auto-Pilot] User ${user.email}: Fetching Google search results for ${expandedKeywords.length} keywords...`);
     // Process sequentially to respect rate limits
     for (const keyword of expandedKeywords) {
       try {
@@ -501,13 +514,15 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           allGoogleResults.push({ ...result, keyword });
         });
       } catch (error) {
-        console.error(`[Auto-Pilot] Error fetching Google results for keyword "${keyword}":`, error);
+        console.error(`[Auto-Pilot] User ${user.email}: Error fetching Google results for keyword "${keyword}":`, error);
       }
     }
+    console.log(`[Auto-Pilot] User ${user.email}: Found ${allGoogleResults.length} Google search results`);
 
     // Subreddit search with rate limiting
     const allSubredditResults: any[] = [];
     if (subreddits && subreddits.length > 0) {
+      console.log(`[Auto-Pilot] User ${user.email}: Fetching subreddit results for ${expandedKeywords.length} keywords across ${subreddits.length} subreddits...`);
       const rateLimiter = new RedditRateLimiter();
       
       for (const keyword of expandedKeywords) {
@@ -518,13 +533,15 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
               allSubredditResults.push({ ...result, keyword, subreddit });
             });
           } catch (error) {
-            console.error(`[Auto-Pilot] Error fetching subreddit results for "${keyword}" in r/${subreddit}:`, error);
+            console.error(`[Auto-Pilot] User ${user.email}: Error fetching subreddit results for "${keyword}" in r/${subreddit}:`, error);
           }
         }
       }
+      console.log(`[Auto-Pilot] User ${user.email}: Found ${allSubredditResults.length} subreddit search results`);
     }
 
     // Combine and deduplicate
+    console.log(`[Auto-Pilot] User ${user.email}: Combining ${allGoogleResults.length} Google + ${allSubredditResults.length} subreddit results...`);
     const allResults = [...allGoogleResults, ...allSubredditResults];
     const seenUrls = new Set<string>();
     const uniqueResults = allResults.filter(result => {
@@ -533,6 +550,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       seenUrls.add(normalized);
       return true;
     });
+    console.log(`[Auto-Pilot] User ${user.email}: After deduplication: ${uniqueResults.length} unique posts`);
 
     // Extract post IDs and batch fetch
     const postIds: string[] = [];
@@ -546,10 +564,12 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       }
     });
 
+    console.log(`[Auto-Pilot] User ${user.email}: Fetching post data for ${postIds.length} posts...`);
     const postDataMap = await batchFetchPostData(postIds, validAccessToken);
+    console.log(`[Auto-Pilot] User ${user.email}: Fetched data for ${postDataMap.size} posts`);
 
-    // Filter to past 12 hours
-    const twelveHoursAgo = Math.floor(Date.now() / 1000) - (12 * 60 * 60);
+    // Filter to past 24 hours
+    const twentyFourHoursAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
     const postsToFilter: Array<{ id: string; title: string; url: string }> = [];
     const seenPostIds = new Set<string>();
 
@@ -567,7 +587,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       
       if (postData) {
         const postCreatedUtc = postData.created_utc || 0;
-        if (postCreatedUtc < twelveHoursAgo) {
+        if (postCreatedUtc < twentyFourHoursAgo) {
           return;
         }
         
@@ -580,7 +600,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           });
         }
       } else {
-        if (result.postData && result.postData.created_utc >= twelveHoursAgo) {
+        if (result.postData && result.postData.created_utc >= twentyFourHoursAgo) {
           const title = result.postData.title || result.title || "";
           if (title) {
             postsToFilter.push({
@@ -592,9 +612,11 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
         }
       }
     });
+    console.log(`[Auto-Pilot] User ${user.email}: After time filter (24 hours): ${postsToFilter.length} posts to filter`);
 
     // Filter titles using OpenAI
     if (postsToFilter.length > 0) {
+      console.log(`[Auto-Pilot] User ${user.email}: Filtering ${postsToFilter.length} posts using product description...`);
       const verdictMap = await filterTitles(
         postsToFilter.map(p => ({ id: p.id, title: p.title })),
         productDescription
@@ -604,12 +626,15 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
         const verdict = verdictMap.get(p.id);
         return verdict === "YES";
       });
+      console.log(`[Auto-Pilot] User ${user.email}: Found ${yesPosts.length} YES posts after filtering`);
 
       if (yesPosts.length === 0) {
+        console.log(`[Auto-Pilot] User ${user.email}: No YES posts found, skipping`);
         return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0 };
       }
 
       // Check for posts that have already been processed (posted or skipped)
+      console.log(`[Auto-Pilot] User ${user.email}: Checking for already processed posts...`);
       const db = await getDatabase();
       const postsCollection = db.collection("postsv2");
       const existingPosts = await postsCollection.find({
@@ -624,18 +649,22 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           processedUrls.add(normalizeUrl(post.link));
         }
       });
+      console.log(`[Auto-Pilot] User ${user.email}: Found ${existingPosts.length} already processed posts`);
 
       // Filter out posts that have already been processed
       const newYesPosts = yesPosts.filter(post => {
         const normalizedUrl = normalizeUrl(post.url);
         return !processedUrls.has(normalizedUrl);
       });
+      console.log(`[Auto-Pilot] User ${user.email}: ${newYesPosts.length} new posts to process (${yesPosts.length - newYesPosts.length} already processed)`);
 
       if (newYesPosts.length === 0) {
+        console.log(`[Auto-Pilot] User ${user.email}: All posts already processed, skipping`);
         return { success: true, yesPosts: yesPosts.length, yesPostsList: yesPosts.map(p => ({ id: p.id, title: p.title, url: p.url })), posted: 0, failed: 0 };
       }
 
       // Generate and post comments
+      console.log(`[Auto-Pilot] User ${user.email}: Starting to generate and post comments for ${newYesPosts.length} posts...`);
       const productBenefits = user.productDetails?.productBenefits || "";
       let postedCount = 0;
       let failedCount = 0;
