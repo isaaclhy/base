@@ -7015,12 +7015,87 @@ function PlaygroundContent() {
                         </div>
                       ) : (
                     !isLoadingLeads && !Object.values(isLoadingLeadsLinks).some(Boolean) && (
-                          <div className="flex items-center justify-center min-h-[400px]">
-                          <p className="text-sm text-muted-foreground">
-                          {keywords && keywords.length > 0
-                            ? "No leads found. Click 'Sync Leads' to get started."
-                            : "Please add keywords in the Product tab first, then search for leads."}
-                          </p>
+                          <div className="flex items-center justify-center min-h-[400px] px-4">
+                            <div className="max-w-5xl w-full space-y-8 pt-12">
+                              <div className="text-center">
+                                <h3 className="text-xl font-semibold mb-2">How SignalScouter Works</h3>
+                                <p className="text-sm text-muted-foreground">
+                                  Get started in 3 simple steps
+                                </p>
+                              </div>
+                              
+                              <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-stretch">
+                                {/* Step 1 */}
+                                <div className="flex-1 border rounded-lg p-6 bg-card shadow-sm flex flex-col">
+                                  <div className="flex flex-col space-y-4 flex-1">
+                                    <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold text-sm">
+                                      1
+                                    </div>
+                                    <div className="flex-1 w-full">
+                                      <h4 className="font-semibold mb-2 text-left">Enter Product Details</h4>
+                                      <p className="text-sm text-muted-foreground text-left">
+                                        Go to the <span className="font-medium">Product</span> tab and fill in your product information, keywords, and subreddits to help us find the right leads for you.
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Arrow 1 */}
+                                <div className="hidden md:flex items-center justify-center">
+                                  <ChevronRight className="w-6 h-6 text-muted-foreground" />
+                                </div>
+
+                                {/* Step 2 */}
+                                <div className="flex-1 border rounded-lg p-6 bg-card shadow-sm flex flex-col">
+                                  <div className="flex flex-col space-y-4 flex-1">
+                                    <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold text-sm">
+                                      2
+                                    </div>
+                                    <div className="flex-1 w-full">
+                                      <h4 className="font-semibold mb-2 text-left">Sync Leads</h4>
+                                      <p className="text-sm text-muted-foreground text-left">
+                                        Click <span className="font-medium">Sync Leads</span> to discover the latest high-potential Reddit posts that match your product and keywords.
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Arrow 2 */}
+                                <div className="hidden md:flex items-center justify-center">
+                                  <ChevronRight className="w-6 h-6 text-muted-foreground" />
+                                </div>
+
+                                {/* Step 3 */}
+                                <div className="flex-1 border rounded-lg p-6 bg-card shadow-sm flex flex-col">
+                                  <div className="flex flex-col space-y-4 flex-1">
+
+                                    <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold text-sm">
+                                      3
+                                    </div>
+                                    <div className="flex-1 w-full">
+                                      <h4 className="font-semibold mb-2 text-left">Engage with Leads</h4>
+                                      <p className="text-sm text-muted-foreground text-left">
+                                        Use our customized comment to comment on each post, or write your own. Engage with potential customers and grow your audience on Reddit.
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {keywords && keywords.length > 0 ? (
+                                <div className="text-center pt-4">
+                                  <p className="text-sm text-muted-foreground">
+                                    Ready to find leads? On average, our users find <span className="font-medium">500+</span> high potential leads weekly.
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="text-center pt-4">
+                                  <p className="text-sm text-muted-foreground">
+                                    Start by adding your product details in the <span className="font-medium">Product</span> tab.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )
                 )}

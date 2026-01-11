@@ -83,7 +83,10 @@ async function expandKeywords(keywords: string[]): Promise<string[]> {
         try {
           const parsed = JSON.parse(output);
           const similarKeywords = Array.isArray(parsed) ? parsed : (parsed.keywords || []);
-          similarKeywords.forEach((k: string) => allKeywordsSet.add(k.toLowerCase().trim()));
+          // Limit to only 2 extra keywords for auto-pilot cron job
+          const limitedKeywords = similarKeywords.slice(0, 2);
+          limitedKeywords.forEach((k: string) => allKeywordsSet.add(k.toLowerCase().trim()));
+          console.log(`[Auto-Pilot] Expanded keyword "${keyword}" to ${limitedKeywords.length} similar keywords (limited from ${similarKeywords.length})`);
         } catch (parseError) {
           console.error(`[Auto-Pilot] Error parsing similar keywords for "${keyword}":`, parseError);
         }
@@ -141,7 +144,8 @@ async function fetchSubredditPosts(
   keyword: string,
   subreddit: string,
   limit: number,
-  accessToken: string
+  accessToken: string,
+  retryCount: number = 0
 ): Promise<any[]> {
   try {
     const searchUrl = `https://oauth.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(keyword)}&sort=new&limit=${limit}&t=week&restrict_sr=1`;
@@ -154,6 +158,20 @@ async function fetchSubredditPosts(
       },
       cache: 'no-store'
     });
+
+    if (response.status === 429) {
+      // Rate limited - retry with exponential backoff
+      const maxRetries = 3;
+      if (retryCount < maxRetries) {
+        const waitTime = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+        console.warn(`[Auto-Pilot] Rate limited (429) for r/${subreddit} keyword "${keyword}". Retrying in ${waitTime}ms (attempt ${retryCount + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        return fetchSubredditPosts(keyword, subreddit, limit, accessToken, retryCount + 1);
+      } else {
+        console.error(`[Auto-Pilot] Rate limited (429) for r/${subreddit} keyword "${keyword}". Max retries reached. Skipping.`);
+        return [];
+      }
+    }
 
     if (!response.ok) {
       console.error(`[Auto-Pilot] Error fetching posts from r/${subreddit} for keyword "${keyword}": ${response.status}`);
@@ -393,24 +411,23 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
     console.log(`[Auto-Pilot] User ${user.email}: Found ${allGoogleResults.length} Google search results`);
 
     // Step 2.5: Subreddit search (same as sync leads)
+    // Process sequentially with delays to avoid rate limiting
     const allSubredditResults: any[] = [];
     if (subreddits && subreddits.length > 0) {
-      await Promise.all(
-        expandedKeywords.map(async (keyword: string) => {
-          await Promise.all(
-            (subreddits as string[]).map(async (subreddit: string) => {
-              try {
-                const results = await fetchSubredditPosts(keyword, subreddit, 30, validAccessToken);
-                results.forEach(result => {
-                  allSubredditResults.push({ ...result, keyword, subreddit });
-                });
-              } catch (error) {
-                console.error(`[Auto-Pilot] Error fetching subreddit results for "${keyword}" in r/${subreddit}:`, error);
-              }
-            })
-          );
-        })
-      );
+      for (const keyword of expandedKeywords) {
+        for (const subreddit of subreddits as string[]) {
+          try {
+            // Add delay between requests to avoid rate limiting (500ms between requests)
+            await new Promise(resolve => setTimeout(resolve, 500));
+            const results = await fetchSubredditPosts(keyword, subreddit, 30, validAccessToken);
+            results.forEach(result => {
+              allSubredditResults.push({ ...result, keyword, subreddit });
+            });
+          } catch (error) {
+            console.error(`[Auto-Pilot] Error fetching subreddit results for "${keyword}" in r/${subreddit}:`, error);
+          }
+        }
+      }
     }
     
     console.log(`[Auto-Pilot] User ${user.email}: Found ${allSubredditResults.length} subreddit search results`);
@@ -445,7 +462,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
 
     const postDataMap = await batchFetchPostData(postIds, validAccessToken);
 
-    // Step 5: Filter to past 6 hours and build filter array (same as sync leads, but 6 hours)
+    // Step 5: Filter to past 6 hours and build filter array (same as sync leads, but 6 hours filter)
     const sixHoursAgo = Math.floor(Date.now() / 1000) - (6 * 60 * 60);
     const postsToFilter: Array<{ id: string; title: string; url: string }> = [];
     const seenPostIds = new Set<string>();
