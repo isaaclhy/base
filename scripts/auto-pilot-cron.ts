@@ -628,9 +628,26 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       });
       console.log(`[Auto-Pilot] User ${user.email}: Found ${yesPosts.length} YES posts after filtering`);
 
+      let postsToProcess = yesPosts;
+      let usingMaybePosts = false;
+
+      // If no YES posts, fall back to top 10 MAYBE posts
       if (yesPosts.length === 0) {
-        console.log(`[Auto-Pilot] User ${user.email}: No YES posts found, skipping`);
-        return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0 };
+        const maybePosts = postsToFilter.filter(p => {
+          const verdict = verdictMap.get(p.id);
+          return verdict === "MAYBE";
+        });
+        console.log(`[Auto-Pilot] User ${user.email}: No YES posts found, falling back to ${maybePosts.length} MAYBE posts`);
+        
+        if (maybePosts.length === 0) {
+          console.log(`[Auto-Pilot] User ${user.email}: No MAYBE posts found either, skipping`);
+          return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0 };
+        }
+
+        // Take top 10 MAYBE posts
+        postsToProcess = maybePosts.slice(0, 10);
+        usingMaybePosts = true;
+        console.log(`[Auto-Pilot] User ${user.email}: Using top ${postsToProcess.length} MAYBE posts`);
       }
 
       // Check for posts that have already been processed (posted or skipped)
@@ -640,7 +657,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       const existingPosts = await postsCollection.find({
         userId: user.email,
         status: { $in: ["posted", "skipped"] },
-        link: { $in: yesPosts.map(p => p.url) }
+        link: { $in: postsToProcess.map(p => p.url) }
       }).toArray();
 
       const processedUrls = new Set<string>();
@@ -652,19 +669,20 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       console.log(`[Auto-Pilot] User ${user.email}: Found ${existingPosts.length} already processed posts`);
 
       // Filter out posts that have already been processed
-      const newYesPosts = yesPosts.filter(post => {
+      const newYesPosts = postsToProcess.filter(post => {
         const normalizedUrl = normalizeUrl(post.url);
         return !processedUrls.has(normalizedUrl);
       });
-      console.log(`[Auto-Pilot] User ${user.email}: ${newYesPosts.length} new posts to process (${yesPosts.length - newYesPosts.length} already processed)`);
+      console.log(`[Auto-Pilot] User ${user.email}: ${newYesPosts.length} new posts to process (${postsToProcess.length - newYesPosts.length} already processed)`);
 
       if (newYesPosts.length === 0) {
         console.log(`[Auto-Pilot] User ${user.email}: All posts already processed, skipping`);
-        return { success: true, yesPosts: yesPosts.length, yesPostsList: yesPosts.map(p => ({ id: p.id, title: p.title, url: p.url })), posted: 0, failed: 0 };
+        return { success: true, yesPosts: postsToProcess.length, yesPostsList: postsToProcess.map(p => ({ id: p.id, title: p.title, url: p.url })), posted: 0, failed: 0 };
       }
 
       // Generate and post comments
-      console.log(`[Auto-Pilot] User ${user.email}: Starting to generate and post comments for ${newYesPosts.length} posts...`);
+      const postTypeLabel = usingMaybePosts ? "MAYBE" : "YES";
+      console.log(`[Auto-Pilot] User ${user.email}: Starting to generate and post comments for ${newYesPosts.length} ${postTypeLabel} posts...`);
       const productBenefits = user.productDetails?.productBenefits || "";
       let postedCount = 0;
       let failedCount = 0;
@@ -991,8 +1009,8 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
 
       return { 
         success: true, 
-        yesPosts: yesPosts.length, 
-        yesPostsList: yesPosts.map(p => ({ id: p.id, title: p.title, url: p.url })),
+        yesPosts: postsToProcess.length, 
+        yesPostsList: postsToProcess.map(p => ({ id: p.id, title: p.title, url: p.url })),
         posted: postedCount,
         failed: failedCount
       };
