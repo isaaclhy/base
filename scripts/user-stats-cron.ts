@@ -27,6 +27,56 @@ const openai = new OpenAI({
 
 const customsearch = google.customsearch("v1");
 
+class GoogleCustomSearchRateLimiter {
+  private queriesPerMinute: number = 100;
+  private queriesInCurrentMinute: number = 0;
+  private minuteStartTime: number = Date.now();
+  private minDelayBetweenRequests: number = 600; // 600ms = ~100 requests per minute max
+
+  async waitIfNeeded(): Promise<void> {
+    const now = Date.now();
+    const timeSinceMinuteStart = now - this.minuteStartTime;
+
+    // Reset counter if a minute has passed
+    if (timeSinceMinuteStart >= 60000) {
+      this.queriesInCurrentMinute = 0;
+      this.minuteStartTime = now;
+    }
+
+    // If we've hit the limit, wait until the next minute
+    if (this.queriesInCurrentMinute >= this.queriesPerMinute) {
+      const waitTime = 60000 - timeSinceMinuteStart;
+      if (waitTime > 0) {
+        console.log(`[GCS Rate Limiter] Quota exhausted (${this.queriesInCurrentMinute}/${this.queriesPerMinute}). Waiting ${Math.ceil(waitTime / 1000)}s until reset...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        this.queriesInCurrentMinute = 0;
+        this.minuteStartTime = Date.now();
+      }
+    }
+
+    // Ensure minimum delay between requests to avoid hitting the limit
+    const timeSinceLastRequest = now - (this.minuteStartTime + (this.queriesInCurrentMinute * this.minDelayBetweenRequests));
+    if (timeSinceLastRequest < this.minDelayBetweenRequests && this.queriesInCurrentMinute > 0) {
+      const waitTime = this.minDelayBetweenRequests - timeSinceLastRequest;
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+
+    // Increment counter after waiting
+    this.queriesInCurrentMinute++;
+  }
+
+  getRemaining(): number {
+    const now = Date.now();
+    const timeSinceMinuteStart = now - this.minuteStartTime;
+    
+    if (timeSinceMinuteStart >= 60000) {
+      return this.queriesPerMinute;
+    }
+    
+    return Math.max(0, this.queriesPerMinute - this.queriesInCurrentMinute);
+  }
+}
+
 /**
  * Count words in a string
  */
@@ -107,13 +157,22 @@ async function expandKeywords(keywords: string[]): Promise<string[]> {
   return Array.from(allKeywordsSet);
 }
 
-async function fetchGoogleSearch(query: string, resultsPerQuery: number = 20): Promise<any[]> {
+async function fetchGoogleSearch(
+  query: string, 
+  resultsPerQuery: number = 20,
+  rateLimiter?: GoogleCustomSearchRateLimiter
+): Promise<any[]> {
   const maxPerRequest = 10;
   const totalResults = Math.min(resultsPerQuery, 20);
   const requestsNeeded = Math.ceil(totalResults / maxPerRequest);
   const allResults: any[] = [];
   
   for (let i = 0; i < requestsNeeded; i++) {
+    // Wait for rate limiter if provided
+    if (rateLimiter) {
+      await rateLimiter.waitIfNeeded();
+    }
+    
     const startIndex = i * maxPerRequest + 1;
     const numResults = Math.min(maxPerRequest, totalResults - (i * maxPerRequest));
     
@@ -351,19 +410,21 @@ async function syncLeadsForUser(user: User): Promise<{ success: boolean; leadsCo
 
     const expandedKeywords = await expandKeywords(keywords);
 
+    // Google Custom Search with rate limiting
+    const gcsRateLimiter = new GoogleCustomSearchRateLimiter();
     const allGoogleResults: any[] = [];
-    await Promise.all(
-      expandedKeywords.map(async (keyword) => {
-        try {
-          const results = await fetchGoogleSearch(keyword, 20);
-          results.forEach(result => {
-            allGoogleResults.push({ ...result, keyword });
-          });
-        } catch (error) {
-          console.error(`[User Stats] [Sync Leads] Error fetching Google results for keyword "${keyword}":`, error);
-        }
-      })
-    );
+    
+    // Process sequentially to respect rate limits
+    for (const keyword of expandedKeywords) {
+      try {
+        const results = await fetchGoogleSearch(keyword, 20, gcsRateLimiter);
+        results.forEach(result => {
+          allGoogleResults.push({ ...result, keyword });
+        });
+      } catch (error) {
+        console.error(`[User Stats] [Sync Leads] Error fetching Google results for keyword "${keyword}":`, error);
+      }
+    }
 
     const allSubredditResults: any[] = [];
     if (subreddits && subreddits.length > 0) {
@@ -462,17 +523,17 @@ async function syncLeadsForUser(user: User): Promise<{ success: boolean; leadsCo
       productDescription
     );
 
-    const yesPosts = postsToFilter.filter(p => {
+    const yesAndMaybePosts = postsToFilter.filter(p => {
       const verdict = verdictMap.get(p.id);
-      return verdict === "YES";
+      return verdict === "YES" || verdict === "MAYBE";
     });
 
-    console.log(`[User Stats] [Sync Leads] User ${user.email}: Found ${yesPosts.length} YES leads`);
+    console.log(`[User Stats] [Sync Leads] User ${user.email}: Found ${yesAndMaybePosts.length} YES/MAYBE leads`);
 
     return { 
       success: true, 
-      leadsCount: yesPosts.length, 
-      leads: yesPosts.map(p => ({
+      leadsCount: yesAndMaybePosts.length, 
+      leads: yesAndMaybePosts.map(p => ({
         title: p.title,
         url: p.url,
         postId: p.id

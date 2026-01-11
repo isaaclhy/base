@@ -6529,7 +6529,7 @@ function PlaygroundContent() {
                           Refreshing...
                         </>
                       ) : (userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1) ? (
-                        "Upgrade to sync more"
+                        "Upgrade to sync"
                       ) : syncUsage && syncUsage.syncCounter >= syncUsage.maxSyncsPerDay ? (
                         countdown ? (
                           <>
