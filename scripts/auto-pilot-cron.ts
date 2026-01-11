@@ -570,7 +570,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
 
     // Filter to past 24 hours
     const twentyFourHoursAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
-    const postsToFilter: Array<{ id: string; title: string; url: string }> = [];
+    let postsToFilter: Array<{ id: string; title: string; url: string }> = [];
     const seenPostIds = new Set<string>();
 
     uniqueResults.forEach(result => {
@@ -614,6 +614,38 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
     });
     console.log(`[Auto-Pilot] User ${user.email}: After time filter (24 hours): ${postsToFilter.length} posts to filter`);
 
+    // Check for posts that have already been processed (posted or skipped) BEFORE filtering
+    if (postsToFilter.length > 0) {
+      console.log(`[Auto-Pilot] User ${user.email}: Checking for already processed posts...`);
+      const db = await getDatabase();
+      const postsCollection = db.collection("postsv2");
+      const existingPosts = await postsCollection.find({
+        userId: user.email,
+        status: { $in: ["posted", "skipped"] },
+        link: { $in: postsToFilter.map(p => p.url) }
+      }).toArray();
+
+      const processedUrls = new Set<string>();
+      existingPosts.forEach((post: any) => {
+        if (post.link) {
+          processedUrls.add(normalizeUrl(post.link));
+        }
+      });
+      console.log(`[Auto-Pilot] User ${user.email}: Found ${existingPosts.length} already processed posts`);
+
+      // Filter out posts that have already been processed BEFORE OpenAI filtering
+      postsToFilter = postsToFilter.filter(post => {
+        const normalizedUrl = normalizeUrl(post.url);
+        return !processedUrls.has(normalizedUrl);
+      });
+      console.log(`[Auto-Pilot] User ${user.email}: ${postsToFilter.length} new posts to filter (${existingPosts.length} already processed and excluded)`);
+
+      if (postsToFilter.length === 0) {
+        console.log(`[Auto-Pilot] User ${user.email}: All posts already processed, skipping`);
+        return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0 };
+      }
+    }
+
     // Filter titles using OpenAI
     if (postsToFilter.length > 0) {
       console.log(`[Auto-Pilot] User ${user.email}: Filtering ${postsToFilter.length} posts using product description...`);
@@ -628,68 +660,47 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       });
       console.log(`[Auto-Pilot] User ${user.email}: Found ${yesPosts.length} YES posts after filtering`);
 
-      let postsToProcess = yesPosts;
+      const maybePosts = postsToFilter.filter(p => {
+        const verdict = verdictMap.get(p.id);
+        return verdict === "MAYBE";
+      });
+      console.log(`[Auto-Pilot] User ${user.email}: Found ${maybePosts.length} MAYBE posts after filtering`);
+
+      // Post ALL YES posts, only fill with MAYBE posts if there are fewer than 10 YES posts
+      const MAX_POSTS = 10;
+      let postsToProcess: any[] = [];
       let usingMaybePosts = false;
 
-      // If no YES posts, fall back to top 10 MAYBE posts
-      if (yesPosts.length === 0) {
-        const maybePosts = postsToFilter.filter(p => {
-          const verdict = verdictMap.get(p.id);
-          return verdict === "MAYBE";
-        });
-        console.log(`[Auto-Pilot] User ${user.email}: No YES posts found, falling back to ${maybePosts.length} MAYBE posts`);
-        
-        if (maybePosts.length === 0) {
-          console.log(`[Auto-Pilot] User ${user.email}: No MAYBE posts found either, skipping`);
-          return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0 };
-        }
-
-        // Take top 10 MAYBE posts
-        postsToProcess = maybePosts.slice(0, 10);
+      // Add ALL YES posts (no limit)
+      postsToProcess = yesPosts;
+      
+      // Only if we have fewer than MAX_POSTS YES posts, fill with MAYBE posts to reach MAX_POSTS
+      if (yesPosts.length < MAX_POSTS && maybePosts.length > 0) {
+        const remainingSlots = MAX_POSTS - yesPosts.length;
+        const maybePostsToAdd = maybePosts.slice(0, remainingSlots);
+        postsToProcess = [...yesPosts, ...maybePostsToAdd];
         usingMaybePosts = true;
-        console.log(`[Auto-Pilot] User ${user.email}: Using top ${postsToProcess.length} MAYBE posts`);
+        console.log(`[Auto-Pilot] User ${user.email}: Using ${yesPosts.length} YES posts + ${maybePostsToAdd.length} MAYBE posts = ${postsToProcess.length} total posts`);
+      } else {
+        console.log(`[Auto-Pilot] User ${user.email}: Using ${yesPosts.length} YES posts (all YES posts)`);
       }
 
-      // Check for posts that have already been processed (posted or skipped)
-      console.log(`[Auto-Pilot] User ${user.email}: Checking for already processed posts...`);
-      const db = await getDatabase();
-      const postsCollection = db.collection("postsv2");
-      const existingPosts = await postsCollection.find({
-        userId: user.email,
-        status: { $in: ["posted", "skipped"] },
-        link: { $in: postsToProcess.map(p => p.url) }
-      }).toArray();
-
-      const processedUrls = new Set<string>();
-      existingPosts.forEach((post: any) => {
-        if (post.link) {
-          processedUrls.add(normalizeUrl(post.link));
-        }
-      });
-      console.log(`[Auto-Pilot] User ${user.email}: Found ${existingPosts.length} already processed posts`);
-
-      // Filter out posts that have already been processed
-      const newYesPosts = postsToProcess.filter(post => {
-        const normalizedUrl = normalizeUrl(post.url);
-        return !processedUrls.has(normalizedUrl);
-      });
-      console.log(`[Auto-Pilot] User ${user.email}: ${newYesPosts.length} new posts to process (${postsToProcess.length - newYesPosts.length} already processed)`);
-
-      if (newYesPosts.length === 0) {
-        console.log(`[Auto-Pilot] User ${user.email}: All posts already processed, skipping`);
-        return { success: true, yesPosts: postsToProcess.length, yesPostsList: postsToProcess.map(p => ({ id: p.id, title: p.title, url: p.url })), posted: 0, failed: 0 };
+      // If no posts available at all, skip
+      if (postsToProcess.length === 0) {
+        console.log(`[Auto-Pilot] User ${user.email}: No YES or MAYBE posts found, skipping`);
+        return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0 };
       }
 
       // Generate and post comments
       const postTypeLabel = usingMaybePosts ? "MAYBE" : "YES";
-      console.log(`[Auto-Pilot] User ${user.email}: Starting to generate and post comments for ${newYesPosts.length} ${postTypeLabel} posts...`);
+      console.log(`[Auto-Pilot] User ${user.email}: Starting to generate and post comments for ${postsToProcess.length} ${postTypeLabel} posts...`);
       const productBenefits = user.productDetails?.productBenefits || "";
       let postedCount = 0;
       let failedCount = 0;
       const postedPosts: any[] = [];
       const failedPosts: any[] = [];
 
-      for (const yesPost of newYesPosts) {
+      for (const yesPost of postsToProcess) {
         try {
           let fullPostData = postDataMap.get(yesPost.id);
           

@@ -226,9 +226,9 @@ export function generateNewLeadsEmailTemplate(options: {
               </p>
               
               <!-- Lead Count Box -->
-              <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; text-align: center; margin: 30px 0;">
-                <div style="font-size: 36px; font-weight: bold; color: #ff4500; margin-bottom: 5px;">${leadCount}</div>
-                <div style="font-size: 14px; color: #666666;">Leads</div>
+              <div style="background-color: #ff4500; border-radius: 8px; padding: 20px; text-align: center; margin: 30px 0;">
+                <div style="font-size: 36px; font-weight: bold; color: #ffffff; margin-bottom: 5px;">${leadCount}</div>
+                <div style="font-size: 14px; color: #ffffff; font-weight: bold;">High Potential Leads</div>
               </div>
               
               <p style="font-size: 16px; color: #333333; margin: 30px 0; line-height: 1.6;">
