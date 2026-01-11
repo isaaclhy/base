@@ -21,8 +21,9 @@ import { google } from 'googleapis';
 import { getUsersWithAutoPilotEnabled } from '@/lib/db/users';
 import { refreshAccessToken } from '@/lib/reddit/auth';
 import { getSubredditRule, upsertSubredditRule } from '@/lib/db/subreddit-rules';
-import { createPost } from '@/lib/db/posts';
+import { createPost, getPostsByUserId } from '@/lib/db/posts';
 import { RedditPost } from '@/lib/types';
+import { getDatabase } from '@/lib/mongodb';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_KEY,
@@ -584,6 +585,39 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
         return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0 };
       }
 
+      // Check for posts that have already been processed (posted or skipped)
+      const db = await getDatabase();
+      const postsCollection = db.collection("postsv2");
+      const existingPosts = await postsCollection.find({
+        userId: user.email,
+        status: { $in: ["posted", "skipped"] },
+        link: { $in: yesPosts.map(p => p.url) }
+      }).toArray();
+
+      const processedUrls = new Set<string>();
+      existingPosts.forEach((post: any) => {
+        if (post.link) {
+          processedUrls.add(normalizeUrl(post.link));
+        }
+      });
+
+      // Filter out posts that have already been processed
+      const newYesPosts = yesPosts.filter(post => {
+        const normalizedUrl = normalizeUrl(post.url);
+        const alreadyProcessed = processedUrls.has(normalizedUrl);
+        if (alreadyProcessed) {
+          console.log(`[Auto-Pilot] User ${user.email}: Skipping post "${post.title}" (already processed)`);
+        }
+        return !alreadyProcessed;
+      });
+
+      console.log(`[Auto-Pilot] User ${user.email}: ${newYesPosts.length} new posts to process (${yesPosts.length - newYesPosts.length} already processed)`);
+
+      if (newYesPosts.length === 0) {
+        console.log(`[Auto-Pilot] User ${user.email}: All YES posts have already been processed`);
+        return { success: true, yesPosts: yesPosts.length, yesPostsList: yesPosts.map(p => ({ id: p.id, title: p.title, url: p.url })), posted: 0, failed: 0 };
+      }
+
       // Generate and post comments
       const productBenefits = user.productDetails?.productBenefits || "";
       let postedCount = 0;
@@ -591,7 +625,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       const postedPosts: any[] = [];
       const failedPosts: any[] = [];
 
-      for (const yesPost of yesPosts) {
+      for (const yesPost of newYesPosts) {
         try {
           let fullPostData = postDataMap.get(yesPost.id);
           
