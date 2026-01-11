@@ -6229,7 +6229,13 @@ function PlaygroundContent() {
                                     })()}
                             </td>
                                   <td className="py-3 px-2 text-sm text-muted-foreground">
-                                    {new Date(post.postedAt).toLocaleDateString()}
+                                    {new Date(post.postedAt).toLocaleString(undefined, {
+                                      year: 'numeric',
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
                                   </td>
                                   <td className="py-3 px-2">
                               {post.link ? (
