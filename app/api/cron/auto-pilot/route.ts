@@ -139,15 +139,83 @@ async function fetchGoogleSearch(query: string, resultsPerQuery: number = 20): P
     }));
 }
 
+// Rate limiter class to track and respect Reddit's rate limits
+class RedditRateLimiter {
+  private remaining: number = 60; // Default: Reddit allows ~60 requests per minute
+  private resetTime: number = Date.now() + 60000; // Default: reset in 60 seconds
+  private minDelay: number = 1000; // Minimum 1 second between requests
+  private lastRequestTime: number = 0;
+
+  // Parse rate limit headers from Reddit API response
+  updateFromHeaders(headers: Headers) {
+    const remaining = headers.get('x-ratelimit-remaining');
+    const reset = headers.get('x-ratelimit-reset');
+    
+    if (remaining !== null) {
+      this.remaining = parseInt(remaining, 10);
+    }
+    
+    if (reset !== null) {
+      // Reset time is in seconds, convert to milliseconds
+      this.resetTime = parseInt(reset, 10) * 1000;
+    }
+  }
+
+  // Calculate how long to wait before next request
+  async waitIfNeeded(): Promise<void> {
+    const now = Date.now();
+    
+    // If we've used up our quota, wait until reset
+    if (this.remaining <= 0) {
+      const waitTime = Math.max(0, this.resetTime - now);
+      if (waitTime > 0) {
+        console.log(`[Rate Limiter] Quota exhausted. Waiting ${Math.ceil(waitTime / 1000)}s until reset...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        this.remaining = 60; // Reset quota after waiting
+      }
+    }
+    
+    // Ensure minimum delay between requests
+    const timeSinceLastRequest = now - this.lastRequestTime;
+    if (timeSinceLastRequest < this.minDelay) {
+      const waitTime = this.minDelay - timeSinceLastRequest;
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    
+    // Adaptive delay: if remaining is low, slow down more
+    if (this.remaining < 10) {
+      const adaptiveDelay = (10 - this.remaining) * 200; // Up to 2s extra delay
+      await new Promise(resolve => setTimeout(resolve, adaptiveDelay));
+    }
+    
+    this.lastRequestTime = Date.now();
+  }
+
+  // Decrement remaining count after successful request
+  decrement() {
+    if (this.remaining > 0) {
+      this.remaining--;
+    }
+  }
+
+  getRemaining(): number {
+    return this.remaining;
+  }
+}
+
 // Fetch Reddit posts from subreddits (same as sync leads)
 async function fetchSubredditPosts(
   keyword: string,
   subreddit: string,
   limit: number,
   accessToken: string,
+  rateLimiter: RedditRateLimiter,
   retryCount: number = 0
 ): Promise<any[]> {
   try {
+    // Wait if needed based on rate limits
+    await rateLimiter.waitIfNeeded();
+    
     const searchUrl = `https://oauth.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(keyword)}&sort=new&limit=${limit}&t=week&restrict_sr=1`;
     
     const response = await fetch(searchUrl, {
@@ -159,14 +227,18 @@ async function fetchSubredditPosts(
       cache: 'no-store'
     });
 
+    // Update rate limiter from response headers
+    rateLimiter.updateFromHeaders(response.headers);
+    rateLimiter.decrement();
+
     if (response.status === 429) {
       // Rate limited - retry with exponential backoff
       const maxRetries = 3;
       if (retryCount < maxRetries) {
-        const waitTime = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
-        console.warn(`[Auto-Pilot] Rate limited (429) for r/${subreddit} keyword "${keyword}". Retrying in ${waitTime}ms (attempt ${retryCount + 1}/${maxRetries})`);
+        const waitTime = Math.pow(2, retryCount) * 2000; // 2s, 4s, 8s (longer waits)
+        console.warn(`[Auto-Pilot] Rate limited (429) for r/${subreddit} keyword "${keyword}". Retrying in ${waitTime}ms (attempt ${retryCount + 1}/${maxRetries}). Remaining quota: ${rateLimiter.getRemaining()}`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
-        return fetchSubredditPosts(keyword, subreddit, limit, accessToken, retryCount + 1);
+        return fetchSubredditPosts(keyword, subreddit, limit, accessToken, rateLimiter, retryCount + 1);
       } else {
         console.error(`[Auto-Pilot] Rate limited (429) for r/${subreddit} keyword "${keyword}". Max retries reached. Skipping.`);
         return [];
@@ -411,15 +483,25 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
     console.log(`[Auto-Pilot] User ${user.email}: Found ${allGoogleResults.length} Google search results`);
 
     // Step 2.5: Subreddit search (same as sync leads)
-    // Process sequentially with delays to avoid rate limiting
+    // Use rate limiter to intelligently manage API calls
     const allSubredditResults: any[] = [];
     if (subreddits && subreddits.length > 0) {
+      // Create a rate limiter for this user's requests
+      const rateLimiter = new RedditRateLimiter();
+      
+      const totalRequests = expandedKeywords.length * (subreddits as string[]).length;
+      console.log(`[Auto-Pilot] User ${user.email}: Starting ${totalRequests} subreddit searches with rate limiting...`);
+      
+      let requestCount = 0;
       for (const keyword of expandedKeywords) {
         for (const subreddit of subreddits as string[]) {
+          requestCount++;
           try {
-            // Add delay between requests to avoid rate limiting (500ms between requests)
-            await new Promise(resolve => setTimeout(resolve, 500));
-            const results = await fetchSubredditPosts(keyword, subreddit, 30, validAccessToken);
+            if (requestCount % 10 === 0) {
+              console.log(`[Auto-Pilot] User ${user.email}: Progress ${requestCount}/${totalRequests} (${rateLimiter.getRemaining()} requests remaining in quota)`);
+            }
+            
+            const results = await fetchSubredditPosts(keyword, subreddit, 30, validAccessToken, rateLimiter);
             results.forEach(result => {
               allSubredditResults.push({ ...result, keyword, subreddit });
             });
@@ -428,6 +510,8 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           }
         }
       }
+      
+      console.log(`[Auto-Pilot] User ${user.email}: Completed ${totalRequests} subreddit searches. Final quota: ${rateLimiter.getRemaining()}`);
     }
     
     console.log(`[Auto-Pilot] User ${user.email}: Found ${allSubredditResults.length} subreddit search results`);
@@ -542,9 +626,39 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       for (const yesPost of yesPosts) {
         try {
           // Get full post data
-          const fullPostData = postDataMap.get(yesPost.id);
+          let fullPostData = postDataMap.get(yesPost.id);
+          
+          // If not found, try to fetch it individually
           if (!fullPostData) {
-            console.warn(`[Auto-Pilot] User ${user.email}: No post data for ${yesPost.id}, skipping`);
+            console.warn(`[Auto-Pilot] User ${user.email}: No post data for ${yesPost.id} in batch, trying to fetch individually...`);
+            try {
+              const individualResponse = await fetch(
+                `https://oauth.reddit.com/api/info.json?id=t3_${yesPost.id}`,
+                {
+                  headers: {
+                    "User-Agent": "comment-tool/0.1 by isaaclhy13",
+                    "Accept": "application/json",
+                    "Authorization": `Bearer ${validAccessToken}`,
+                  },
+                }
+              );
+              
+              if (individualResponse.ok) {
+                const individualData = await individualResponse.json();
+                const individualPosts = individualData.data?.children || [];
+                if (individualPosts.length > 0 && individualPosts[0].data) {
+                  fullPostData = individualPosts[0].data as RedditPost;
+                  postDataMap.set(yesPost.id, fullPostData); // Cache it
+                  console.log(`[Auto-Pilot] User ${user.email}: Successfully fetched post data for ${yesPost.id}`);
+                }
+              }
+            } catch (fetchError) {
+              console.error(`[Auto-Pilot] User ${user.email}: Error fetching individual post ${yesPost.id}:`, fetchError);
+            }
+          }
+          
+          if (!fullPostData) {
+            console.warn(`[Auto-Pilot] User ${user.email}: No post data for ${yesPost.id} after individual fetch, skipping`);
             failedCount++;
             failedPosts.push({ id: yesPost.id, title: yesPost.title, error: "No post data" });
             continue;
@@ -988,10 +1102,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       });
     }
 
-    // Process each user
-    const results = await Promise.all(
-      users.map(user => processUserAutoPilot(user))
-    );
+    // Process each user sequentially to avoid rate limiting
+    // Add delay between users to respect Reddit's rate limits
+    const results = [];
+    for (let i = 0; i < users.length; i++) {
+      const user = users[i];
+      console.log(`[Auto-Pilot Cron] Processing user ${i + 1}/${users.length}: ${user.email}`);
+      const result = await processUserAutoPilot(user);
+      results.push(result);
+      
+      // Add delay between users to avoid rate limiting (except for last user)
+      if (i < users.length - 1) {
+        console.log(`[Auto-Pilot Cron] Waiting 2 seconds before processing next user...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
 
     const successful = results.filter(r => r.success).length;
     const totalYesPosts = results.reduce((sum, r) => sum + r.yesPosts, 0);
