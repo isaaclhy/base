@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
 
     const sessionParams: Stripe.BillingPortal.SessionCreateParams = {
       customer: dbUser.stripeCustomerId,
-      return_url: `${origin}/playground`,
+      return_url: `${origin}/playground?portal_return=true`,
     };
 
     if (portalConfiguration) {

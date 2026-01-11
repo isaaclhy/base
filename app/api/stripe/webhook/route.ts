@@ -113,9 +113,25 @@ export async function POST(request: NextRequest) {
         const customerId = subscription.customer as string;
         const status = subscription.status;
         const priceId = subscription.items?.data?.[0]?.price?.id;
+        const cancelAtPeriodEnd = subscription.cancel_at_period_end;
         
-        // Determine plan based on subscription status and price ID
-        const isActiveOrTrialing = status === "active" || status === "trialing";
+        console.log("Subscription updated event:", {
+          customerId,
+          status,
+          cancelAtPeriodEnd,
+          priceId,
+          subscriptionId: subscription.id,
+        });
+        
+        // If subscription is canceled or marked to cancel, set to free immediately
+        // Also handle other non-active statuses (incomplete, incomplete_expired, past_due, unpaid, etc.)
+        const isCanceled = status === "canceled" || 
+                          status === "incomplete" || 
+                          status === "incomplete_expired" ||
+                          status === "unpaid" ||
+                          cancelAtPeriodEnd === true;
+        
+        const isActiveOrTrialing = (status === "active" || status === "trialing") && !isCanceled;
         let plan: "basic" | "premium" | "free" = "free";
         
         if (isActiveOrTrialing) {
@@ -132,6 +148,8 @@ export async function POST(request: NextRequest) {
             plan = "premium";
           }
         }
+
+        console.log(`Updating user plan for customer ${customerId}: plan=${plan}, status=${status}, cancelAtPeriodEnd=${cancelAtPeriodEnd}`);
 
         await updateUserPlanByCustomerId(customerId, plan, {
           stripeSubscriptionId: isActiveOrTrialing ? subscription.id : null,

@@ -3068,6 +3068,51 @@ function PlaygroundContent() {
     }
   }, [searchParams, router, pathname, refreshUsage]);
 
+  // Handle portal return - sync subscription status from Stripe
+  useEffect(() => {
+    const portalReturn = searchParams?.get("portal_return");
+    
+    if (portalReturn === "true" && status === "authenticated" && session?.user?.email) {
+      const syncSubscription = async () => {
+        try {
+          const response = await fetch("/api/stripe/sync-subscription", {
+            method: "POST",
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            console.log("Subscription synced:", data);
+            
+            // Clean up URL params
+            const params = new URLSearchParams(searchParams.toString());
+            params.delete("portal_return");
+            const newQuery = params.toString();
+            router.replace(`${pathname}${newQuery ? `?${newQuery}` : ""}`, { scroll: false });
+            
+            // Reload page to refresh session with updated plan
+            setTimeout(() => {
+              window.location.reload();
+            }, 500);
+          } else {
+            console.error("Failed to sync subscription");
+            // Still reload after delay in case webhook processed
+            setTimeout(() => {
+              window.location.reload();
+            }, 2000);
+          }
+        } catch (error) {
+          console.error("Error syncing subscription:", error);
+          // Still reload to check if webhook processed
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+        }
+      };
+      
+      syncSubscription();
+    }
+  }, [searchParams, router, pathname, status, session]);
+
   // Handle tab query parameter to set active tab
   useEffect(() => {
     const tabParam = searchParams?.get("tab");
