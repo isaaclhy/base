@@ -181,3 +181,102 @@ The SignalScouter Team
     // Don't throw - we don't want to block user signup if email fails
   }
 }
+
+/**
+ * Generate new leads found email template
+ * (Template only - not attached to any sending functions yet)
+ */
+export function generateNewLeadsEmailTemplate(options: {
+  userName: string;
+  leadCount: number;
+  dashboardUrl?: string;
+}): { htmlContent: string; textContent: string } {
+  const { userName, leadCount, dashboardUrl = "https://signalscouter.com/playground" } = options;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Leads Found - SignalScouter</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding: 20px 0;">
+        <table role="presentation" style="width: 100%; max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          
+          <!-- Logo Header -->
+          <tr>
+            <td style="padding: 30px 20px; text-align: center; background-color: #ffffff;">
+              <div style="font-size: 32px; font-weight: bold;">
+                <span style="color: #ff4500;">Signal</span><span style="color: #000000;">Scouter</span>
+              </div>
+            </td>
+          </tr>
+          
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 30px 20px;">
+              <p style="font-size: 16px; color: #333333; margin: 0 0 20px 0;">Hello ${userName},</p>
+              
+              <p style="font-size: 16px; color: #333333; margin: 0 0 30px 0; line-height: 1.6;">
+                We just found <strong style="color: #ff4500;">${leadCount} new leads</strong> that match your campaign descriptions and keywords.
+              </p>
+              
+              <!-- Lead Count Box -->
+              <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; text-align: center; margin: 30px 0;">
+                <div style="font-size: 36px; font-weight: bold; color: #ff4500; margin-bottom: 5px;">${leadCount}</div>
+                <div style="font-size: 14px; color: #666666;">Leads</div>
+              </div>
+              
+              <p style="font-size: 16px; color: #333333; margin: 30px 0; line-height: 1.6;">
+                Head over to your SignalScouter dashboard to review and connect with them while they're still hot.
+              </p>
+              
+              <!-- CTA Button -->
+              <div style="text-align: center; margin: 40px 0;">
+                <a href="${dashboardUrl}" style="display: inline-block; background-color: #ff4500; color: #ffffff; padding: 15px 40px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">View My Leads</a>
+              </div>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px; text-align: center; background-color: #f8f9fa; border-top: 1px solid #e9ecef;">
+              <p style="font-size: 12px; color: #999999; margin: 0; line-height: 1.5;">
+                You are receiving this email because you signed up for SignalScouter.
+                <br>
+                <a href="${dashboardUrl}" style="color: #ff4500; text-decoration: underline;">Manage your email preferences</a>
+              </p>
+            </td>
+          </tr>
+          
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+
+  const textContent = `
+SignalScouter
+
+Hello ${userName},
+
+We just found ${leadCount} new leads that match your campaign descriptions and keywords.
+
+Head over to your SignalScouter dashboard to review and connect with them while they're still hot.
+
+View My Leads: ${dashboardUrl}
+
+---
+
+You are receiving this email because you signed up for SignalScouter.
+Manage your email preferences: ${dashboardUrl}
+  `;
+
+  return { htmlContent, textContent };
+}
