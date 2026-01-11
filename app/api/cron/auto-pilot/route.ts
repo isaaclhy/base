@@ -420,13 +420,25 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
     console.log(`[Auto-Pilot] Processing user: ${user.email}`);
     
     // Get user data
-    const keywords = user.keywords || [];
-    const subreddits = user.subreddits || [];
+    const allKeywords = user.keywords || [];
+    const allSubreddits = user.subreddits || [];
     const productDescription = user.productDetails?.productDescription || "";
+    
+    // Limit to first 5 keywords and 5 subreddits to prevent timeouts
+    const keywords = allKeywords.slice(0, 5);
+    const subreddits = (allSubreddits as string[]).slice(0, 5);
     
     if (keywords.length === 0) {
       console.log(`[Auto-Pilot] User ${user.email} has no keywords, skipping`);
       return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0, error: "No keywords" };
+    }
+    
+    if (allKeywords.length > 5) {
+      console.log(`[Auto-Pilot] User ${user.email}: Limiting keywords from ${allKeywords.length} to first 5 for auto-pilot`);
+    }
+    
+    if (allSubreddits.length > 5) {
+      console.log(`[Auto-Pilot] User ${user.email}: Limiting subreddits from ${allSubreddits.length} to first 5 for auto-pilot`);
     }
     
     if (!productDescription) {
@@ -453,10 +465,10 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       console.error(`[Auto-Pilot] User ${user.email}: Reddit authentication failed:`, errorMessage);
       return { 
         success: false, 
-        yesPosts: 0, 
-        yesPostsList: [], 
-        posted: 0, 
-        failed: 0, 
+        yesPosts: 0,
+        yesPostsList: [],
+        posted: 0,
+        failed: 0,
         error: `Reddit authentication failed: ${errorMessage}. Please connect your Reddit account in the app.` 
       };
     }
