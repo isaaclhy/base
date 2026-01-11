@@ -318,7 +318,7 @@ async function filterTitles(
         const response = await (openai as any).responses.create({
           prompt: {
             "id": "pmpt_695aa3d82c0c8190bac1998da046cd5c0e429183fd7f88be",
-            "version": "9",
+            "version": "10",
             "variables": {
               "product": productDescription,
               "posts": JSON.stringify(batch.map(p => ({ id: p.id, title: p.title })))

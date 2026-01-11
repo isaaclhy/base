@@ -48,7 +48,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<FilterTit
             const response = await (openai as any).responses.create({
                 prompt: {
                     "id": "pmpt_695aa3d82c0c8190bac1998da046cd5c0e429183fd7f88be",
-                    "version": "9",
+                    "version": "10",
                     "variables": {
                         "product": product,
                         "posts": JSON.stringify(posts) // Now sending {id, title} objects
