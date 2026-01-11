@@ -6233,14 +6233,18 @@ function PlaygroundContent() {
                                   </td>
                                   <td className="py-3 px-2">
                               {post.link ? (
-                                <a
-                                  href={post.link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                        className="text-sm font-medium text-primary hover:underline"
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-xs p-1.5 h-7 w-7"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    window.open(post.link!, "_blank", "noopener,noreferrer");
+                                  }}
+                                  title="Visit link"
                                 >
-                                        Link
-                                </a>
+                                  <ExternalLink className="h-3 w-3" />
+                                </Button>
                               ) : (
                                       <span className="text-sm text-muted-foreground">-</span>
                               )}

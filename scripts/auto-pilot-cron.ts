@@ -86,7 +86,6 @@ async function expandKeywords(keywords: string[]): Promise<string[]> {
           const similarKeywords = Array.isArray(parsed) ? parsed : (parsed.keywords || []);
           const limitedKeywords = similarKeywords.slice(0, 5);
           limitedKeywords.forEach((k: string) => allKeywordsSet.add(k.toLowerCase().trim()));
-          console.log(`[Auto-Pilot] Expanded keyword "${keyword}" to ${limitedKeywords.length} similar keywords (limited from ${similarKeywords.length})`);
         } catch (parseError) {
           console.error(`[Auto-Pilot] Error parsing similar keywords for "${keyword}":`, parseError);
         }
@@ -397,8 +396,6 @@ async function filterTitles(
 // Main processing function - full implementation
 async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesPosts: number; yesPostsList: any[]; posted: number; failed: number; error?: string }> {
   try {
-    console.log(`[Auto-Pilot] Processing user: ${user.email}`);
-    
     const keywords = user.keywords || [];
     const subreddits = (user.subreddits as string[]) || [];
     const productDescription = user.productDetails?.productDescription || "";
@@ -432,7 +429,6 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
     }
 
     const expandedKeywords = await expandKeywords(keywords);
-    console.log(`[Auto-Pilot] User ${user.email}: Expanded ${keywords.length} keywords to ${expandedKeywords.length}`);
 
     // Google Custom Search
     const allGoogleResults: any[] = [];
@@ -448,25 +444,15 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
         }
       })
     );
-    
-    console.log(`[Auto-Pilot] User ${user.email}: Found ${allGoogleResults.length} Google search results`);
 
     // Subreddit search with rate limiting
     const allSubredditResults: any[] = [];
     if (subreddits && subreddits.length > 0) {
       const rateLimiter = new RedditRateLimiter();
-      const totalRequests = expandedKeywords.length * (subreddits as string[]).length;
-      console.log(`[Auto-Pilot] User ${user.email}: Starting ${totalRequests} subreddit searches with rate limiting...`);
       
-      let requestCount = 0;
       for (const keyword of expandedKeywords) {
         for (const subreddit of subreddits as string[]) {
-          requestCount++;
           try {
-            if (requestCount % 10 === 0) {
-              console.log(`[Auto-Pilot] User ${user.email}: Progress ${requestCount}/${totalRequests} (${rateLimiter.getRemaining()} requests remaining)`);
-            }
-            
             const results = await fetchSubredditPosts(keyword, subreddit, 30, validAccessToken, rateLimiter);
             results.forEach(result => {
               allSubredditResults.push({ ...result, keyword, subreddit });
@@ -476,11 +462,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           }
         }
       }
-      
-      console.log(`[Auto-Pilot] User ${user.email}: Completed ${totalRequests} subreddit searches. Final quota: ${rateLimiter.getRemaining()}`);
     }
-    
-    console.log(`[Auto-Pilot] User ${user.email}: Found ${allSubredditResults.length} subreddit search results`);
 
     // Combine and deduplicate
     const allResults = [...allGoogleResults, ...allSubredditResults];
@@ -491,8 +473,6 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       seenUrls.add(normalized);
       return true;
     });
-
-    console.log(`[Auto-Pilot] User ${user.email}: ${uniqueResults.length} unique results after deduplication`);
 
     // Extract post IDs and batch fetch
     const postIds: string[] = [];
@@ -506,7 +486,6 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       }
     });
 
-    console.log(`[Auto-Pilot] User ${user.email}: Fetching post data for ${postIds.length} posts`);
     const postDataMap = await batchFetchPostData(postIds, validAccessToken);
 
     // Filter to past 12 hours
@@ -554,8 +533,6 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       }
     });
 
-    console.log(`[Auto-Pilot] User ${user.email}: ${postsToFilter.length} posts to filter (past 12 hours)`);
-
     // Filter titles using OpenAI
     if (postsToFilter.length > 0) {
       const verdictMap = await filterTitles(
@@ -567,8 +544,6 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
         const verdict = verdictMap.get(p.id);
         return verdict === "YES";
       });
-
-      console.log(`[Auto-Pilot] User ${user.email}: ${yesPosts.length} YES posts out of ${postsToFilter.length} total posts`);
 
       if (yesPosts.length === 0) {
         return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0 };
@@ -593,17 +568,10 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       // Filter out posts that have already been processed
       const newYesPosts = yesPosts.filter(post => {
         const normalizedUrl = normalizeUrl(post.url);
-        const alreadyProcessed = processedUrls.has(normalizedUrl);
-        if (alreadyProcessed) {
-          console.log(`[Auto-Pilot] User ${user.email}: Skipping post "${post.title}" (already processed)`);
-        }
-        return !alreadyProcessed;
+        return !processedUrls.has(normalizedUrl);
       });
 
-      console.log(`[Auto-Pilot] User ${user.email}: ${newYesPosts.length} new posts to process (${yesPosts.length - newYesPosts.length} already processed)`);
-
       if (newYesPosts.length === 0) {
-        console.log(`[Auto-Pilot] User ${user.email}: All YES posts have already been processed`);
         return { success: true, yesPosts: yesPosts.length, yesPostsList: yesPosts.map(p => ({ id: p.id, title: p.title, url: p.url })), posted: 0, failed: 0 };
       }
 
@@ -673,10 +641,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
               
               if (subredditRule && typeof subredditRule.allowPromoting === 'boolean') {
                 allowPromoting = subredditRule.allowPromoting ? "true" : "false";
-                console.log(`[Auto-Pilot] User ${user.email}: Using cached rule for r/${cleanSubredditName}: ${allowPromoting}`);
               } else {
-                console.log(`[Auto-Pilot] User ${user.email}: No cached rule for r/${cleanSubredditName}, fetching from Reddit API...`);
-                
                 try {
                   const rulesResponse = await fetch(
                     `https://oauth.reddit.com/r/${cleanSubredditName}/about/rules.json`,
@@ -702,8 +667,6 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
                       allowPromoting = "true";
                       await upsertSubredditRule(cleanSubredditName, true);
                     } else {
-                      console.log(`[Auto-Pilot] User ${user.email}: Checking rules with OpenAI for r/${cleanSubredditName}...`);
-                      
                       const checkResponse = await (openai as any).responses.create({
                         prompt: {
                           "id": "pmpt_69604849cd108197bb3a470f1315349e0ab1f2ccb34665ea",
@@ -769,7 +732,6 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
 
           // Generate comment
           const postContent = fullPostData.selftext || fullPostData.title || "";
-          console.log(`[Auto-Pilot] User ${user.email}: Generating comment for post "${yesPost.title}"`);
           
           const commentResponse = await (openai as any).responses.create({
             prompt: {
@@ -823,8 +785,6 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           // Post comment to Reddit
           const thingId = `t3_${yesPost.id}`;
           
-          console.log(`[Auto-Pilot] User ${user.email}: Posting comment to Reddit for post "${yesPost.title}"`);
-          
           const postResponse = await fetch("https://oauth.reddit.com/api/comment", {
             method: "POST",
             headers: {
@@ -872,8 +832,6 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           }
           
           if (postResponseData.success === true) {
-            console.log(`[Auto-Pilot] User ${user.email}: Successfully posted comment for "${yesPost.title}"`);
-            
             try {
               await createPost({
                 userId: user.email,
@@ -905,9 +863,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           }
 
           if (postResponseData.json && postResponseData.json.data) {
-            const things = postResponseData.json.data?.things || [];
-            const commentId = things[0]?.data?.name || null;
-            console.log(`[Auto-Pilot] User ${user.email}: Successfully posted comment. Comment ID: ${commentId}`);
+            // Comment posted successfully
           }
 
           try {
@@ -942,7 +898,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
         }
       }
 
-      console.log(`[Auto-Pilot] User ${user.email}: Posted ${postedCount} comments, failed ${failedCount}`);
+      console.log(`[Auto-Pilot] User ${user.email}: ${postedCount} comments posted, ${failedCount} failed`);
 
       return { 
         success: true, 
@@ -992,12 +948,10 @@ async function main() {
     const results = [];
     for (let i = 0; i < users.length; i++) {
       const user = users[i];
-      console.log(`[Auto-Pilot Cron] Processing user ${i + 1}/${users.length}: ${user.email}`);
       const result = await processUserAutoPilot(user);
       results.push(result);
       
       if (i < users.length - 1) {
-        console.log(`[Auto-Pilot Cron] Waiting 2 seconds before processing next user...`);
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }

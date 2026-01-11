@@ -328,8 +328,6 @@ async function filterTitles(
 
 async function syncLeadsForUser(user: User): Promise<{ success: boolean; leadsCount: number; leads: any[]; error?: string }> {
   try {
-    console.log(`[User Stats] [Sync Leads] Starting sync for user: ${user.email}`);
-    
     const keywords = user.keywords || [];
     const subreddits = user.subreddits || [];
     const productDescription = user.productDetails?.productDescription || "";
@@ -347,12 +345,11 @@ async function syncLeadsForUser(user: User): Promise<{ success: boolean; leadsCo
       validAccessToken = await refreshAccessToken(user.email);
     } catch (error: any) {
       const errorMessage = error?.message || String(error);
-      console.error(`[User Stats] [Sync Leads] Reddit auth failed for ${user.email}:`, errorMessage);
+      console.error(`[User Stats] [Sync Leads] User ${user.email}: Reddit auth failed - ${errorMessage}`);
       return { success: false, leadsCount: 0, leads: [], error: `Reddit authentication failed: ${errorMessage}` };
     }
 
     const expandedKeywords = await expandKeywords(keywords);
-    console.log(`[User Stats] [Sync Leads] User ${user.email}: Expanded ${keywords.length} keywords to ${expandedKeywords.length}`);
 
     const allGoogleResults: any[] = [];
     await Promise.all(
@@ -367,8 +364,6 @@ async function syncLeadsForUser(user: User): Promise<{ success: boolean; leadsCo
         }
       })
     );
-    
-    console.log(`[User Stats] [Sync Leads] User ${user.email}: Found ${allGoogleResults.length} Google search results`);
 
     const allSubredditResults: any[] = [];
     if (subreddits && subreddits.length > 0) {
@@ -389,8 +384,6 @@ async function syncLeadsForUser(user: User): Promise<{ success: boolean; leadsCo
         })
       );
     }
-    
-    console.log(`[User Stats] [Sync Leads] User ${user.email}: Found ${allSubredditResults.length} subreddit search results`);
 
     const allResults = [...allGoogleResults, ...allSubredditResults];
 
@@ -402,8 +395,6 @@ async function syncLeadsForUser(user: User): Promise<{ success: boolean; leadsCo
       return true;
     });
 
-    console.log(`[User Stats] [Sync Leads] User ${user.email}: ${uniqueResults.length} unique results after deduplication`);
-
     const postIds: string[] = [];
     const urlToPostId = new Map<string, string>();
     
@@ -414,8 +405,6 @@ async function syncLeadsForUser(user: User): Promise<{ success: boolean; leadsCo
         urlToPostId.set(normalizeUrl(result.link || ""), postId);
       }
     });
-
-    console.log(`[User Stats] [Sync Leads] User ${user.email}: Fetching post data for ${postIds.length} posts`);
 
     const postDataMap = await batchFetchPostData(postIds, validAccessToken);
 
@@ -463,10 +452,8 @@ async function syncLeadsForUser(user: User): Promise<{ success: boolean; leadsCo
       }
     });
 
-    console.log(`[User Stats] [Sync Leads] User ${user.email}: ${postsToFilter.length} posts to filter (past 4 days)`);
-
     if (postsToFilter.length === 0) {
-      console.log(`[User Stats] [Sync Leads] User ${user.email}: No posts to filter`);
+      console.log(`[User Stats] [Sync Leads] User ${user.email}: Found 0 leads`);
       return { success: true, leadsCount: 0, leads: [] };
     }
 
@@ -480,15 +467,7 @@ async function syncLeadsForUser(user: User): Promise<{ success: boolean; leadsCo
       return verdict === "YES";
     });
 
-    console.log(`[User Stats] [Sync Leads] User ${user.email}: ${yesPosts.length} YES posts out of ${postsToFilter.length} total posts`);
-
-    console.log(`[User Stats] [Sync Leads] User ${user.email}: Leads found:`);
-    yesPosts.forEach((lead, index) => {
-      console.log(`[User Stats] [Sync Leads] User ${user.email}: Lead ${index + 1}:`);
-      console.log(`[User Stats] [Sync Leads]   - Title: ${lead.title}`);
-      console.log(`[User Stats] [Sync Leads]   - URL: ${lead.url}`);
-      console.log(`[User Stats] [Sync Leads]   - Post ID: ${lead.id}`);
-    });
+    console.log(`[User Stats] [Sync Leads] User ${user.email}: Found ${yesPosts.length} YES leads`);
 
     return { 
       success: true, 
@@ -511,45 +490,33 @@ async function syncLeadsForUser(user: User): Promise<{ success: boolean; leadsCo
 }
 
 function userMeetsCriteria(user: User): boolean {
-  console.log(`[User Stats] Checking user: ${user.email}`);
-  
   const productDescription = user.productDetails?.productDescription || "";
   const wordCount = countWords(productDescription);
-  console.log(`[User Stats] User ${user.email}: Product description word count: ${wordCount} (text: "${productDescription.substring(0, 50)}...")`);
   
   if (wordCount <= 10) {
-    console.log(`[User Stats] User ${user.email}: FAILED - Product description has ${wordCount} words (needs > 10)`);
     return false;
   }
   
   const keywords = user.keywords || [];
   const keywordCount = keywords.length;
-  console.log(`[User Stats] User ${user.email}: Keywords count: ${keywordCount} (keywords: ${JSON.stringify(keywords)})`);
   
   if (keywordCount <= 1) {
-    console.log(`[User Stats] User ${user.email}: FAILED - Has ${keywordCount} keywords (needs > 1)`);
     return false;
   }
   
   const subreddits = user.subreddits || [];
   const subredditCount = subreddits.length;
-  console.log(`[User Stats] User ${user.email}: Subreddits count: ${subredditCount} (subreddits: ${JSON.stringify(subreddits)})`);
   
   if (subredditCount <= 1) {
-    console.log(`[User Stats] User ${user.email}: FAILED - Has ${subredditCount} subreddits (needs > 1)`);
     return false;
   }
   
-  console.log(`[User Stats] User ${user.email}: ✓ PASSED all criteria (words: ${wordCount}, keywords: ${keywordCount}, subreddits: ${subredditCount})`);
   return true;
 }
 
 async function main() {
   try {
-    console.log("[User Stats Cron] ========================================");
-    console.log("[User Stats Cron] Starting user stats cron job (GitHub Actions)");
-    console.log("[User Stats Cron] Timestamp:", new Date().toISOString());
-    console.log("[User Stats Cron] ========================================");
+    console.log("[User Stats Cron] Starting user stats cron job");
     
     // Verify required environment variables
     const requiredEnvVars = ['MONGO_URL', 'OPENAI_API_KEY', 'GCS_KEY', 'REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET'];
@@ -563,9 +530,7 @@ async function main() {
     const db = await getDatabase();
     const usersCollection = db.collection<User>('usersv2');
     
-    console.log("[User Stats Cron] Fetching all users from database...");
     const allUsers = await usersCollection.find({}).toArray();
-    console.log(`[User Stats Cron] Total users found in database: ${allUsers.length}`);
     
     let qualifyingUsers = 0;
     let usersChecked = 0;
@@ -578,29 +543,16 @@ async function main() {
       subredditCount?: number;
     }> = [];
     
-    console.log("[User Stats Cron] ========================================");
-    console.log("[User Stats Cron] Starting to check each user...");
-    console.log("[User Stats Cron] ========================================");
-    
     for (const user of allUsers) {
       usersChecked++;
-      console.log(`[User Stats Cron] --- Processing user ${usersChecked}/${allUsers.length} ---`);
-      console.log(`[User Stats Cron] User email: ${user.email}`);
-      console.log(`[User Stats Cron] User plan: ${user.plan || 'not set'}`);
-      console.log(`[User Stats Cron] Onboarding completed: ${user.onboardingCompleted || false}`);
-      
       if (userMeetsCriteria(user)) {
         qualifyingUsers++;
         qualifyingUserEmails.push(user.email);
-        console.log(`[User Stats Cron] ✓ User ${user.email} QUALIFIES`);
         
-        console.log(`[User Stats Cron] [Sync Leads] Starting sync for qualifying user: ${user.email}`);
         const syncResult = await syncLeadsForUser(user);
-        console.log(`[User Stats Cron] [Sync Leads] User ${user.email}: Retrieved ${syncResult.leadsCount} leads`);
         if (syncResult.error) {
-          console.error(`[User Stats Cron] [Sync Leads] User ${user.email}: Error - ${syncResult.error}`);
+          console.error(`[User Stats Cron] User ${user.email}: Error - ${syncResult.error}`);
         }
-        console.log(`[User Stats Cron] [Sync Leads] User ${user.email}: Leads list:`, JSON.stringify(syncResult.leads, null, 2));
       } else {
         const productDescription = user.productDetails?.productDescription || "";
         const wordCount = countWords(productDescription);
@@ -625,47 +577,10 @@ async function main() {
           keywordCount,
           subredditCount,
         });
-        console.log(`[User Stats Cron] ✗ User ${user.email} does NOT qualify: ${reason}`);
       }
-      
-      console.log(`[User Stats Cron] --- End of user ${usersChecked} check ---\n`);
     }
     
-    console.log("[User Stats Cron] ========================================");
-    console.log("[User Stats Cron] SUMMARY");
-    console.log("[User Stats Cron] ========================================");
-    console.log(`[User Stats Cron] Total users checked: ${usersChecked}`);
-    console.log(`[User Stats Cron] Qualifying users: ${qualifyingUsers}`);
-    console.log(`[User Stats Cron] Non-qualifying users: ${failingUsers.length}`);
-    console.log(`[User Stats Cron] Percentage qualifying: ${usersChecked > 0 ? ((qualifyingUsers / usersChecked) * 100).toFixed(2) : 0}%`);
-    
-    console.log("\n[User Stats Cron] ========================================");
-    console.log("[User Stats Cron] QUALIFYING USERS:");
-    console.log("[User Stats Cron] ========================================");
-    if (qualifyingUserEmails.length === 0) {
-      console.log("[User Stats Cron] None");
-    } else {
-      qualifyingUserEmails.forEach((email, index) => {
-        console.log(`[User Stats Cron] ${index + 1}. ${email}`);
-      });
-    }
-    
-    console.log("\n[User Stats Cron] ========================================");
-    console.log("[User Stats Cron] FAILING USERS (first 20):");
-    console.log("[User Stats Cron] ========================================");
-    failingUsers.slice(0, 20).forEach((user, index) => {
-      console.log(`[User Stats Cron] ${index + 1}. ${user.email}`);
-      console.log(`[User Stats Cron]    Reason: ${user.reason}`);
-      console.log(`[User Stats Cron]    Word count: ${user.wordCount}, Keywords: ${user.keywordCount}, Subreddits: ${user.subredditCount}`);
-    });
-    
-    if (failingUsers.length > 20) {
-      console.log(`[User Stats Cron] ... and ${failingUsers.length - 20} more failing users`);
-    }
-    
-    console.log("\n[User Stats Cron] ========================================");
-    console.log("[User Stats Cron] Cron job completed successfully");
-    console.log("[User Stats Cron] ========================================");
+    console.log(`[User Stats Cron] Summary: ${usersChecked} users checked, ${qualifyingUsers} qualifying, ${failingUsers.length} non-qualifying`);
     
     process.exit(0);
   } catch (error) {
