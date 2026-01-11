@@ -238,8 +238,8 @@ async function fetchSubredditPosts(
     const data = await response.json();
     const posts: RedditPost[] = data.data?.children?.map((child: any) => child.data) || [];
     
-    const eightHoursAgo = Math.floor(Date.now() / 1000) - (8 * 60 * 60);
-    const recentPosts = posts.filter((post: RedditPost) => post.created_utc >= eightHoursAgo);
+    const twelveHoursAgo = Math.floor(Date.now() / 1000) - (12 * 60 * 60);
+    const recentPosts = posts.filter((post: RedditPost) => post.created_utc >= twelveHoursAgo);
     
     return recentPosts.slice(0, limit).map((post: RedditPost) => ({
       title: post.title,
@@ -509,8 +509,8 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
     console.log(`[Auto-Pilot] User ${user.email}: Fetching post data for ${postIds.length} posts`);
     const postDataMap = await batchFetchPostData(postIds, validAccessToken);
 
-    // Filter to past 8 hours
-    const eightHoursAgo = Math.floor(Date.now() / 1000) - (8 * 60 * 60);
+    // Filter to past 12 hours
+    const twelveHoursAgo = Math.floor(Date.now() / 1000) - (12 * 60 * 60);
     const postsToFilter: Array<{ id: string; title: string; url: string }> = [];
     const seenPostIds = new Set<string>();
 
@@ -528,7 +528,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       
       if (postData) {
         const postCreatedUtc = postData.created_utc || 0;
-        if (postCreatedUtc < eightHoursAgo) {
+        if (postCreatedUtc < twelveHoursAgo) {
           return;
         }
         
@@ -541,7 +541,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           });
         }
       } else {
-        if (result.postData && result.postData.created_utc >= eightHoursAgo) {
+        if (result.postData && result.postData.created_utc >= twelveHoursAgo) {
           const title = result.postData.title || result.title || "";
           if (title) {
             postsToFilter.push({
@@ -554,7 +554,7 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
       }
     });
 
-    console.log(`[Auto-Pilot] User ${user.email}: ${postsToFilter.length} posts to filter (past 8 hours)`);
+    console.log(`[Auto-Pilot] User ${user.email}: ${postsToFilter.length} posts to filter (past 12 hours)`);
 
     // Filter titles using OpenAI
     if (postsToFilter.length > 0) {
