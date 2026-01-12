@@ -415,6 +415,7 @@ function PlaygroundContent() {
   const [canScrollLeftSubredditsModal, setCanScrollLeftSubredditsModal] = useState(false);
   const [canScrollRightSubredditsModal, setCanScrollRightSubredditsModal] = useState(false);
   const [bulkOperationStatus, setBulkOperationStatus] = useState<Record<string, "haven't started" | "generating" | "posting" | "completed" | "error">>({});
+  const [bulkOperationErrors, setBulkOperationErrors] = useState<Record<string, string>>({});
   const [bulkGeneratedComments, setBulkGeneratedComments] = useState<Record<string, string>>({});
   const [bulkModalLeads, setBulkModalLeads] = useState<Array<typeof distinctLeadsLinks[number]>>([]);
   const [bulkModalInitialCount, setBulkModalInitialCount] = useState(0);
@@ -3983,6 +3984,7 @@ function PlaygroundContent() {
       initialStatus[item.uniqueKey] = "haven't started";
     });
     setBulkOperationStatus(initialStatus);
+    setBulkOperationErrors({}); // Clear previous errors
 
     // Process all leads asynchronously in parallel
     const ideaToUse = submittedProductIdea || currentProductIdea;
@@ -4004,8 +4006,29 @@ function PlaygroundContent() {
         
         const postContent = leadItem.selftext || leadItem.snippet || leadItem.title || "";
         if (!postContent) {
+          const errorMessage = "No post content available";
           console.error(`[Bulk Operations] No post content for lead: ${leadItem.title || leadItem.link}`);
           setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          setBulkOperationErrors(prev => ({ ...prev, [linkKey]: errorMessage }));
+          try {
+            await fetch("/api/posts/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                status: "failed",
+                query: leadItem.query,
+                title: leadItem.title || null,
+                link: leadItem.link || null,
+                snippet: leadItem.snippet || null,
+                selftext: leadItem.selftext || null,
+                postData: leadItem.postData || null,
+                comment: null,
+                notes: errorMessage,
+              }),
+            });
+          } catch (dbError) {
+            console.error("Error saving failed post to database:", dbError);
+          }
           return;
         }
 
@@ -4039,23 +4062,65 @@ function PlaygroundContent() {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
+          const errorMessage = errorData.error || errorData.message || `Comment generation failed: ${response.statusText}`;
           console.error(`[Bulk Operations] Comment generation failed for "${leadItem.title || leadItem.link}":`, {
             status: response.status,
             statusText: response.statusText,
-            error: errorData.error || errorData.message || "Unknown error"
+            error: errorMessage
           });
           setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          setBulkOperationErrors(prev => ({ ...prev, [linkKey]: errorMessage }));
+          try {
+            await fetch("/api/posts/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                status: "failed",
+                query: leadItem.query,
+                title: leadItem.title || null,
+                link: leadItem.link || null,
+                snippet: leadItem.snippet || null,
+                selftext: leadItem.selftext || null,
+                postData: leadItem.postData || null,
+                comment: null,
+                notes: errorMessage,
+              }),
+            });
+          } catch (dbError) {
+            console.error("Error saving failed post to database:", dbError);
+          }
           return;
         }
 
         const data = await response.json();
         if (data.error || !data.comments || data.comments.length === 0) {
+          const errorMessage = data.error || "Invalid comment response: No comments generated";
           console.error(`[Bulk Operations] Invalid comment response for "${leadItem.title || leadItem.link}":`, {
             error: data.error,
             hasComments: !!data.comments,
             commentsLength: data.comments?.length || 0
           });
           setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          setBulkOperationErrors(prev => ({ ...prev, [linkKey]: errorMessage }));
+          try {
+            await fetch("/api/posts/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                status: "failed",
+                query: leadItem.query,
+                title: leadItem.title || null,
+                link: leadItem.link || null,
+                snippet: leadItem.snippet || null,
+                selftext: leadItem.selftext || null,
+                postData: leadItem.postData || null,
+                comment: null,
+                notes: errorMessage,
+              }),
+            });
+          } catch (dbError) {
+            console.error("Error saving failed post to database:", dbError);
+          }
           return;
         }
 
@@ -4066,19 +4131,61 @@ function PlaygroundContent() {
         setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "posting" }));
 
         if (!leadItem.postData?.name) {
+          const errorMessage = "Missing post data: Cannot extract post identifier";
           console.error(`[Bulk Operations] Missing postData.name for "${leadItem.title || leadItem.link}":`, {
             hasPostData: !!leadItem.postData,
             postDataName: leadItem.postData?.name,
             link: leadItem.link
           });
           setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          setBulkOperationErrors(prev => ({ ...prev, [linkKey]: errorMessage }));
+          try {
+            await fetch("/api/posts/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                status: "failed",
+                query: leadItem.query,
+                title: leadItem.title || null,
+                link: leadItem.link || null,
+                snippet: leadItem.snippet || null,
+                selftext: leadItem.selftext || null,
+                postData: leadItem.postData || null,
+                comment: generatedComment.trim(),
+                notes: errorMessage,
+              }),
+            });
+          } catch (dbError) {
+            console.error("Error saving failed post to database:", dbError);
+          }
           return;
         }
 
         const thingId = extractThingIdFromLink(leadItem.link || "");
         if (!thingId) {
+          const errorMessage = "Failed to extract post identifier from link";
           console.error(`[Bulk Operations] Failed to extract thing_id from link: "${leadItem.link}"`);
           setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          setBulkOperationErrors(prev => ({ ...prev, [linkKey]: errorMessage }));
+          try {
+            await fetch("/api/posts/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                status: "failed",
+                query: leadItem.query,
+                title: leadItem.title || null,
+                link: leadItem.link || null,
+                snippet: leadItem.snippet || null,
+                selftext: leadItem.selftext || null,
+                postData: leadItem.postData || null,
+                comment: generatedComment.trim(),
+                notes: errorMessage,
+              }),
+            });
+          } catch (dbError) {
+            console.error("Error saving failed post to database:", dbError);
+          }
           return;
         }
 
@@ -4095,14 +4202,35 @@ function PlaygroundContent() {
 
         if (!postResponse.ok) {
           const errorData = await postResponse.json().catch(() => ({}));
+          const errorMessage = errorData.error || errorData.message || `Failed to post comment: ${postResponse.statusText}`;
           console.error(`[Bulk Operations] Failed to post comment for "${leadItem.title || leadItem.link}":`, {
             status: postResponse.status,
             statusText: postResponse.statusText,
-            error: errorData.error || errorData.message || "Unknown error",
+            error: errorMessage,
             thingId: thingId,
             link: leadItem.link
           });
           setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+          setBulkOperationErrors(prev => ({ ...prev, [linkKey]: errorMessage }));
+          try {
+            await fetch("/api/posts/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                status: "failed",
+                query: leadItem.query,
+                title: leadItem.title || null,
+                link: leadItem.link || null,
+                snippet: leadItem.snippet || null,
+                selftext: leadItem.selftext || null,
+                postData: leadItem.postData || null,
+                comment: generatedComment.trim(),
+                notes: errorMessage,
+              }),
+            });
+          } catch (dbError) {
+            console.error("Error saving failed post to database:", dbError);
+          }
           return;
         }
 
@@ -4133,13 +4261,34 @@ function PlaygroundContent() {
         setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "completed" }));
         
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unexpected error occurred";
         console.error(`[Bulk Operations] Unexpected error processing lead "${leadItem.title || leadItem.link}":`, {
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage,
           stack: error instanceof Error ? error.stack : undefined,
           link: leadItem.link,
           title: leadItem.title
         });
         setBulkOperationStatus(prev => ({ ...prev, [linkKey]: "error" }));
+        setBulkOperationErrors(prev => ({ ...prev, [linkKey]: errorMessage }));
+        try {
+          await fetch("/api/posts/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              status: "failed",
+              query: leadItem.query,
+              title: leadItem.title || null,
+              link: leadItem.link || null,
+              snippet: leadItem.snippet || null,
+              selftext: leadItem.selftext || null,
+              postData: leadItem.postData || null,
+              comment: bulkGeneratedComments[linkKey] || null,
+              notes: errorMessage,
+            }),
+          });
+        } catch (dbError) {
+          console.error("Error saving failed post to database:", dbError);
+        }
       }
     };
 
@@ -7944,13 +8093,26 @@ function PlaygroundContent() {
                               </p>
                             </div>
                             <div className="shrink-0 w-[80px] flex justify-center">
-                              <div className="text-left">
+                              <div className="text-left flex items-center gap-1.5">
                                 {status === "generating" || status === "posting" ? (
                                   <Loader2 className="h-4 w-4 animate-spin text-primary inline-block" />
                                 ) : status === "completed" ? (
                                   <CheckCircle2 className="h-4 w-4 text-green-500 inline-block" />
                                 ) : status === "error" ? (
-                                  <X className="h-4 w-4 text-red-500 inline-block" />
+                                  <div className="flex items-center gap-1.5">
+                                    <X className="h-4 w-4 text-red-500 inline-block" />
+                                    {bulkOperationErrors[leadItem.uniqueKey] && (
+                                      <div className="relative group">
+                                        <Info className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground cursor-pointer" />
+                                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block z-50 pointer-events-none">
+                                          <div className="bg-popover border border-border rounded-md shadow-lg px-3 py-2 text-xs text-foreground max-w-xs whitespace-normal">
+                                            {bulkOperationErrors[leadItem.uniqueKey]}
+                                            <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-border"></div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
                                 ) : status === "haven't started" ? (
                                   <Circle className="h-4 w-4 text-muted-foreground inline-block" />
                                 ) : (

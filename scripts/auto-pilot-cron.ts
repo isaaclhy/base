@@ -733,6 +733,23 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           if (!fullPostData) {
             failedCount++;
             failedPosts.push({ id: yesPost.id, title: yesPost.title, error: "No post data" });
+            try {
+              await createPost({
+                userId: user.email,
+                status: "failed",
+                query: `auto-pilot-${new Date().toISOString()}`,
+                title: yesPost.title,
+                link: yesPost.url,
+                snippet: null,
+                selftext: null,
+                postData: null,
+                comment: null,
+                notes: "Auto-pilot failed: No post data",
+                autoPilot: true,
+              });
+            } catch (dbError) {
+              console.error(`[Auto-Pilot] Error saving failed post to database:`, dbError);
+            }
             continue;
           }
 
@@ -866,7 +883,25 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
 
           if (commentResponse.error) {
             failedCount++;
-            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: commentResponse.error.message });
+            const errorMessage = commentResponse.error.message || "OpenAI comment generation error";
+            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: errorMessage });
+            try {
+              await createPost({
+                userId: user.email,
+                status: "failed",
+                query: `auto-pilot-${new Date().toISOString()}`,
+                title: yesPost.title,
+                link: yesPost.url,
+                snippet: null,
+                selftext: fullPostData.selftext || null,
+                postData: fullPostData,
+                comment: null,
+                notes: `Auto-pilot failed: ${errorMessage}`,
+                autoPilot: true,
+              });
+            } catch (dbError) {
+              console.error(`[Auto-Pilot] Error saving failed post to database:`, dbError);
+            }
             continue;
           }
 
@@ -890,13 +925,49 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
             }
           } catch (parseError) {
             failedCount++;
-            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: "Failed to extract comment" });
+            const errorMessage = "Failed to extract comment from OpenAI response";
+            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: errorMessage });
+            try {
+              await createPost({
+                userId: user.email,
+                status: "failed",
+                query: `auto-pilot-${new Date().toISOString()}`,
+                title: yesPost.title,
+                link: yesPost.url,
+                snippet: null,
+                selftext: fullPostData.selftext || null,
+                postData: fullPostData,
+                comment: null,
+                notes: `Auto-pilot failed: ${errorMessage}`,
+                autoPilot: true,
+              });
+            } catch (dbError) {
+              console.error(`[Auto-Pilot] Error saving failed post to database:`, dbError);
+            }
             continue;
           }
 
           if (!commentText || !commentText.trim()) {
             failedCount++;
-            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: "Empty comment" });
+            const errorMessage = "Empty comment generated";
+            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: errorMessage });
+            try {
+              await createPost({
+                userId: user.email,
+                status: "failed",
+                query: `auto-pilot-${new Date().toISOString()}`,
+                title: yesPost.title,
+                link: yesPost.url,
+                snippet: null,
+                selftext: fullPostData.selftext || null,
+                postData: fullPostData,
+                comment: null,
+                notes: `Auto-pilot failed: ${errorMessage}`,
+                autoPilot: true,
+              });
+            } catch (dbError) {
+              console.error(`[Auto-Pilot] Error saving failed post to database:`, dbError);
+            }
             continue;
           }
 
@@ -945,7 +1016,25 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           
           if (!postResponseData) {
             failedCount++;
-            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: "Failed to parse Reddit API response" });
+            const errorMessage = "Failed to parse Reddit API response";
+            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: errorMessage });
+            try {
+              await createPost({
+                userId: user.email,
+                status: "failed",
+                query: `auto-pilot-${new Date().toISOString()}`,
+                title: yesPost.title,
+                link: yesPost.url,
+                snippet: null,
+                selftext: fullPostData.selftext || null,
+                postData: fullPostData,
+                comment: commentText.trim(),
+                notes: `Auto-pilot failed: ${errorMessage}`,
+                autoPilot: true,
+              });
+            } catch (dbError) {
+              console.error(`[Auto-Pilot] Error saving failed post to database:`, dbError);
+            }
             continue;
           }
           
@@ -975,8 +1064,26 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           
           if (postResponseData.json && postResponseData.json.errors && Array.isArray(postResponseData.json.errors) && postResponseData.json.errors.length > 0) {
             const errors = postResponseData.json.errors.map((err: any[]) => err.join(': ')).join('; ');
+            const errorMessage = `Reddit API error: ${errors}`;
             failedCount++;
-            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: `Reddit API error: ${errors}` });
+            failedPosts.push({ id: yesPost.id, title: yesPost.title, error: errorMessage });
+            try {
+              await createPost({
+                userId: user.email,
+                status: "failed",
+                query: `auto-pilot-${new Date().toISOString()}`,
+                title: yesPost.title,
+                link: yesPost.url,
+                snippet: null,
+                selftext: fullPostData.selftext || null,
+                postData: fullPostData,
+                comment: commentText.trim(),
+                notes: `Auto-pilot failed: ${errorMessage}`,
+                autoPilot: true,
+              });
+            } catch (dbError) {
+              console.error(`[Auto-Pilot] Error saving failed post to database:`, dbError);
+            }
             continue;
           }
 
@@ -1007,12 +1114,30 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
 
         } catch (error) {
           console.error(`[Auto-Pilot] User ${user.email}: Error processing post "${yesPost.title}":`, error);
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
           failedCount++;
           failedPosts.push({ 
             id: yesPost.id, 
             title: yesPost.title, 
-            error: error instanceof Error ? error.message : "Unknown error" 
+            error: errorMessage
           });
+          try {
+            await createPost({
+              userId: user.email,
+              status: "failed",
+              query: `auto-pilot-${new Date().toISOString()}`,
+              title: yesPost.title,
+              link: yesPost.url,
+              snippet: null,
+              selftext: null,
+              postData: null,
+              comment: null,
+              notes: `Auto-pilot failed: ${errorMessage}`,
+              autoPilot: true,
+            });
+          } catch (dbError) {
+            console.error(`[Auto-Pilot] Error saving failed post to database:`, dbError);
+          }
         }
       }
 
