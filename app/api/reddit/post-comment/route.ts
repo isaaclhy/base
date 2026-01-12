@@ -84,13 +84,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check for jQuery format response (success: true means comment was posted)
+    // Reddit sometimes returns { jquery: [...], success: true } instead of { json: { data: {...} } }
+    // Check for both boolean true and string "true" to be safe
+    if (data.success === true || data.success === "true" || (data.jquery && (data.success === true || data.success === "true"))) {
+      // Reddit returned success: true, which means the comment was posted successfully
+      // Even though we can't extract the comment ID from jQuery format, we treat it as success
+      return NextResponse.json({ 
+        success: true, 
+        data: data,
+        commentId: null, // Can't extract comment ID from jQuery format
+        message: "Comment posted successfully (Reddit returned success: true)"
+      });
+    }
+
     // Check if data.json.data exists (successful comment creation)
     if (!data.json || !data.json.data) {
-      console.error("Reddit API response missing data:", data);
-      return NextResponse.json(
-        { error: "Reddit API response missing data. Comment may not have been posted." },
-        { status: 500 }
-      );
+      // Only log error if success is not true (to avoid false positives)
+      if (data.success !== true && data.success !== "true") {
+        console.error("Reddit API response missing data:", data);
+        return NextResponse.json(
+          { error: "Reddit API response missing data. Comment may not have been posted." },
+          { status: 500 }
+        );
+      }
+      // If success is true but no json.data, still return success
+      return NextResponse.json({ 
+        success: true, 
+        data: data,
+        commentId: null,
+        message: "Comment posted successfully (Reddit returned success: true)"
+      });
     }
 
     // Extract the created comment ID from the response
