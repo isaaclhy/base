@@ -67,9 +67,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<FilterTit
             try {
                 // Try to extract from the expected structure
                 if (response.output && Array.isArray(response.output)) {
-                    const message = response.output.find((res: any) => res.type === 'message');
+                    const message = response.output.find((res: any) => res.type == 'message');
                     if (message && message.content && Array.isArray(message.content)) {
-                        const outputText = message.content.find((res: any) => res.type === 'output_text');
+                        const outputText = message.content.find((res: any) => res.type == 'output_text');
                         if (outputText && outputText.text) {
                             output = outputText.text;
                         } else {
@@ -91,8 +91,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<FilterTit
                 // Last resort: try to stringify the whole response
                 output = JSON.stringify(response);
             }
-
-            console.log('[Filter Titles] Raw output:', output.substring(0, 500)); // Debug log
 
             // Parse the response - expecting array of {id, verdict}
             let results: Array<{ id: string; verdict: string }>;
@@ -140,7 +138,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<FilterTit
                 }
             });
 
-            console.log('[Filter Titles] Returning results:', results.length);
             return NextResponse.json({ results });
         } catch (error) {
             console.error('[Filter Titles] Error:', error);
