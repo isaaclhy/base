@@ -2140,6 +2140,42 @@ function PlaygroundContent() {
        * STEP 3 — Fetch Reddit post content
        */
         await batchFetchLeadsPostContent();
+        
+        // Reload leads from database after post data is fetched to ensure UI shows updated data
+        console.log("[DB Leads] Reloading leads from database after post data fetch...");
+        const reloadResponse = await fetch("/api/leads?grouped=true");
+        if (reloadResponse.ok) {
+          const reloadData = await reloadResponse.json();
+          if (reloadData.leads && typeof reloadData.leads === 'object') {
+            // Filter out NO posts before displaying
+            const filteredLeads: typeof reloadData.leads = {};
+            for (const [kw, leadArray] of Object.entries(reloadData.leads)) {
+              const filteredArray = (leadArray as any[]).filter((lead: any) => {
+                return lead.filterSignal !== "NO";
+              });
+              if (filteredArray.length > 0) {
+                filteredLeads[kw] = filteredArray;
+              }
+            }
+            setLeadsLinks(filteredLeads);
+            
+            // Extract filter signals
+            const signals: Record<string, "YES" | "MAYBE" | "NO"> = {};
+            for (const [kw, leadArray] of Object.entries(filteredLeads)) {
+              (leadArray as any[]).forEach((lead: any) => {
+                if (lead.link) {
+                  const normalizedUrl = normalizeUrl(lead.link);
+                  if (normalizedUrl && lead.filterSignal) {
+                    signals[normalizedUrl] = lead.filterSignal;
+                  }
+                }
+              });
+            }
+            setLeadsFilterSignals(signals);
+            setLeadsDataVersion((prev) => prev + 1);
+            console.log("[DB Leads] Reloaded leads from database with post data");
+          }
+        }
 
       /**
        * STEP 4 — Build postsToFilter with post IDs
