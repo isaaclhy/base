@@ -618,6 +618,8 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
     if (postsToFilter.length > 0) {
       console.log(`[Auto-Pilot] User ${user.email}: Checking for already processed posts...`);
       const db = await getDatabase();
+      
+      // Check postsv2 collection for already posted/skipped posts
       const postsCollection = db.collection("postsv2");
       const existingPosts = await postsCollection.find({
         userId: user.email,
@@ -631,17 +633,56 @@ async function processUserAutoPilot(user: any): Promise<{ success: boolean; yesP
           processedUrls.add(normalizeUrl(post.link));
         }
       });
-      console.log(`[Auto-Pilot] User ${user.email}: Found ${existingPosts.length} already processed posts`);
+      console.log(`[Auto-Pilot] User ${user.email}: Found ${existingPosts.length} already posted/skipped posts`);
 
-      // Filter out posts that have already been processed BEFORE OpenAI filtering
+      // Also check leads collection for posts that have already been filtered (have a verdict)
+      const leadsCollection = db.collection("leads");
+      const existingLeads = await leadsCollection.find({
+        userId: user.email,
+        filterSignal: { $in: ["YES", "MAYBE", "NO"] },
+        link: { $in: postsToFilter.map(p => p.url) }
+      }).toArray();
+
+      const alreadyFilteredUrls = new Set<string>();
+      const alreadyFilteredPostIds = new Set<string>();
+      existingLeads.forEach((lead: any) => {
+        if (lead.link) {
+          alreadyFilteredUrls.add(normalizeUrl(lead.link));
+        }
+        // Also check by postId if available
+        if (lead.link) {
+          const postId = extractRedditPostId(lead.link);
+          if (postId) {
+            alreadyFilteredPostIds.add(postId);
+          }
+        }
+      });
+      console.log(`[Auto-Pilot] User ${user.email}: Found ${existingLeads.length} posts with existing filter signals`);
+
+      // Filter out posts that have already been processed OR already filtered BEFORE OpenAI filtering
+      const initialCount = postsToFilter.length;
       postsToFilter = postsToFilter.filter(post => {
         const normalizedUrl = normalizeUrl(post.url);
-        return !processedUrls.has(normalizedUrl);
+        const postId = post.id;
+        
+        // Skip if already posted/skipped
+        if (processedUrls.has(normalizedUrl)) {
+          return false;
+        }
+        
+        // Skip if already filtered (has a verdict)
+        if (alreadyFilteredUrls.has(normalizedUrl) || alreadyFilteredPostIds.has(postId)) {
+          return false;
+        }
+        
+        return true;
       });
-      console.log(`[Auto-Pilot] User ${user.email}: ${postsToFilter.length} new posts to filter (${existingPosts.length} already processed and excluded)`);
+      
+      const skippedCount = initialCount - postsToFilter.length;
+      console.log(`[Auto-Pilot] User ${user.email}: ${postsToFilter.length} new posts to filter (${skippedCount} already processed/filtered and excluded)`);
 
       if (postsToFilter.length === 0) {
-        console.log(`[Auto-Pilot] User ${user.email}: All posts already processed, skipping`);
+        console.log(`[Auto-Pilot] User ${user.email}: All posts already processed or filtered, skipping`);
         return { success: true, yesPosts: 0, yesPostsList: [], posted: 0, failed: 0 };
       }
     }

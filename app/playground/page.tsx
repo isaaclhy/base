@@ -138,6 +138,7 @@ function PlaygroundContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const setPlaygroundTab = useSetPlaygroundTab();
   const activeTab = usePlaygroundTab();
   const setActiveTab = useSetPlaygroundTab();
   const sidebarOpen = usePlaygroundSidebar();
@@ -312,7 +313,7 @@ function PlaygroundContent() {
   const toastHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showCheckoutSuccessModal, setShowCheckoutSuccessModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [upgradeModalContext, setUpgradeModalContext] = useState<{ limitReached?: boolean; remaining?: number; selectedCount?: number; maxCount?: number } | null>(null);
+  const [upgradeModalContext, setUpgradeModalContext] = useState<{ limitReached?: boolean; remaining?: number; selectedCount?: number; maxCount?: number; isPaginationBlock?: boolean } | null>(null);
   const generatedCommentUrlsRef = useRef<Set<string>>(new Set());
   const generatingCommentUrlsRef = useRef<Set<string>>(new Set());
   const restoredCommentsRef = useRef<Set<string>>(new Set());
@@ -1103,86 +1104,86 @@ function PlaygroundContent() {
       console.error("Error cleaning cache entries:", e);
     }
 
-    // Restore leadsLinks from localStorage if it exists and matches the current user
-    try {
-      const savedLeadsLinksUserEmail = localStorage.getItem("leadsLinksUserEmail");
-    const currentUserEmail = session?.user?.email?.toLowerCase();
-    
-      // Only restore if the saved email matches the current user's email
-      if (savedLeadsLinksUserEmail === currentUserEmail) {
-        // Check if a sync was in progress when page was refreshed
-        const syncInProgress = localStorage.getItem("syncLeadsInProgress");
-        if (syncInProgress === "true") {
-          // Sync was interrupted - warn user and clear incomplete data
-          console.warn("[Sync Leads] Previous sync was interrupted. Clearing incomplete data.");
-          try {
-        localStorage.removeItem("leadsLinks");
-        localStorage.removeItem("leadsLinksUserEmail");
-            localStorage.removeItem("leadsFilterSignals");
-            localStorage.removeItem("syncLeadsInProgress");
-            localStorage.removeItem("newLeadsSinceLastSync");
-            // Note: We can't show toast here because session might not be ready yet
-            // The toast will be shown after a delay to ensure session is ready
-            setTimeout(() => {
-              showToast("Previous sync was interrupted. Please sync again.", { variant: "error" });
-            }, 1000);
-          } catch (e) {
-            console.error("Error clearing incomplete sync data:", e);
+    // Load leads from database
+    const loadLeadsFromDatabase = async () => {
+      if (!session?.user?.email) return;
+
+      try {
+        // Load leads grouped by keyword (for backward compatibility)
+        const response = await fetch("/api/leads?grouped=true");
+        if (response.ok) {
+          const data = await response.json();
+          if (data.leads && typeof data.leads === 'object') {
+            // Filter out NO posts before displaying (match sync behavior)
+            const filteredLeads: typeof data.leads = {};
+            for (const [kw, leadArray] of Object.entries(data.leads)) {
+              const filteredArray = (leadArray as any[]).filter((lead: any) => {
+                // Keep leads with YES or MAYBE signals, or no signal yet (not filtered yet)
+                return lead.filterSignal !== "NO";
+              });
+              if (filteredArray.length > 0) {
+                filteredLeads[kw] = filteredArray;
+              }
+            }
+            
+            const keywordCount = Object.keys(filteredLeads).length;
+            const totalLeads = Object.values(filteredLeads).reduce((sum: number, leads: any) => sum + (Array.isArray(leads) ? leads.length : 0), 0);
+            console.log(`[DB Leads] Loaded ${totalLeads} leads across ${keywordCount} keywords from database (NO posts filtered out)`);
+            setLeadsLinks(filteredLeads);
+
+            // Extract filter signals directly from the filtered grouped response (which includes filterSignal)
+            const signals: Record<string, "YES" | "MAYBE" | "NO"> = {};
+            let signalCount = 0;
+            let leadsWithoutSignals = 0;
+            for (const [kw, leadArray] of Object.entries(filteredLeads)) {
+              (leadArray as any[]).forEach((lead: any) => {
+                if (lead.link) {
+                  const normalizedUrl = normalizeUrl(lead.link);
+                  if (normalizedUrl) {
+                    if (lead.filterSignal) {
+                      signals[normalizedUrl] = lead.filterSignal;
+                      signalCount++;
+                    } else {
+                      leadsWithoutSignals++;
+                    }
+                  }
+                }
+              });
+            }
+            setLeadsFilterSignals(signals);
+          } else {
           }
         } else {
-          // Sync completed normally, restore data
-          const savedLeadsLinks = localStorage.getItem("leadsLinks");
-    if (savedLeadsLinks) {
-            try {
-              const parsed = JSON.parse(savedLeadsLinks);
-              if (parsed && typeof parsed === 'object') {
-                setLeadsLinks(parsed);
-              }
-            } catch (parseError) {
-              console.error("Error parsing saved leadsLinks:", parseError);
-              // Clear invalid data
-        localStorage.removeItem("leadsLinks");
-          localStorage.removeItem("leadsLinksUserEmail");
-            }
-          }
-        
-          // Also restore filter signals (only if sync completed normally)
-          try {
-            const savedSignals = localStorage.getItem("leadsFilterSignals");
-            if (savedSignals) {
-              const parsedSignals = JSON.parse(savedSignals);
-              if (parsedSignals && typeof parsedSignals === 'object') {
-                setLeadsFilterSignals(parsedSignals);
-              }
-            }
-          } catch (parseError) {
-            console.error("Error parsing saved leadsFilterSignals:", parseError);
-            localStorage.removeItem("leadsFilterSignals");
-          }
+          console.warn("[DB Leads] Failed to load leads from database:", response.status, response.statusText);
+        }
 
-          // Also restore last sync time (only if sync completed normally)
-          try {
-            const savedSyncTime = localStorage.getItem("lastLeadsSyncTime");
-            if (savedSyncTime) {
-              const parsedTime = new Date(savedSyncTime);
-              if (!isNaN(parsedTime.getTime())) {
-                setLastLeadsSyncTime(parsedTime);
-              }
-            }
-          } catch (parseError) {
-            console.error("Error parsing saved lastLeadsSyncTime:", parseError);
-            localStorage.removeItem("lastLeadsSyncTime");
+        // Load sync metadata
+        const metadataResponse = await fetch("/api/leads/sync-metadata");
+        if (metadataResponse.ok) {
+          const metadata = await metadataResponse.json();
+          if (metadata.lastSyncTime) {
+            setLastLeadsSyncTime(new Date(metadata.lastSyncTime));
           }
         }
-      } else if (savedLeadsLinksUserEmail && currentUserEmail) {
-        // Different user, clear the old data
-        localStorage.removeItem("leadsLinks");
-        localStorage.removeItem("leadsLinksUserEmail");
-        localStorage.removeItem("leadsFilterSignals");
-      }
+      } catch (error) {
+        console.error("[DB Leads] Error loading leads from database:", error);
+        // Fallback to localStorage if DB fails (for migration period)
+        try {
+          const savedLeadsLinks = localStorage.getItem("leadsLinks");
+          if (savedLeadsLinks) {
+            const parsed = JSON.parse(savedLeadsLinks);
+            if (parsed && typeof parsed === 'object') {
+              setLeadsLinks(parsed);
+            }
+          }
         } catch (e) {
-      console.error("Error restoring leadsLinks from localStorage:", e);
-    }
+          console.error("Error falling back to localStorage:", e);
+        }
+      }
+    };
+
+    // Load leads from database on mount
+    loadLeadsFromDatabase();
     
     // Analytics posts will be loaded from MongoDB via useEffect
   }, [session?.user?.email]);
@@ -1526,36 +1527,58 @@ function PlaygroundContent() {
       }
 
       if (data.results && Array.isArray(data.results)) {
-        // Use functional state update to avoid race conditions when multiple fetches run in parallel
-        setLeadsLinks((prev) => {
-          // Use prev (most up-to-date React state) for merging
-          const currentState = prev;
+        // Save new leads to database
+        if (session?.user?.email && data.results.length > 0) {
+          try {
+            const leadsToSave = data.results.map((link: any) => ({
+              keyword,
+              query: keyword,
+              title: link.title || null,
+              link: link.link || null,
+              snippet: link.snippet || null,
+              selftext: null,
+              postData: null,
+              filterSignal: null,
+            }));
 
-        // Merge new results with existing results for this keyword, avoiding duplicates
+            const saveResponse = await fetch("/api/leads", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ leads: leadsToSave, keyword }),
+            });
+            
+            if (saveResponse.ok) {
+              const saveData = await saveResponse.json();
+              console.log(`[DB Leads] Successfully saved leads for keyword "${keyword}":`, {
+                inserted: saveData.inserted,
+                updated: saveData.updated,
+                total: saveData.total
+              });
+            } else {
+              const errorData = await saveResponse.json().catch(() => ({ error: "Unknown error" }));
+              console.error(`[DB Leads] Failed to save leads for keyword "${keyword}":`, {
+                status: saveResponse.status,
+                statusText: saveResponse.statusText,
+                error: errorData.error,
+                details: errorData.details
+              });
+          }
+        } catch (e) {
+            console.error("[DB Leads] Error saving leads to database:", e);
+          }
+        }
+
+        // Also update React state for immediate UI update
+        setLeadsLinks((prev) => {
+          const currentState = prev;
           const existingLinksForKeyword = currentState[keyword] || [];
         const existingLinkUrls = new Set(existingLinksForKeyword.map((link: any) => link.link).filter(Boolean));
-
-        // Only add new links that don't already exist (by URL)
         const newLinks = data.results.filter((link: any) => link.link && !existingLinkUrls.has(link.link));
-
         const mergedLinksForKeyword = [...existingLinksForKeyword, ...newLinks];
-
-        const updated = {
+          return {
             ...currentState,
           [keyword]: mergedLinksForKeyword,
         };
-
-        // Save to localStorage using safe function
-        safeSetLocalStorage("leadsLinks", updated);
-        // Also save the current user's email to associate leads data with the user
-        if (session?.user?.email) {
-          try {
-            localStorage.setItem("leadsLinksUserEmail", session.user.email.toLowerCase());
-          } catch (e) {
-            console.error("Error saving leadsLinksUserEmail:", e);
-          }
-        }
-          return updated;
         });
       }
     } catch (err) {
@@ -1568,19 +1591,28 @@ function PlaygroundContent() {
   // Batch fetch minimal post stats for leads table (ups, num_comments, created_utc)
   // Full post data (selftext, full postData) will be fetched on-demand when drawer opens
   const batchFetchLeadsPostContent = async () => {
-    // Read from localStorage first (source of truth after fetchLeadsForKeyword saves)
+    // Read from database first (source of truth after fetchLeadsForKeyword saves)
     // This ensures we get the latest leads including newly fetched ones
     let currentState: Record<string, any[]> = {};
     try {
-      const saved = localStorage.getItem("leadsLinks");
-      if (saved) {
-        currentState = JSON.parse(saved);
+      const stateResponse = await fetch("/api/leads?grouped=true");
+      if (stateResponse.ok) {
+        const stateData = await stateResponse.json();
+        if (stateData.leads && typeof stateData.leads === 'object') {
+          currentState = stateData.leads;
+          const totalLeads = Object.values(currentState).reduce((sum: number, leads: any) => sum + (Array.isArray(leads) ? leads.length : 0), 0);
+          console.log(`[DB Leads] Loaded ${totalLeads} leads from database across ${Object.keys(currentState).length} keywords for post content fetch`);
+        } else {
+          console.log("[DB Leads] No leads found in database, using React state");
+          currentState = leadsLinks;
+        }
+      } else {
+        console.warn("[DB Leads] Failed to load state from database, using React state:", stateResponse.status);
+        currentState = leadsLinks;
       }
-    } catch (e) {
-      console.error("Error reading leadsLinks from localStorage:", e);
-    }
-    // Fallback to React state if localStorage is empty
-    if (Object.keys(currentState).length === 0) {
+    } catch (error) {
+      console.error("[DB Leads] Error loading current state from database:", error);
+      // Fallback to React state if database read fails
       currentState = leadsLinks;
     }
 
@@ -1806,6 +1838,8 @@ function PlaygroundContent() {
                       console.error("Error saving leadsLinksUserEmail:", e);
                     }
                   }
+                  // Force re-computation of distinctLeadsLinks by incrementing version
+                  setLeadsDataVersion((prev) => prev + 1);
                   return updated;
                 });
 
@@ -1818,6 +1852,46 @@ function PlaygroundContent() {
           setIsLoadingPostContent((prevLoading) => ({ ...prevLoading, [postInfo.url]: false }));
             }
       });
+
+      // Save updated leads to database
+      if (postDataUpdates.size > 0 && session?.user?.email) {
+        try {
+          // Build leadsToUpdate using postDataUpdates (has fresh postData) and currentState (has link URL and other fields)
+          const leadsToUpdate: any[] = [];
+          
+          Array.from(postDataUpdates.values()).forEach(({ keyword, linkIndex, postData, title }) => {
+            // Get the original link data from currentState (which we read from DB at the start)
+            const link = currentState[keyword]?.[linkIndex];
+            if (link && link.link) {
+              leadsToUpdate.push({
+                link: link.link,
+                title: title || link.title, // Use Reddit API title if available
+                snippet: link.snippet,
+                selftext: link.selftext,
+                postData: postData, // Use the fresh postData from postDataUpdates
+              });
+            }
+          });
+
+          if (leadsToUpdate.length > 0) {
+            console.log(`[DB Leads] Updating ${leadsToUpdate.length} leads with post data in database`);
+            const updateResponse = await fetch("/api/leads", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ leads: leadsToUpdate }),
+            });
+            
+            if (updateResponse.ok) {
+              const updateData = await updateResponse.json();
+              console.log(`[DB Leads] Successfully updated ${updateData.updated} leads with post data`);
+            } else {
+              console.error("[DB Leads] Failed to update leads with post data:", updateResponse.status, updateResponse.statusText);
+            }
+          }
+        } catch (e) {
+          console.error("[DB Leads] Error saving updated leads to database:", e);
+        }
+      }
     }
   };
 
@@ -1991,16 +2065,38 @@ function PlaygroundContent() {
       console.error("Error setting sync in progress flag:", e);
     }
 
-    // Get initial count of leads before sync
-    const initialLeadsCount = Object.values(leadsLinks).flat().length;
-    const initialLeadsUrls = new Set<string>();
-    Object.values(leadsLinks).forEach((links: any[]) => {
-      links.forEach((link: any) => {
-        if (link?.link) {
-          initialLeadsUrls.add(normalizeUrl(link.link));
+    // Get initial count of leads before sync (from database)
+    console.log("[DB Leads] ===== Starting Sync Leads ===== ");
+    console.log("[DB Leads] Checking initial leads count in database...");
+    let initialLeadsUrls = new Set<string>();
+    try {
+      const initialResponse = await fetch("/api/leads");
+      if (initialResponse.ok) {
+        const initialData = await initialResponse.json();
+        if (initialData.leads && Array.isArray(initialData.leads)) {
+          initialData.leads.forEach((lead: any) => {
+            if (lead?.link) {
+              initialLeadsUrls.add(normalizeUrl(lead.link));
+            }
+          });
+          console.log(`[DB Leads] Found ${initialLeadsUrls.size} existing leads in database before sync`);
+        } else {
+          console.log("[DB Leads] No existing leads in database (first sync)");
         }
+      } else {
+        console.warn("[DB Leads] Failed to fetch initial leads count:", initialResponse.status);
+      }
+    } catch (error) {
+      console.error("[DB Leads] Error fetching initial leads count:", error);
+      // Fallback to state
+      Object.values(leadsLinks).forEach((links: any[]) => {
+        links.forEach((link: any) => {
+          if (link?.link) {
+            initialLeadsUrls.add(normalizeUrl(link.link));
+          }
+        });
       });
-    });
+    }
 
     try {
       /**
@@ -2048,19 +2144,28 @@ function PlaygroundContent() {
       /**
        * STEP 4 — Build postsToFilter with post IDs
        */
-      // Read current state - always read from localStorage first (source of truth after batchFetchLeadsPostContent)
-      // since batchFetchLeadsPostContent saves to localStorage immediately
+      // Read current state from database (source of truth after batchFetchLeadsPostContent)
+      console.log("[DB Leads] Reading current leads state from database for filtering...");
       let currentState: Record<string, any[]> = {};
       try {
-        const saved = localStorage.getItem("leadsLinks");
-        if (saved) {
-          currentState = JSON.parse(saved);
+        const stateResponse = await fetch("/api/leads?grouped=true");
+        if (stateResponse.ok) {
+          const stateData = await stateResponse.json();
+          if (stateData.leads && typeof stateData.leads === 'object') {
+            currentState = stateData.leads;
+            const totalLeads = Object.values(currentState).reduce((sum: number, leads: any) => sum + (Array.isArray(leads) ? leads.length : 0), 0);
+            console.log(`[DB Leads] Loaded ${totalLeads} leads from database across ${Object.keys(currentState).length} keywords`);
+          } else {
+            console.log("[DB Leads] No leads found in database, using React state");
+            currentState = leadsLinks;
+          }
         } else {
-          // Fallback to React state if localStorage is empty
+          console.warn("[DB Leads] Failed to load state from database, using React state:", stateResponse.status);
           currentState = leadsLinks;
         }
-      } catch {
-        // Fallback to React state if localStorage read fails
+    } catch (error) {
+        console.error("[DB Leads] Error loading current state from database:", error);
+        // Fallback to React state
         currentState = leadsLinks;
       }
 
@@ -2074,16 +2179,39 @@ function PlaygroundContent() {
       }> = [];
 
       const seenPostIds = new Set<string>();
+      let skippedAlreadyFiltered = 0;
 
-      // Load existing filter signals from localStorage to avoid re-filtering
+      // Load existing filter signals from database to avoid re-filtering
       let existingFilterSignals: Record<string, "YES" | "MAYBE" | "NO"> = {};
+      let existingFilterSignalsByPostId: Record<string, "YES" | "MAYBE" | "NO"> = {}; // Also index by postId for faster lookup
       try {
-        const savedSignals = localStorage.getItem("leadsFilterSignals");
-        if (savedSignals) {
-          existingFilterSignals = JSON.parse(savedSignals);
+        console.log("[DB Leads] Loading existing filter signals from database to avoid re-filtering...");
+        const signalsResponse = await fetch("/api/leads");
+        if (signalsResponse.ok) {
+          const signalsData = await signalsResponse.json();
+          if (signalsData.leads && Array.isArray(signalsData.leads)) {
+            let signalCount = 0;
+            signalsData.leads.forEach((lead: any) => {
+              if (lead.link && lead.filterSignal) {
+                const normalizedUrl = normalizeUrl(lead.link);
+                if (normalizedUrl) {
+                  existingFilterSignals[normalizedUrl] = lead.filterSignal;
+                  signalCount++;
+                }
+                // Also index by postId for faster lookup
+                const postId = extractRedditPostId(lead.link);
+                if (postId) {
+                  existingFilterSignalsByPostId[postId] = lead.filterSignal;
+                }
+              }
+            });
+            console.log(`[DB Leads] Loaded ${signalCount} existing filter signals from database (will skip these posts from filtering)`);
+          }
+        } else {
+          console.warn("[DB Leads] Failed to load filter signals from database:", signalsResponse.status);
         }
       } catch (e) {
-        console.error("Error loading existing filter signals:", e);
+        console.error("[DB Leads] Error loading existing filter signals from database:", e);
       }
 
       Object.entries(currentState).forEach(([keyword, links]) => {
@@ -2104,7 +2232,9 @@ function PlaygroundContent() {
           seenPostIds.add(postId);
 
           // Skip if this post already has a filter signal from a previous sync
-          if (existingFilterSignals[normalizedUrl]) {
+          // Check both by normalizedUrl and postId for reliability
+          if (existingFilterSignals[normalizedUrl] || existingFilterSignalsByPostId[postId]) {
+            skippedAlreadyFiltered++;
             return; // Already filtered, skip
           }
 
@@ -2129,8 +2259,11 @@ function PlaygroundContent() {
         });
       });
 
+      console.log(`[DB Leads] Posts to filter: ${postsToFilter.length} new posts (${skippedAlreadyFiltered} skipped - already have filter signals in database)`);
+      
       if (postsToFilter.length === 0) {
-        setIsLoadingLeads(false);
+        console.log("[DB Leads] No new posts to filter (all already have filter signals in database)");
+      setIsLoadingLeads(false);
         return;
       }
 
@@ -2224,11 +2357,66 @@ function PlaygroundContent() {
 
       setLeadsFilterSignals(newFilterSignals);
       
-      // Persist signals to localStorage
+      // Persist signals to database
       try {
-        localStorage.setItem("leadsFilterSignals", JSON.stringify(newFilterSignals));
+        console.log("[DB Leads] Saving filter signals to database...");
+        // Build updates array for batch update
+        const signalUpdates: Array<{ leadId: string; filterSignal: "YES" | "MAYBE" | "NO" | null }> = [];
+        
+        // Get all leads to map URLs to lead IDs
+        const allLeadsResponse = await fetch("/api/leads");
+        if (allLeadsResponse.ok) {
+          const allLeadsData = await allLeadsResponse.json();
+          if (allLeadsData.leads && Array.isArray(allLeadsData.leads)) {
+            const urlToLeadId = new Map<string, string>();
+            allLeadsData.leads.forEach((lead: any) => {
+              if (lead.link && lead._id) {
+                const normalizedUrl = normalizeUrl(lead.link);
+                if (normalizedUrl) {
+                  urlToLeadId.set(normalizedUrl, lead._id);
+                }
+              }
+            });
+
+            // Build updates for posts that were filtered
+            postsToFilter.forEach(post => {
+              const verdict = verdictMap.get(post.postId);
+              if (verdict === "YES" || verdict === "MAYBE" || verdict === "NO") {
+                const normalizedUrl = normalizeUrl(post.url);
+                if (normalizedUrl) {
+                  const leadId = urlToLeadId.get(normalizedUrl);
+                  if (leadId) {
+                    signalUpdates.push({
+                      leadId,
+                      filterSignal: verdict,
+                    });
+                  }
+                }
+              }
+            });
+
+            // Batch update filter signals
+            if (signalUpdates.length > 0) {
+              console.log(`[DB Leads] Updating ${signalUpdates.length} filter signals in database`);
+              const signalResponse = await fetch("/api/leads/filter-signal", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ updates: signalUpdates }),
+              });
+              
+              if (signalResponse.ok) {
+                const signalData = await signalResponse.json();
+                console.log(`[DB Leads] Successfully updated ${signalData.updated} filter signals in database`);
+              } else {
+                console.error("[DB Leads] Failed to update filter signals:", signalResponse.status, signalResponse.statusText);
+              }
+            } else {
+              console.log("[DB Leads] No filter signals to update (all posts already have signals or no new verdicts)");
+            }
+          }
+        }
       } catch (e) {
-        console.error("Error saving leadsFilterSignals to localStorage:", e);
+        console.error("[DB Leads] Error saving leadsFilterSignals to database:", e);
       }
 
       /**
@@ -2296,7 +2484,61 @@ function PlaygroundContent() {
       });
 
       setLeadsLinks(updatedLeadsLinks);
-      localStorage.setItem("leadsLinks", JSON.stringify(updatedLeadsLinks));
+      
+      // Save updated leads to database
+      try {
+        console.log("[DB Leads] Saving filtered leads to database...");
+        // Convert updatedLeadsLinks to flat array for database
+        const leadsToSave: any[] = [];
+        Object.entries(updatedLeadsLinks).forEach(([keyword, links]) => {
+          links.forEach((link: any) => {
+            // Get filter signal from newFilterSignals (current sync) or existingFilterSignals (previous syncs)
+            // or from the link's existing filterSignal if it's already in the data
+            const normalizedUrl = normalizeUrl(link.link);
+            const filterSignal = newFilterSignals[normalizedUrl || ''] 
+              || existingFilterSignals[normalizedUrl || ''] 
+              || link.filterSignal 
+              || null;
+            
+            leadsToSave.push({
+              keyword,
+              query: link.query || keyword,
+              title: link.title || null,
+              link: link.link || null,
+              snippet: link.snippet || null,
+              selftext: link.selftext || null,
+              postData: link.postData || null,
+              filterSignal: filterSignal,
+            });
+          });
+        });
+
+        // Batch save to database
+        if (leadsToSave.length > 0) {
+          console.log(`[DB Leads] Saving ${leadsToSave.length} filtered leads to database (after filtering)`);
+          const finalSaveResponse = await fetch("/api/leads", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ leads: leadsToSave }),
+          });
+          
+          if (finalSaveResponse.ok) {
+            const finalSaveData = await finalSaveResponse.json();
+            console.log(`[DB Leads] Successfully saved filtered leads to database:`, {
+              inserted: finalSaveData.inserted,
+              updated: finalSaveData.updated,
+              total: finalSaveData.total,
+              keywords: Object.keys(updatedLeadsLinks).length
+            });
+          } else {
+            console.error("[DB Leads] Failed to save filtered leads to database:", finalSaveResponse.status, finalSaveResponse.statusText);
+          }
+        } else {
+          console.log("[DB Leads] No leads to save (all filtered out)");
+        }
+      } catch (e) {
+        console.error("[DB Leads] Error saving leads to database:", e);
+      }
       
       // Force distinctLeadsLinks to re-compute with the updated postData
       setLeadsDataVersion(prev => prev + 1);
@@ -2318,6 +2560,8 @@ function PlaygroundContent() {
           newPostsCount++;
         }
       });
+
+      console.log(`[DB Leads] Sync summary: ${newPostsCount} new leads added (${initialLeadsUrls.size} existing, ${finalLeadsUrls.size} total after sync)`);
 
       // Console.log array of leads with title and id
       const leadsArray = Object.values(updatedLeadsLinks).flat().map((link: any) => {
@@ -2367,14 +2611,10 @@ function PlaygroundContent() {
       const sampleLink = Object.values(updatedLeadsLinks)[0]?.[0];
 
 
-      // Set last sync time and persist to localStorage
+      // Set last sync time (will be stored in DB via syncedAt field on leads)
       const syncTime = new Date();
       setLastLeadsSyncTime(syncTime);
-      try {
-        localStorage.setItem("lastLeadsSyncTime", syncTime.toISOString());
-      } catch (e) {
-        console.error("Error saving lastLeadsSyncTime:", e);
-      }
+      // Note: Last sync time is now derived from the most recent syncedAt in the database
 
       // Increment sync counter after successful sync
       try {
@@ -2391,8 +2631,10 @@ function PlaygroundContent() {
       } catch (e) {
         console.error("Error clearing sync in progress flag:", e);
       }
+      
+      console.log("[DB Leads] ===== Sync Leads Completed Successfully ===== ");
     } catch (error) {
-      console.error("Error syncing leads:", error);
+      console.error("[DB Leads] ===== Sync Leads Failed ===== ", error);
       showToast("Error fetching leads. Please try again.", { variant: "error" });
       
       // Clear sync in progress flag on error
@@ -2743,6 +2985,19 @@ function PlaygroundContent() {
       }
     }
   }, [filteredDistinctLeadsLinks.length, leadsPage]);
+
+  // Prevent free users from going beyond page 1
+  useEffect(() => {
+    if (userPlan === "free" && leadsPage > 1) {
+      setUpgradeModalContext({
+        limitReached: false,
+        remaining: 0,
+        isPaginationBlock: true,
+      });
+      setShowUpgradeModal(true);
+      setLeadsPage(1); // Reset to page 1
+    }
+  }, [userPlan, leadsPage]);
 
   // Fetch sync usage data
   useEffect(() => {
@@ -5788,31 +6043,8 @@ function PlaygroundContent() {
                 "flex-1 overflow-hidden pt-2 pb-6 flex flex-col min-h-0 relative",
                 !sidebarOpen && "pl-14"
               )}>
-                {/* Blur overlay for free users */}
-                {userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1 && (
-                  <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/10 backdrop-blur-sm overflow-y-auto">
-                    <div className="bg-white dark:bg-card rounded-2xl shadow-xl border border-border text-center space-y-4 p-8 max-w-md">
-                      <h3 className="text-4xl font-bold text-foreground">
-                        Create Comments
-                      </h3>
-                      <p className="text-xl font-semibold text-foreground">
-                        Generate and Post Comments
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Select a plan to get started. On average, users find more than 500+ high potential leads in their first week using SignalScouter.
-                      </p>
-                      <Button
-                        onClick={() => setActiveTab("pricing")}
-                        className="bg-[#ff4500] hover:bg-[#ff4500]/90 text-white"
-                      >
-                        View Plans
-                      </Button>
-                    </div>
-                  </div>
-                )}
                 <div className={cn(
-                  "space-y-6 px-1 flex-1 overflow-y-auto",
-                  userPlan === "free" && syncUsage && syncUsage.syncCounter >= 1 && "blur-md pointer-events-none select-none"
+                  "space-y-6 px-1 flex-1 overflow-y-auto"
                 )}>
                   {createFilter === "comment" ? (
                     <div className="space-y-4">
@@ -6171,9 +6403,9 @@ function PlaygroundContent() {
                   <div className="flex gap-2 self-start sm:self-auto">
                     {/* Analytics Filter Dropdown */}
                     <div className="relative" ref={analyticsFilterDropdownRef}>
-                      <Button
+                    <Button
                         variant="outline"
-                        size="sm"
+                      size="sm"
                         className="text-sm px-2 py-1 min-w-[120px] justify-between"
                         onClick={() => setIsAnalyticsFilterDropdownOpen(!isAnalyticsFilterDropdownOpen)}
                         disabled={isLoadingAnalytics}
@@ -6184,7 +6416,7 @@ function PlaygroundContent() {
                            analyticsFilter === "failed" ? `Failed ${analyticsFilterCounts.failed > 0 ? `(${analyticsFilterCounts.failed})` : ''}` : "Active"}
                         </span>
                         <ChevronDown className="h-3 w-3 ml-1.5" />
-                      </Button>
+                    </Button>
                       {isAnalyticsFilterDropdownOpen && (
                         <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-md shadow-lg min-w-[120px]">
                           <div className="py-1">
@@ -6231,9 +6463,9 @@ function PlaygroundContent() {
                     
                     {/* Auto-pilot Filter Dropdown */}
                     <div className="relative" ref={autoPilotFilterDropdownRef}>
-                      <Button
+                    <Button
                         variant="outline"
-                        size="sm"
+                      size="sm"
                         className="text-sm px-2 py-1 min-w-[120px] justify-between"
                         onClick={() => setIsAutoPilotFilterDropdownOpen(!isAutoPilotFilterDropdownOpen)}
                         disabled={isLoadingAnalytics}
@@ -6244,7 +6476,7 @@ function PlaygroundContent() {
                            autoPilotFilter === "manual" ? `Manual ${analyticsFilterCounts.manual > 0 ? `(${analyticsFilterCounts.manual})` : ''}` : "All"}
                         </span>
                         <ChevronDown className="h-3 w-3 ml-1.5" />
-                      </Button>
+                    </Button>
                       {isAutoPilotFilterDropdownOpen && (
                         <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-md shadow-lg min-w-[120px]">
                           <div className="py-1">
@@ -6853,32 +7085,12 @@ function PlaygroundContent() {
                         "relative rounded-lg border border-border overflow-hidden flex-1 flex flex-col min-h-0",
                         isLoadingLeads && "pointer-events-none"
                       )}>
-                        {/* Blur overlay for free users */}
-                        {userPlan === "free" && distinctLeadsLinks.length > 0 && !isLoadingLeads && (
-                          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/10 backdrop-blur-sm">
-                            <div className="bg-white dark:bg-card rounded-2xl shadow-xl border border-border text-center space-y-4 p-8 max-w-md">
-                              <h3 className="text-5xl font-bold text-foreground"> {distinctLeadsLinks.length}</h3>
-                              <p className="text-xl font-semibold text-foreground">
-                              High Potential  {distinctLeadsLinks.length === 1 ? 'Lead' : 'Leads'} Found
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                Select a plan to get started. On average, users find more than 500+ high potential leads in their first week using SignalScouter.
-                              </p>
-                              <Button
-                                onClick={() => setActiveTab("pricing")}
-                                className="bg-[#ff4500] hover:bg-[#ff4500]/90 text-white"
-                              >
-                                View Plans
-                              </Button>
-                            </div>
-                          </div>
-                        )}
                         <div
                           ref={leadsTableScrollRef}
                           className={cn(
                             "overflow-x-auto flex-1 overflow-y-auto min-h-0",
                             isLoadingLeads && "blur-sm pointer-events-none select-none",
-                            userPlan === "free" && distinctLeadsLinks.length > 0 && !isLoadingLeads && "blur-md pointer-events-none select-none"
+                            showUpgradeModal && upgradeModalContext?.isPaginationBlock && "blur-md"
                           )}
                         >
                           <table className="w-full border-collapse table-fixed">
@@ -6965,18 +7177,18 @@ function PlaygroundContent() {
                                     {/* Checkbox column */}
                                     <td 
                                       className="py-3 px-2 align-middle w-[40px] cursor-pointer" 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedLeads(prev => {
-                                          const newSet = new Set(prev);
-                                          if (selectedLeads.has(linkKey)) {
-                                            newSet.delete(linkKey);
-                                          } else {
-                                            newSet.add(linkKey);
-                                          }
-                                          return newSet;
-                                        });
-                                      }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedLeads(prev => {
+                                            const newSet = new Set(prev);
+                                            if (selectedLeads.has(linkKey)) {
+                                              newSet.delete(linkKey);
+                                            } else {
+                                              newSet.add(linkKey);
+                                            }
+                                            return newSet;
+                                          });
+                                        }}
                                     >
                                       <div
                                         className={cn(
@@ -6988,8 +7200,8 @@ function PlaygroundContent() {
                                         {selectedLeads.has(linkKey) && (
                                           <Check className="h-3 w-3 text-primary" />
                                         )}
-                                      </div>
-                                    </td>
+                                  </div>
+                                  </td>
                                     {/* Stats column */}
                                     <td className="py-3 px-2 align-middle w-[70px]">
                                       {link.postData ? (
@@ -7119,7 +7331,20 @@ function PlaygroundContent() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setLeadsPage((prev) => Math.max(1, prev - 1))}
+                                onClick={() => {
+                                  const newPage = Math.max(1, leadsPage - 1);
+                                  // Check if free user trying to go beyond page 1
+                                  if (userPlan === "free" && newPage > 1) {
+                                    setUpgradeModalContext({
+                                      limitReached: false,
+                                      remaining: 0,
+                                      isPaginationBlock: true,
+                                    });
+                                    setShowUpgradeModal(true);
+                                    return;
+                                  }
+                                  setLeadsPage(newPage);
+                                }}
                                 disabled={leadsPage === 1 || isLoadingLeads}
                                 className="text-xs h-7 px-2"
                               >
@@ -7132,7 +7357,20 @@ function PlaygroundContent() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setLeadsPage((prev) => Math.min(totalLeadsPages, prev + 1))}
+                                onClick={() => {
+                                  const newPage = Math.min(totalLeadsPages, leadsPage + 1);
+                                  // Check if free user trying to go beyond page 1
+                                  if (userPlan === "free" && newPage > 1) {
+                                    setUpgradeModalContext({
+                                      limitReached: false,
+                                      remaining: 0,
+                                      isPaginationBlock: true,
+                                    });
+                                    setShowUpgradeModal(true);
+                                    return;
+                                  }
+                                  setLeadsPage(newPage);
+                                }}
                                 disabled={leadsPage === totalLeadsPages || isLoadingLeads}
                                 className="text-xs h-7 px-2"
                               >
@@ -7178,7 +7416,7 @@ function PlaygroundContent() {
                             <div className="max-w-5xl w-full space-y-8 pt-12">
                               <div className="text-center">
                                 <h3 className="text-xl font-semibold mb-2">How SignalScouter Works</h3>
-                                <p className="text-sm text-muted-foreground">
+                          <p className="text-sm text-muted-foreground">
                                   Get started in 3 simple steps
                                 </p>
                               </div>
@@ -8100,7 +8338,7 @@ function PlaygroundContent() {
                                   <CheckCircle2 className="h-4 w-4 text-green-500 inline-block" />
                                 ) : status === "error" ? (
                                   <div className="flex items-center gap-1.5">
-                                    <X className="h-4 w-4 text-red-500 inline-block" />
+                                  <X className="h-4 w-4 text-red-500 inline-block" />
                                     {bulkOperationErrors[leadItem.uniqueKey] && (
                                       <div className="relative group">
                                         <Info className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground cursor-pointer" />
@@ -8211,12 +8449,24 @@ function PlaygroundContent() {
       )}
       {showUpgradeModal && upgradeModalContext && (
         <>
+          {upgradeModalContext?.isPaginationBlock && (
+            <div
+              className="fixed inset-0 z-40 bg-background/20"
+              onClick={() => setShowUpgradeModal(false)}
+            />
+          )}
+          {!upgradeModalContext?.isPaginationBlock && (
           <div
             className="fixed inset-0 z-50 bg-background/40 backdrop-blur-sm"
             onClick={() => setShowUpgradeModal(false)}
           />
+          )}
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="w-full max-w-2xl rounded-lg border border-border bg-card shadow-lg">
+            <div className={cn(
+              "rounded-lg border border-border bg-card shadow-lg relative z-10",
+              upgradeModalContext?.isPaginationBlock ? "w-auto" : "w-full max-w-2xl"
+            )}>
+              {!upgradeModalContext?.isPaginationBlock && (
               <div className="border-b border-border px-6 py-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xl font-semibold text-foreground">
@@ -8233,9 +8483,50 @@ function PlaygroundContent() {
                   </button>
                 </div>
               </div>
+              )}
+              {upgradeModalContext?.isPaginationBlock && (
+                <div className="absolute top-4 right-4">
+                  <button
+                    onClick={() => setShowUpgradeModal(false)}
+                    className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                    aria-label="Close modal"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              )}
               <div className="px-6 py-6">
                 <div className="space-y-4 mb-6">
-                  {upgradeModalContext.limitReached ? (
+                  {upgradeModalContext?.isPaginationBlock ? (
+                    <div className="text-center space-y-6 px-8 py-8">
+                      <div className="space-y-3">
+                        <div className="text-5xl font-bold text-foreground">
+                          {filteredDistinctLeadsLinks.length}
+                        </div>
+                        <div className="text-xl font-semibold text-foreground">
+                          High Potential Leads Found
+                        </div>
+                        <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                          Upgrade to access all your leads and unlock powerful features to engage with your audience.
+                        </p>
+                      </div>
+                      <div className="space-y-4">
+                        <Button
+                          size="lg"
+                          onClick={() => {
+                            setShowUpgradeModal(false);
+                            setPlaygroundTab("pricing");
+                          }}
+                          className="bg-[#ff4500] hover:bg-[#ff4500]/90 text-white px-8"
+                        >
+                          Try for free for 3 days
+                        </Button>
+                        <p className="text-xs text-muted-foreground">
+                          On average, users get 500+ leads on their first week
+                        </p>
+                      </div>
+                    </div>
+                  ) : upgradeModalContext.limitReached ? (
                     <p className="text-sm text-muted-foreground">
                       You've reached your weekly limit of {upgradeModalContext.maxCount || 30} Free Credits. {upgradeModalContext.selectedCount ? `You selected ${upgradeModalContext.selectedCount} leads, but need more credits. ` : ''}Upgrade to Premium to get 1200 generated comments per week and never worry about limits again.
                     </p>
@@ -8246,6 +8537,7 @@ function PlaygroundContent() {
                   )}
                 </div>
                 
+                {!upgradeModalContext?.isPaginationBlock && (
                 <div className="grid gap-6 md:grid-cols-2 mb-6">
                   <div className="flex h-full flex-col gap-4 rounded-xl border border-border bg-muted/30 p-6 text-left">
                     <div>
@@ -8333,7 +8625,9 @@ function PlaygroundContent() {
                     </Button>
                   </div>
                 </div>
+                )}
               </div>
+              {!upgradeModalContext?.isPaginationBlock && (
               <div className="border-t border-border px-6 py-4 flex items-center justify-end">
                 <Button
                   variant="outline"
@@ -8342,6 +8636,7 @@ function PlaygroundContent() {
                   Maybe Later
                 </Button>
               </div>
+              )}
             </div>
           </div>
         </>
