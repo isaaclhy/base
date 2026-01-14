@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { updateUserRedditTokens } from "@/lib/db/users";
+import { updateUserRedditTokens, getUserByEmail } from "@/lib/db/users";
 
 const REDDIT_CLIENT_ID = process.env.REDDIT_CLIENT_ID || "";
 const REDDIT_CLIENT_SECRET = process.env.REDDIT_CLIENT_SECRET || "";
@@ -21,6 +21,14 @@ function getRedirectUri(request: NextRequest): string {
 }
 
 export async function GET(request: NextRequest) {
+  console.log("[Reddit Callback] ===== CALLBACK HANDLER CALLED =====", {
+    url: request.url,
+    hasCode: !!request.nextUrl.searchParams.get("code"),
+    hasState: !!request.nextUrl.searchParams.get("state"),
+    hasError: !!request.nextUrl.searchParams.get("error"),
+    timestamp: new Date().toISOString(),
+  });
+  
   try {
     // Pass the request to auth() so it can read cookies properly
     const session = await auth();
@@ -28,6 +36,14 @@ export async function GET(request: NextRequest) {
     const code = searchParams.get("code");
     const state = searchParams.get("state");
     const error = searchParams.get("error");
+    
+    console.log("[Reddit Callback] Initial parameters:", {
+      hasCode: !!code,
+      hasState: !!state,
+      hasError: !!error,
+      hasSession: !!session,
+      hasEmail: !!session?.user?.email,
+    });
 
     // Check for OAuth errors
     if (error) {
@@ -83,35 +99,50 @@ export async function GET(request: NextRequest) {
       hasStoredState: !!storedState,
     });
 
-    // Verify user is authenticated
-    // If session is not available (common with cross-site redirects), try to get email from state
-    let userEmail: string | null = session?.user?.email || null;
+    // Verify user is authenticated - PRIORITIZE state email (the user who initiated OAuth)
+    // The state contains the email of the user who clicked "Connect Reddit"
+    let userEmail: string | null = null;
     
-    if (!userEmail && state) {
+    // First, try to get email from state (this is the user who initiated the OAuth flow)
+    if (state) {
       try {
-        // Decode the state to get the user email we stored there
         const decodedState = JSON.parse(Buffer.from(state, 'base64').toString());
         userEmail = decodedState.userId || null;
-        console.log("Extracted user email from state:", userEmail);
+        console.log("[Reddit Callback] Extracted email from state:", userEmail);
       } catch (e) {
-        console.error("Failed to decode state:", e);
+        console.error("[Reddit Callback] Failed to decode state:", e);
       }
     }
     
+    // Fall back to session email if state doesn't have email
     if (!userEmail) {
-      console.error("Session check failed in Reddit callback:", {
+      userEmail = session?.user?.email || null;
+      console.log("[Reddit Callback] Using session email as fallback:", userEmail);
+    }
+    
+    console.log("[Reddit Callback] User email check:", {
+      stateEmail: state ? (() => {
+        try {
+          const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
+          return decoded.userId;
+        } catch { return null; }
+      })() : null,
+      sessionEmail: session?.user?.email,
+      finalEmail: userEmail,
+    });
+    
+    if (!userEmail) {
+      console.error("[Reddit Callback] No email found - both state and session are missing email:", {
         hasSession: !!session,
         hasUser: !!session?.user,
-        hasEmail: !!session?.user?.email,
         hasState: !!state,
-        cookies: Object.keys(Object.fromEntries(request.cookies.getAll().map(c => [c.name, c.value]))),
       });
-      // Redirect to playground instead of signin, as user might be logged in but session cookie not sent
-      // The onboarding modal will handle showing the connection status
       return NextResponse.redirect(
         `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/playground?error=reddit_oauth_session_expired`
       );
     }
+    
+    console.log("[Reddit Callback] Using email for token save:", userEmail);
 
     if (!code) {
       return NextResponse.redirect(
@@ -160,6 +191,13 @@ export async function GET(request: NextRequest) {
     // Store tokens in database
     // Normalize email to lowercase to ensure consistent storage
     const normalizedEmail = userEmail.toLowerCase();
+    
+    console.log(`[Reddit Callback] Attempting to save tokens for user: ${normalizedEmail}`, {
+      hasAccessToken: !!tokenData.access_token,
+      hasRefreshToken: !!tokenData.refresh_token,
+      expiresAt: expiresAt.toISOString(),
+    });
+    
     try {
       const updatedUser = await updateUserRedditTokens(normalizedEmail, {
         accessToken: tokenData.access_token,
@@ -167,23 +205,53 @@ export async function GET(request: NextRequest) {
         expiresAt,
       });
       
+      console.log(`[Reddit Callback] updateUserRedditTokens returned:`, {
+        hasUser: !!updatedUser,
+        hasAccessToken: !!updatedUser?.redditAccessToken,
+        hasRefreshToken: !!updatedUser?.redditRefreshToken,
+        email: updatedUser?.email,
+      });
+      
       // Verify tokens were actually saved
       if (!updatedUser || !updatedUser.redditAccessToken || !updatedUser.redditRefreshToken) {
-        console.error("Tokens were not saved correctly:", {
+        console.error("[Reddit Callback] Tokens were not saved correctly:", {
           email: normalizedEmail,
           hasUser: !!updatedUser,
           hasAccessToken: !!updatedUser?.redditAccessToken,
           hasRefreshToken: !!updatedUser?.redditRefreshToken,
+          updatedUserKeys: updatedUser ? Object.keys(updatedUser) : [],
         });
         return NextResponse.redirect(
           `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/playground?error=reddit_oauth_save_failed`
         );
       }
       
-      console.log(`Successfully saved Reddit tokens for user: ${normalizedEmail}`, {
-        hasAccessToken: !!updatedUser.redditAccessToken,
-        hasRefreshToken: !!updatedUser.redditRefreshToken,
-        expiresAt: updatedUser.redditTokenExpiresAt,
+      // Verify tokens are actually in the database by querying again
+      const verifyUser = await getUserByEmail(normalizedEmail);
+      console.log(`[Reddit Callback] Verification query result:`, {
+        found: !!verifyUser,
+        hasAccessToken: !!verifyUser?.redditAccessToken,
+        hasRefreshToken: !!verifyUser?.redditRefreshToken,
+        accessTokenLength: verifyUser?.redditAccessToken?.length,
+        refreshTokenLength: verifyUser?.redditRefreshToken?.length,
+      });
+      
+      if (!verifyUser || !verifyUser.redditAccessToken || !verifyUser.redditRefreshToken) {
+        console.error("[Reddit Callback] CRITICAL: Tokens not found in database after update!", {
+          email: normalizedEmail,
+          updateReturnedTokens: !!updatedUser?.redditAccessToken,
+          verifyFoundTokens: !!verifyUser?.redditAccessToken,
+        });
+        return NextResponse.redirect(
+          `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/playground?error=reddit_oauth_save_failed`
+        );
+      }
+      
+      console.log(`[Reddit Callback] Successfully saved and verified Reddit tokens for user: ${normalizedEmail}`, {
+        hasAccessToken: !!verifyUser.redditAccessToken,
+        hasRefreshToken: !!verifyUser.redditRefreshToken,
+        expiresAt: verifyUser.redditTokenExpiresAt,
+        userId: (verifyUser as any)._id?.toString(),
       });
     } catch (dbError) {
       console.error("Error saving Reddit tokens:", dbError);

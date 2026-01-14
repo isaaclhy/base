@@ -175,6 +175,8 @@ export async function updateUserRedditTokens(
   // Normalize email to lowercase for consistent lookup
   const normalizedEmail = email.toLowerCase();
 
+  console.log(`[updateUserRedditTokens] Attempting to update tokens for user: ${normalizedEmail}`);
+
   // First, try to find the user
   let updatedUser = await usersCollection.findOneAndUpdate(
     { email: normalizedEmail },
@@ -188,6 +190,12 @@ export async function updateUserRedditTokens(
     },
     { returnDocument: 'after' }
   );
+
+  console.log(`[updateUserRedditTokens] First attempt result:`, {
+    found: !!updatedUser,
+    hasAccessToken: !!updatedUser?.redditAccessToken,
+    hasRefreshToken: !!updatedUser?.redditRefreshToken,
+  });
 
   // If user not found, try case-insensitive search (for old data)
   if (!updatedUser) {
@@ -217,7 +225,7 @@ export async function updateUserRedditTokens(
   // If still not found, create a new user with Reddit tokens
   // This handles edge cases where user exists in NextAuth but not in our DB
   if (!updatedUser) {
-    console.warn(`User with email ${normalizedEmail} not found. Creating new user with Reddit tokens...`);
+    console.warn(`[updateUserRedditTokens] User with email ${normalizedEmail} not found. Creating new user with Reddit tokens...`);
     const now = new Date();
     const newUser: User = {
       email: normalizedEmail,
@@ -238,12 +246,14 @@ export async function updateUserRedditTokens(
       throw new Error('Failed to create user with Reddit tokens');
     }
 
+    console.log(`[updateUserRedditTokens] Created new user with Reddit tokens: ${normalizedEmail}`);
     return {
       ...newUser,
       _id: result.insertedId,
     };
   }
 
+  console.log(`[updateUserRedditTokens] Successfully updated tokens for user: ${normalizedEmail}`);
   return updatedUser as User;
 }
 
