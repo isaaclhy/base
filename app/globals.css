@@ -195,4 +195,46 @@
       transform: translateX(100%);
     }
   }
+
+  /* Radar scan animation */
+  @keyframes radar-scan {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Dot popup animation - slower */
+  @keyframes dot-popup {
+    0%, 100% {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 0.6;
+    }
+    50% {
+      transform: translate(-50%, -50%) scale(1.3);
+      opacity: 1;
+    }
+  }
+
+  /* Post popup animation - instant popup to full size, visible for 3s, quick disappear */
+  @keyframes post-popup {
+    0% {
+      opacity: 1;
+      transform: translate(-50%, -5px) scale(1);
+    }
+    60% {
+      opacity: 1;
+      transform: translate(-50%, -5px) scale(1);
+    }
+    62% {
+      opacity: 0;
+      transform: translate(-50%, -5px) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -5px) scale(1);
+    }
+  }
 }
